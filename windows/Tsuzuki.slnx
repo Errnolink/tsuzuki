@@ -1,0 +1,11 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/Tsuzuki.App/Tsuzuki.App.csproj">
+      <Platform Project="x64" />
+    </Project>
+    <Project Path="src/Tsuzuki.Core/Tsuzuki.Core.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/Tsuzuki.Core.Tests/Tsuzuki.Core.Tests.csproj" />
+  </Folder>
+</Solution>

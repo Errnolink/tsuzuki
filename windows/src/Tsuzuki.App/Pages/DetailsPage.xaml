@@ -1,0 +1,104 @@
+<UserControl
+    x:Class="Tsuzuki.App.Pages.DetailsPage"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:c="using:Tsuzuki.App.Controls">
+  <Grid x:Name="Root" Background="{ThemeResource TzBackground}" Padding="0,48,0,0">
+    <Grid x:Name="Ambient" VerticalAlignment="Top" Height="620" IsHitTestVisible="False">
+      <c:CoverImage x:Name="AmbientImage" DecodeWidth="10" Opacity="0.55" />
+      <Border x:Name="AmbientFade" />
+    </Grid>
+
+    <ScrollView x:Name="Scroller" HorizontalScrollMode="Disabled" HorizontalScrollBarVisibility="Hidden" VerticalScrollBarVisibility="Auto">
+      <StackPanel x:Name="Body" Padding="44,36,44,64">
+        <Grid x:Name="Header" ColumnSpacing="38">
+          <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="Auto" />
+            <ColumnDefinition Width="*" />
+          </Grid.ColumnDefinitions>
+          <Border x:Name="CoverFrame" Width="220" Height="330" CornerRadius="12" VerticalAlignment="Top"
+                  BorderBrush="{ThemeResource TzStroke}" BorderThickness="1">
+            <Grid Background="{ThemeResource TzCard}">
+              <c:CoverImage x:Name="HeaderCover" DecodeWidth="330" />
+              <StackPanel x:Name="CoverGhost" Spacing="12" HorizontalAlignment="Center" VerticalAlignment="Center" Visibility="Collapsed">
+                <FontIcon Glyph="&#xE05F;" FontFamily="{StaticResource TzIconFont}" FontSize="36" Foreground="{ThemeResource TzTextTertiary}" />
+                <TextBlock Text="Cover on your phone" FontSize="12" Foreground="{ThemeResource TzTextTertiary}" HorizontalAlignment="Center" />
+              </StackPanel>
+            </Grid>
+          </Border>
+
+          <StackPanel x:Name="Info" Grid.Column="1" VerticalAlignment="Top" MaxWidth="820" HorizontalAlignment="Left">
+            <TextBlock x:Name="SourceLine" Style="{StaticResource TzKicker}" />
+            <TextBlock x:Name="TitleText" Style="{StaticResource TzDisplay}" TextWrapping="Wrap" MaxLines="3" Margin="0,8,0,0" IsTextSelectionEnabled="True" />
+            <TextBlock x:Name="AuthorText" Style="{StaticResource TzSecondary}" Margin="0,8,0,0" />
+            <StackPanel x:Name="MetaRow" Orientation="Horizontal" Spacing="16" Margin="0,16,0,0" />
+            <c:WrapPanel x:Name="Tags" Margin="0,16,0,0" HorizontalSpacing="6" VerticalSpacing="6" />
+            <TextBlock x:Name="Description" Style="{StaticResource TzBody}" Foreground="{ThemeResource TzTextSecondary}"
+                       TextWrapping="Wrap" MaxLines="4" TextTrimming="WordEllipsis" Margin="0,18,0,0" IsTextSelectionEnabled="True" />
+            <HyperlinkButton x:Name="MoreButton" Content="More" Padding="0" Margin="0,4,0,0" FontSize="13" Visibility="Collapsed" />
+            <StackPanel x:Name="Actions" Orientation="Horizontal" Spacing="10" Margin="0,24,0,0">
+              <Button x:Name="ContinueButton" Style="{StaticResource TzAccentButton}" Height="46" Padding="22,0" CornerRadius="23">
+                <StackPanel Orientation="Horizontal" Spacing="10">
+                  <FontIcon Glyph="&#xE13C;" FontFamily="{StaticResource TzIconFont}" FontSize="16" />
+                  <TextBlock x:Name="ContinueText" Text="Start reading" FontSize="15" FontWeight="SemiBold" VerticalAlignment="Center" />
+                </StackPanel>
+              </Button>
+              <Button x:Name="LibraryButton" Style="{StaticResource TzTonalButton}" Height="46" Padding="18,0" CornerRadius="23">
+                <StackPanel Orientation="Horizontal" Spacing="8">
+                  <FontIcon x:Name="LibraryIcon" Glyph="&#xE13D;" FontFamily="{StaticResource TzIconFont}" FontSize="16" />
+                  <TextBlock x:Name="LibraryText" Text="Add to library" FontWeight="SemiBold" VerticalAlignment="Center" />
+                </StackPanel>
+              </Button>
+              <Button x:Name="CategoryButton" Style="{StaticResource TzSoftButton}" Width="46" Height="46" Padding="0" CornerRadius="23" ToolTipService.ToolTip="Categories">
+                <FontIcon Glyph="&#xE35C;" FontFamily="{StaticResource TzIconFont}" FontSize="17" />
+              </Button>
+            </StackPanel>
+          </StackPanel>
+        </Grid>
+
+        <Grid x:Name="ChapterHeader" Margin="0,48,0,12">
+          <StackPanel Orientation="Horizontal" Spacing="12" VerticalAlignment="Bottom">
+            <TextBlock x:Name="ChapterCount" Text="Chapters" Style="{StaticResource TzTitle}" />
+            <TextBlock x:Name="ChapterSub" Style="{StaticResource TzCaption}" VerticalAlignment="Bottom" Margin="0,0,0,4" />
+          </StackPanel>
+          <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Spacing="8">
+            <ToggleButton x:Name="UnreadOnly" Style="{StaticResource TzChip}" Content="Unread only" />
+            <Button x:Name="SortChapters" Style="{StaticResource TzSoftButton}" Height="32" MinHeight="0" Padding="12,0" FontSize="13">
+              <StackPanel Orientation="Horizontal" Spacing="6">
+                <FontIcon x:Name="SortIcon" Glyph="&#xE047;" FontFamily="{StaticResource TzIconFont}" FontSize="14" />
+                <TextBlock x:Name="SortText" Text="Newest first" VerticalAlignment="Center" />
+              </StackPanel>
+            </Button>
+          </StackPanel>
+        </Grid>
+
+        <ItemsRepeater x:Name="ChapterList">
+          <ItemsRepeater.Layout>
+            <StackLayout Spacing="2" />
+          </ItemsRepeater.Layout>
+        </ItemsRepeater>
+        <StackPanel x:Name="ChapterSkeleton" Spacing="8" />
+        <TextBlock x:Name="ChapterMessage" Style="{StaticResource TzSecondary}" Margin="4,12,0,0" Visibility="Collapsed" TextWrapping="Wrap" />
+      </StackPanel>
+    </ScrollView>
+
+    <Grid x:Name="StickyBar" VerticalAlignment="Top" Height="64" Opacity="0" IsHitTestVisible="False" Padding="44,0,44,0" ColumnSpacing="14"
+          BorderBrush="{ThemeResource TzStroke}" BorderThickness="0,0,0,1">
+      <Grid.Background>
+        <AcrylicBrush TintColor="#101114" TintOpacity="0.72" FallbackColor="#101114" />
+      </Grid.Background>
+      <Grid.ColumnDefinitions>
+        <ColumnDefinition Width="Auto" />
+        <ColumnDefinition Width="*" />
+        <ColumnDefinition Width="Auto" />
+      </Grid.ColumnDefinitions>
+      <Border Width="30" Height="45" CornerRadius="5" VerticalAlignment="Center">
+        <c:CoverImage x:Name="StickyCover" DecodeWidth="60" />
+      </Border>
+      <TextBlock x:Name="StickyTitle" Grid.Column="1" Style="{StaticResource TzSubtitle}" VerticalAlignment="Center" />
+      <Button x:Name="StickyContinue" Grid.Column="2" Style="{StaticResource TzAccentButton}" Height="36" Padding="16,0" VerticalAlignment="Center">
+        <TextBlock x:Name="StickyContinueText" Text="Continue" FontWeight="SemiBold" />
+      </Button>
+    </Grid>
+  </Grid>
+</UserControl>

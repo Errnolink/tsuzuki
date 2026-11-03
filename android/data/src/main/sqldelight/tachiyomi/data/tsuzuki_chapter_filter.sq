@@ -1,0 +1,12 @@
+CREATE TABLE tsuzuki_chapter_filter (
+    _id INTEGER NOT NULL PRIMARY KEY CHECK (_id = 1),
+    match_all INTEGER NOT NULL DEFAULT 0
+);
+
+INSERT INTO tsuzuki_chapter_filter (_id, match_all) VALUES (1, 0);
+
+getMatchAll:
+SELECT match_all FROM tsuzuki_chapter_filter WHERE _id = 1;
+
+setMatchAll:
+UPDATE tsuzuki_chapter_filter SET match_all = :matchAll WHERE _id = 1;

@@ -1,0 +1,104 @@
+<ResourceDictionary
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+  <ResourceDictionary.ThemeDictionaries>
+    <ResourceDictionary x:Key="Dark">
+      <Color x:Key="TzAccentColor">#8BB9FF</Color>
+      <Color x:Key="SystemAccentColor">#5B8FE0</Color>
+      <Color x:Key="SystemAccentColorLight1">#73A3EE</Color>
+      <Color x:Key="SystemAccentColorLight2">#8BB9FF</Color>
+      <Color x:Key="SystemAccentColorLight3">#B3D1FF</Color>
+      <Color x:Key="SystemAccentColorDark1">#3F73C4</Color>
+      <Color x:Key="SystemAccentColorDark2">#2D5DA8</Color>
+      <Color x:Key="SystemAccentColorDark3">#1E4785</Color>
+      <Color x:Key="TzContentLayerColor">#101114</Color>
+      <Color x:Key="TzContentLayerFade">#00101114</Color>
+      <SolidColorBrush x:Key="TzContentLayer" Color="#101114" Opacity="0.92" />
+      <SolidColorBrush x:Key="TzBackground" Color="#101114" />
+      <SolidColorBrush x:Key="TzCard" Color="#1A1B20" />
+      <SolidColorBrush x:Key="TzChipBackground" Color="#1E1F25" />
+      <SolidColorBrush x:Key="TzChipCount" Color="#14FFFFFF" />
+      <SolidColorBrush x:Key="TzCardHover" Color="#22232A" />
+      <SolidColorBrush x:Key="TzElevated" Color="#292A30" />
+      <SolidColorBrush x:Key="TzStroke" Color="#FFFFFF" Opacity="0.07" />
+      <SolidColorBrush x:Key="TzStrokeStrong" Color="#FFFFFF" Opacity="0.14" />
+      <SolidColorBrush x:Key="TzStateHover" Color="#FFFFFF" Opacity="0.06" />
+      <SolidColorBrush x:Key="TzStatePressed" Color="#FFFFFF" Opacity="0.11" />
+      <SolidColorBrush x:Key="TzText" Color="#F5F5F7" />
+      <SolidColorBrush x:Key="TzTextSecondary" Color="#AEAEB8" />
+      <SolidColorBrush x:Key="TzTextTertiary" Color="#7C7D88" />
+      <SolidColorBrush x:Key="TextControlPlaceholderForeground" Color="#8A8B96" />
+      <SolidColorBrush x:Key="TextControlPlaceholderForegroundPointerOver" Color="#9A9BA6" />
+      <SolidColorBrush x:Key="TextControlPlaceholderForegroundFocused" Color="#7C7D88" />
+      <SolidColorBrush x:Key="TextControlForeground" Color="#F5F5F7" />
+      <SolidColorBrush x:Key="TextControlForegroundPointerOver" Color="#F5F5F7" />
+      <SolidColorBrush x:Key="TextControlForegroundFocused" Color="#F5F5F7" />
+      <SolidColorBrush x:Key="TzAccent" Color="#8BB9FF" />
+      <SolidColorBrush x:Key="TzOnAccent" Color="#081B36" />
+      <SolidColorBrush x:Key="TzAccentSoft" Color="#8BB9FF" Opacity="0.20" />
+      <SolidColorBrush x:Key="TzSuccess" Color="#7CDBA3" />
+      <SolidColorBrush x:Key="TzDanger" Color="#FF8B86" />
+      <SolidColorBrush x:Key="TzWarning" Color="#F5C26B" />
+      <SolidColorBrush x:Key="TzScrim" Color="#000000" Opacity="0.45" />
+      <SolidColorBrush x:Key="TzTileAction" Color="#101114" Opacity="0.85" />
+      <SolidColorBrush x:Key="TzTileActionIcon" Color="#FFFFFF" />
+      <SolidColorBrush x:Key="TzSkeleton" Color="#FFFFFF" Opacity="0.06" />
+      <SolidColorBrush x:Key="TzReaderBackground" Color="#0B0B0D" />
+      <SolidColorBrush x:Key="TzReaderChrome" Color="#16171B" Opacity="0.82" />
+    </ResourceDictionary>
+    <ResourceDictionary x:Key="Light">
+      <Color x:Key="TzAccentColor">#205DC2</Color>
+      <Color x:Key="SystemAccentColor">#2F6FD6</Color>
+      <Color x:Key="SystemAccentColorLight1">#4A84E0</Color>
+      <Color x:Key="SystemAccentColorLight2">#6C9DEB</Color>
+      <Color x:Key="SystemAccentColorLight3">#9BBEF3</Color>
+      <Color x:Key="SystemAccentColorDark1">#205DC2</Color>
+      <Color x:Key="SystemAccentColorDark2">#174A9E</Color>
+      <Color x:Key="SystemAccentColorDark3">#10377A</Color>
+      <Color x:Key="TzContentLayerColor">#F7F7FA</Color>
+      <Color x:Key="TzContentLayerFade">#00F7F7FA</Color>
+      <SolidColorBrush x:Key="TzContentLayer" Color="#F7F7FA" Opacity="0.94" />
+      <SolidColorBrush x:Key="TzBackground" Color="#F2F2F7" />
+      <SolidColorBrush x:Key="TzCard" Color="#FFFFFF" />
+      <SolidColorBrush x:Key="TzChipBackground" Color="#FFFFFF" />
+      <SolidColorBrush x:Key="TzChipCount" Color="#12000000" />
+      <SolidColorBrush x:Key="TzCardHover" Color="#F1F1F6" />
+      <SolidColorBrush x:Key="TzElevated" Color="#FFFFFF" />
+      <SolidColorBrush x:Key="TzStroke" Color="#000000" Opacity="0.08" />
+      <SolidColorBrush x:Key="TzStrokeStrong" Color="#000000" Opacity="0.15" />
+      <SolidColorBrush x:Key="TzStateHover" Color="#000000" Opacity="0.045" />
+      <SolidColorBrush x:Key="TzStatePressed" Color="#000000" Opacity="0.09" />
+      <SolidColorBrush x:Key="TzText" Color="#191A20" />
+      <SolidColorBrush x:Key="TzTextSecondary" Color="#62636E" />
+      <SolidColorBrush x:Key="TzTextTertiary" Color="#8E8F99" />
+      <SolidColorBrush x:Key="TextControlPlaceholderForeground" Color="#6E6F7A" />
+      <SolidColorBrush x:Key="TextControlPlaceholderForegroundPointerOver" Color="#5E5F6A" />
+      <SolidColorBrush x:Key="TextControlPlaceholderForegroundFocused" Color="#8E8F99" />
+      <SolidColorBrush x:Key="TextControlForeground" Color="#191A20" />
+      <SolidColorBrush x:Key="TextControlForegroundPointerOver" Color="#191A20" />
+      <SolidColorBrush x:Key="TextControlForegroundFocused" Color="#191A20" />
+      <SolidColorBrush x:Key="TzAccent" Color="#205DC2" />
+      <SolidColorBrush x:Key="TzOnAccent" Color="#FFFFFF" />
+      <SolidColorBrush x:Key="TzAccentSoft" Color="#205DC2" Opacity="0.12" />
+      <SolidColorBrush x:Key="TzSuccess" Color="#1E8E55" />
+      <SolidColorBrush x:Key="TzDanger" Color="#D93A33" />
+      <SolidColorBrush x:Key="TzWarning" Color="#B7791F" />
+      <SolidColorBrush x:Key="TzScrim" Color="#000000" Opacity="0.28" />
+      <SolidColorBrush x:Key="TzTileAction" Color="#FFFFFF" Opacity="0.92" />
+      <SolidColorBrush x:Key="TzTileActionIcon" Color="#191A20" />
+      <SolidColorBrush x:Key="TzSkeleton" Color="#000000" Opacity="0.06" />
+      <SolidColorBrush x:Key="TzReaderBackground" Color="#0B0B0D" />
+      <SolidColorBrush x:Key="TzReaderChrome" Color="#16171B" Opacity="0.82" />
+    </ResourceDictionary>
+  </ResourceDictionary.ThemeDictionaries>
+
+  <FontFamily x:Key="TzDisplayFont">Segoe UI Variable Display</FontFamily>
+  <FontFamily x:Key="TzTextFont">Segoe UI Variable Text</FontFamily>
+  <FontFamily x:Key="TzMinchoFont">Yu Mincho</FontFamily>
+  <FontFamily x:Key="TzIconFont">ms-appx:///Assets/Fonts/lucide.ttf#lucide</FontFamily>
+
+  <CornerRadius x:Key="TzCoverRadius">10</CornerRadius>
+  <CornerRadius x:Key="TzCardRadius">14</CornerRadius>
+  <CornerRadius x:Key="TzControlRadius">10</CornerRadius>
+  <CornerRadius x:Key="TzPillRadius">18</CornerRadius>
+</ResourceDictionary>

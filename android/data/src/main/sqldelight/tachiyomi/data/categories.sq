@@ -1,0 +1,119 @@
+import kotlin.Long;
+import kotlin.collections.List;
+
+CREATE TABLE categories(
+    _id INTEGER NOT NULL PRIMARY KEY,
+    name TEXT NOT NULL,
+    sort INTEGER NOT NULL,
+    flags INTEGER NOT NULL,
+    manga_order TEXT AS List<Long> NOT NULL,
+    -- KMK -->
+    hidden INTEGER NOT NULL DEFAULT 0,
+    -- KMK <--
+    uid INTEGER NOT NULL DEFAULT 0,
+    version INTEGER NOT NULL DEFAULT 0,
+    last_modified_at INTEGER NOT NULL DEFAULT 0,
+    is_syncing INTEGER NOT NULL DEFAULT 0
+);
+
+-- Insert system category
+INSERT OR IGNORE INTO categories(_id, name, sort, flags, manga_order, hidden) VALUES (0, "", -1, 0, "", 0);
+-- Disallow deletion of default category
+CREATE TRIGGER IF NOT EXISTS system_category_delete_trigger BEFORE DELETE
+ON categories
+BEGIN SELECT CASE
+    WHEN old._id <= 0 THEN
+        RAISE(ABORT, "System category can't be deleted")
+    END;
+END;
+
+CREATE TRIGGER category_sync_identity AFTER INSERT ON categories
+WHEN new._id > 0 AND new.uid = 0
+BEGIN
+    UPDATE categories SET uid = (random() & 9223372036854775807),
+        version = 1, last_modified_at = strftime('%s', 'now') WHERE _id = new._id;
+END;
+
+CREATE TRIGGER category_sync_version AFTER UPDATE ON categories
+WHEN new._id > 0 AND new.is_syncing = 0 AND (
+    new.name != old.name OR new.sort != old.sort OR new.flags != old.flags OR new.hidden != old.hidden
+)
+BEGIN
+    UPDATE categories SET version = old.version + 1,
+        last_modified_at = strftime('%s', 'now') WHERE _id = new._id;
+END;
+
+getCategory:
+SELECT _id,name,sort,flags,hidden,uid,version,last_modified_at
+FROM categories
+WHERE _id = :id
+LIMIT 1;
+
+getCategories:
+SELECT
+_id AS id,
+name,
+sort AS `order`,
+flags,
+-- KMK -->
+hidden,
+-- KMK <--
+uid,
+version,
+last_modified_at
+FROM categories
+ORDER BY sort;
+
+getCategoriesByMangaId:
+SELECT
+C._id AS id,
+C.name,
+C.sort AS `order`,
+C.flags,
+-- KMK -->
+C.hidden,
+-- KMK <--
+C.uid,
+C.version,
+C.last_modified_at
+FROM categories C
+JOIN mangas_categories MC
+ON C._id = MC.category_id
+WHERE MC.manga_id = :mangaId;
+
+insert:
+INSERT INTO categories(name, sort, flags, manga_order, hidden)
+VALUES (:name, :order, :flags, "", :hidden);
+
+delete:
+DELETE FROM categories
+WHERE _id = :categoryId;
+
+update:
+UPDATE categories
+SET name = coalesce(:name, name),
+    sort = coalesce(:order, sort),
+    flags = coalesce(:flags, flags),
+    -- KMK -->
+    hidden = coalesce(:hidden, hidden)
+    -- KMK <--
+WHERE _id = :categoryId;
+
+updateAllFlags:
+UPDATE categories SET
+flags = coalesce(?, flags);
+
+selectLastInsertedRowId:
+SELECT last_insert_rowid();
+
+insertSync:
+INSERT INTO categories(name, sort, flags, manga_order, hidden, uid, version, last_modified_at)
+VALUES (:name, :order, :flags, "", :hidden, :uid, :version, :lastModifiedAt);
+
+adopt:
+UPDATE categories SET name = :name, sort = :order, flags = :flags, hidden = :hidden,
+    uid = :uid, version = :version, last_modified_at = :lastModifiedAt, is_syncing = 1
+WHERE _id = :id AND _id > 0;
+
+resetIsSyncing:
+UPDATE categories SET is_syncing = 0 WHERE is_syncing != 0;

@@ -1,0 +1,19 @@
+Tsuzuki
+Copyright 2026 Errnolink and the Tsuzuki contributors
+
+This product is licensed under the Apache License, Version 2.0 (see LICENSE).
+
+The Android app (android/) is based on Komikku
+(https://github.com/komikku-app/komikku), licensed under the Apache License 2.0.
+Komikku is itself derived from Mihon (https://github.com/mihonapp/mihon),
+TachiyomiSY (https://github.com/jobobby04/TachiyomiSY) and Tachiyomi
+(https://github.com/tachiyomiorg/tachiyomi), all licensed under the Apache
+License 2.0. Copyright notices in files that come from these projects are
+retained.
+
+Parts of the MangaDex integration in the Android app are adapted from Neko
+(https://github.com/nekomangaorg/Neko), licensed under the Apache License 2.0.
+Each adapted file says so in its first line.
+
+Both apps use Lucide icons (https://lucide.dev), licensed under the ISC
+License.

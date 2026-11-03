@@ -1,0 +1,2 @@
+DROP TABLE IF EXISTS eh_favorites;
+DROP TABLE IF EXISTS eh_favorites_alternatives;

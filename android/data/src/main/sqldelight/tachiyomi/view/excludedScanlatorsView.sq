@@ -1,0 +1,36 @@
+CREATE VIEW excludedScanlatorsView AS
+WITH RECURSIVE
+combinations AS (
+    SELECT DISTINCT C.manga_id, C.scanlator
+    FROM excluded_scanlators ES
+    JOIN chapters C ON C.manga_id = ES.manga_id
+    WHERE C.scanlator IS NOT NULL AND C.scanlator != ''
+    UNION
+    SELECT DISTINCT M.merge_id AS manga_id, C.scanlator
+    FROM excluded_scanlators ES
+    JOIN merged M ON M.merge_id = ES.manga_id
+    JOIN chapters C ON C.manga_id = M.manga_id
+    WHERE C.scanlator IS NOT NULL AND C.scanlator != ''
+),
+credits(manga_id, scanlator, credit, remaining) AS (
+    SELECT manga_id, scanlator, '', scanlator || ' & ' FROM combinations
+    UNION ALL
+    SELECT manga_id, scanlator,
+        trim(substr(remaining, 1, instr(remaining, ' & ') - 1)),
+        substr(remaining, instr(remaining, ' & ') + 3)
+    FROM credits
+    WHERE remaining != ''
+)
+SELECT C.manga_id, C.scanlator
+FROM credits C
+LEFT JOIN excluded_scanlators ES ON ES.manga_id = C.manga_id
+    AND instr(' & ' || ES.scanlator || ' & ', ' & ' || C.credit || ' & ') > 0
+WHERE C.credit != ''
+GROUP BY C.manga_id, C.scanlator
+HAVING CASE WHEN (SELECT match_all FROM tsuzuki_chapter_filter WHERE _id = 1) = 1
+    THEN min(CASE WHEN ES.scanlator IS NULL THEN 0 ELSE 1 END)
+    ELSE max(CASE WHEN ES.scanlator IS NULL THEN 0 ELSE 1 END)
+END = 1;
+
+getExcludedCombinations:
+SELECT scanlator FROM excludedScanlatorsView WHERE manga_id = :mangaId;

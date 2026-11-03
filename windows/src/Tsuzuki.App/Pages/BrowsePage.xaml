@@ -1,0 +1,27 @@
+<UserControl
+    x:Class="Tsuzuki.App.Pages.BrowsePage"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+  <GridView x:Name="TileGrid" SelectionMode="None" Padding="40,74,40,48">
+    <GridView.Header>
+      <StackPanel>
+        <StackPanel>
+          <TextBlock Text="BROWSE · 探す" Style="{StaticResource TzKicker}" />
+          <TextBlock x:Name="Heading" Text="Browse" Style="{StaticResource TzLargeTitle}" Margin="0,2,0,0" />
+          <TextBlock x:Name="Summary" Text="MangaDex" Style="{StaticResource TzCaption}" Margin="0,4,0,0" />
+        </StackPanel>
+        <StackPanel x:Name="Modes" Orientation="Horizontal" Spacing="8" Margin="0,22,0,22" />
+      </StackPanel>
+    </GridView.Header>
+    <GridView.Footer>
+      <StackPanel>
+        <ProgressRing x:Name="LoadingRing" IsActive="False" Width="28" Height="28" Margin="0,28,0,0" />
+        <StackPanel x:Name="Message" Visibility="Collapsed" HorizontalAlignment="Center" Margin="0,60,0,0" Spacing="10" MaxWidth="420">
+          <TextBlock x:Name="MessageTitle" Style="{StaticResource TzTitle}" HorizontalAlignment="Center" TextAlignment="Center" TextWrapping="Wrap" />
+          <TextBlock x:Name="MessageBody" Style="{StaticResource TzSecondary}" HorizontalAlignment="Center" TextAlignment="Center" TextWrapping="Wrap" />
+          <Button x:Name="RetryButton" Style="{StaticResource TzSoftButton}" Content="Try again" HorizontalAlignment="Center" />
+        </StackPanel>
+      </StackPanel>
+    </GridView.Footer>
+  </GridView>
+</UserControl>

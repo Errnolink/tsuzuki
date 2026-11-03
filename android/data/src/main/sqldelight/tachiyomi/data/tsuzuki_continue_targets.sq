@@ -1,0 +1,170 @@
+import kotlin.Boolean;
+import kotlinx.serialization.json.JsonObject;
+selectUnreadChaptersByMangaIds:
+SELECT
+    C._id,
+    C.manga_id,
+    COALESCE(C.url, '') AS url,
+    COALESCE(C.name, '') AS name,
+    C.scanlator,
+    CAST(COALESCE(C.read, 0) AS INTEGER) AS read,
+    CAST(COALESCE(C.bookmark, 0) AS INTEGER) AS bookmark,
+    COALESCE(C.last_page_read, 0) AS last_page_read,
+    COALESCE(C.chapter_number, 0.0) AS chapter_number,
+    COALESCE(C.source_order, 0) AS source_order,
+    COALESCE(C.date_fetch, 0) AS date_fetch,
+    COALESCE(C.date_upload, 0) AS date_upload,
+    COALESCE(C.last_modified_at, 0) AS last_modified_at,
+    COALESCE(C.version, 0) AS version,
+    COALESCE(C.is_syncing, 0) AS is_syncing,
+    COALESCE(C.memo, CAST('{}' AS BLOB)) AS memo
+FROM chapters C
+JOIN mangas M ON C.manga_id = M._id
+LEFT JOIN excludedScanlatorsView ES
+ON C.manga_id = ES.manga_id
+AND C.scanlator = ES.scanlator
+WHERE C.manga_id IN :mangaIds
+AND C.read = 0
+AND (
+    ES.scanlator IS NULL
+    AND ((M.chapter_flags & :bookmarkUnmask) = 0 OR C.bookmark = 0)
+    AND ((M.chapter_flags & :bookmarkMask) = 0 OR C.bookmark = 1)
+)
+ORDER BY C.manga_id, C._id;
+
+selectUnreadStateDigestByMangaIds:
+SELECT C.manga_id AS mangaId,
+       COUNT(*) AS rowCount,
+       SUM(CAST(C.bookmark AS INTEGER)) AS bookmarkSum,
+       SUM(C.last_page_read) AS lastPageReadSum,
+       SUM(C.source_order) AS sourceOrderSum,
+       MIN(C.source_order) AS sourceOrderMin,
+       MAX(C.source_order) AS sourceOrderMax,
+       SUM(C.chapter_number) AS chapterNumberSum,
+       MIN(C.chapter_number) AS chapterNumberMin,
+       MAX(C.chapter_number) AS chapterNumberMax,
+       SUM(C.date_upload) AS dateUploadSum,
+       MIN(C.date_upload) AS dateUploadMin,
+       MAX(C.date_upload) AS dateUploadMax,
+       MIN(C.name) AS nameMin,
+       MAX(C.name) AS nameMax,
+       SUM(length(C.name)) AS nameLengthSum,
+       MIN(C.scanlator) AS scanlatorMin,
+       MAX(C.scanlator) AS scanlatorMax,
+       MIN(C.url) AS urlMin,
+       MAX(C.url) AS urlMax
+FROM chapters C
+WHERE C.manga_id IN :mangaIds
+AND C.read = 0
+GROUP BY C.manga_id;
+
+selectExcludedScanlatorsDigest:
+SELECT COUNT(*) AS rowCount,
+       COALESCE(SUM(manga_id), 0) AS mangaIdSum,
+       COALESCE(MIN(manga_id), 0) AS mangaIdMin,
+       COALESCE(MAX(manga_id), 0) AS mangaIdMax,
+       COALESCE(SUM(length(scanlator)), 0) AS scanlatorLengthSum,
+       COALESCE(MIN(scanlator), '') AS scanlatorMin,
+       COALESCE(MAX(scanlator), '') AS scanlatorMax
+FROM excluded_scanlators;
+
+selectBackupChaptersByMangaIds:
+SELECT
+    C._id,
+    C.manga_id,
+    COALESCE(C.url, '') AS url,
+    COALESCE(C.name, '') AS name,
+    C.scanlator,
+    CAST(COALESCE(C.read, 0) AS INTEGER) AS read,
+    CAST(COALESCE(C.bookmark, 0) AS INTEGER) AS bookmark,
+    COALESCE(C.last_page_read, 0) AS last_page_read,
+    COALESCE(C.chapter_number, 0.0) AS chapter_number,
+    COALESCE(C.source_order, 0) AS source_order,
+    COALESCE(C.date_fetch, 0) AS date_fetch,
+    COALESCE(C.date_upload, 0) AS date_upload,
+    COALESCE(C.last_modified_at, 0) AS last_modified_at,
+    COALESCE(C.version, 0) AS version,
+    COALESCE(C.is_syncing, 0) AS is_syncing,
+    COALESCE(C.memo, CAST('{}' AS BLOB)) AS memo
+FROM chapters C
+WHERE C.manga_id IN :mangaIds
+ORDER BY C.manga_id, C._id;
+
+selectBackupCategoriesByMangaIds:
+SELECT
+    MC.manga_id,
+    C.sort AS `order`
+FROM categories C
+JOIN mangas_categories MC
+ON C._id = MC.category_id
+WHERE MC.manga_id IN :mangaIds
+ORDER BY MC.manga_id, C.sort;
+
+selectBackupHistoryByMangaIds:
+SELECT
+    C.manga_id,
+    C.url,
+    H.last_read,
+    H.time_read
+FROM history H
+JOIN chapters C
+ON H.chapter_id = C._id
+WHERE C.manga_id IN :mangaIds
+ORDER BY C.manga_id, C._id;
+
+selectBackupExcludedScanlatorsByMangaIds:
+SELECT
+    manga_id,
+    scanlator
+FROM excluded_scanlators
+WHERE manga_id IN :mangaIds
+ORDER BY manga_id;
+
+selectBackupMergedByMangaIds:
+SELECT
+    _id,
+    info_manga,
+    get_chapter_updates,
+    chapter_sort_mode,
+    chapter_priority,
+    download_chapters,
+    merge_id,
+    merge_url,
+    manga_id,
+    manga_url,
+    manga_source
+FROM merged
+WHERE merge_id IN :mergeIds
+ORDER BY merge_id;
+
+selectBackupSearchMetadataByMangaIds:
+SELECT
+    manga_id,
+    uploader,
+    extra,
+    indexed_extra,
+    extra_version
+FROM search_metadata
+WHERE manga_id IN :mangaIds
+ORDER BY manga_id;
+
+selectBackupSearchTagsByMangaIds:
+SELECT
+    manga_id,
+    _id,
+    namespace,
+    name,
+    type
+FROM search_tags
+WHERE manga_id IN :mangaIds
+ORDER BY manga_id;
+
+selectBackupSearchTitlesByMangaIds:
+SELECT
+    manga_id,
+    _id,
+    title,
+    type
+FROM search_titles
+WHERE manga_id IN :mangaIds
+ORDER BY manga_id;

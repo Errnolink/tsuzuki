@@ -1,0 +1,199 @@
+<UserControl
+    x:Class="Tsuzuki.App.Pages.BrushesProbePage"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+  <ScrollViewer x:Name="Scroller" Background="{ThemeResource TzBackground}">
+    <StackPanel x:Name="Rows" Padding="16,14,16,14" Spacing="10">
+      <Grid ColumnSpacing="14">
+        <Grid.ColumnDefinitions>
+          <ColumnDefinition Width="150" />
+          <ColumnDefinition Width="210" />
+          <ColumnDefinition Width="210" />
+        </Grid.ColumnDefinitions>
+        <TextBlock Text="brush guard · code | xaml" FontSize="12" Foreground="{ThemeResource TzTextSecondary}" VerticalAlignment="Center" />
+      </Grid>
+      <Grid ColumnSpacing="14">
+        <Grid.ColumnDefinitions>
+          <ColumnDefinition Width="150" />
+          <ColumnDefinition Width="210" />
+          <ColumnDefinition Width="210" />
+        </Grid.ColumnDefinitions>
+        <TextBlock Text="TzBackground" FontSize="12" Foreground="{ThemeResource TzText}" VerticalAlignment="Center" />
+        <Border Grid.Column="1" Height="44" BorderBrush="#FF00FF" BorderThickness="2">
+          <Border x:Name="CodeTzBackground" />
+        </Border>
+        <Border Grid.Column="2" Height="44" BorderBrush="#FF00FF" BorderThickness="2">
+          <Border Background="{ThemeResource TzBackground}" />
+        </Border>
+      </Grid>
+      <Grid ColumnSpacing="14">
+        <Grid.ColumnDefinitions>
+          <ColumnDefinition Width="150" />
+          <ColumnDefinition Width="210" />
+          <ColumnDefinition Width="210" />
+        </Grid.ColumnDefinitions>
+        <TextBlock Text="TzCard" FontSize="12" Foreground="{ThemeResource TzText}" VerticalAlignment="Center" />
+        <Border Grid.Column="1" Height="44" BorderBrush="#FF00FF" BorderThickness="2">
+          <Border x:Name="CodeTzCard" />
+        </Border>
+        <Border Grid.Column="2" Height="44" BorderBrush="#FF00FF" BorderThickness="2">
+          <Border Background="{ThemeResource TzCard}" />
+        </Border>
+      </Grid>
+      <Grid ColumnSpacing="14">
+        <Grid.ColumnDefinitions>
+          <ColumnDefinition Width="150" />
+          <ColumnDefinition Width="210" />
+          <ColumnDefinition Width="210" />
+        </Grid.ColumnDefinitions>
+        <TextBlock Text="TzChipBackground" FontSize="12" Foreground="{ThemeResource TzText}" VerticalAlignment="Center" />
+        <Border Grid.Column="1" Height="44" BorderBrush="#FF00FF" BorderThickness="2">
+          <Border x:Name="CodeTzChipBackground" />
+        </Border>
+        <Border Grid.Column="2" Height="44" BorderBrush="#FF00FF" BorderThickness="2">
+          <Border Background="{ThemeResource TzChipBackground}" />
+        </Border>
+      </Grid>
+      <Grid ColumnSpacing="14">
+        <Grid.ColumnDefinitions>
+          <ColumnDefinition Width="150" />
+          <ColumnDefinition Width="210" />
+          <ColumnDefinition Width="210" />
+        </Grid.ColumnDefinitions>
+        <TextBlock Text="TzText" FontSize="12" Foreground="{ThemeResource TzText}" VerticalAlignment="Center" />
+        <Border Grid.Column="1" Height="44" BorderBrush="#FF00FF" BorderThickness="2">
+          <Border x:Name="CodeTzText" />
+        </Border>
+        <Border Grid.Column="2" Height="44" BorderBrush="#FF00FF" BorderThickness="2">
+          <Border Background="{ThemeResource TzText}" />
+        </Border>
+      </Grid>
+      <Grid ColumnSpacing="14">
+        <Grid.ColumnDefinitions>
+          <ColumnDefinition Width="150" />
+          <ColumnDefinition Width="210" />
+          <ColumnDefinition Width="210" />
+        </Grid.ColumnDefinitions>
+        <TextBlock Text="TzTextSecondary" FontSize="12" Foreground="{ThemeResource TzText}" VerticalAlignment="Center" />
+        <Border Grid.Column="1" Height="44" BorderBrush="#FF00FF" BorderThickness="2">
+          <Border x:Name="CodeTzTextSecondary" />
+        </Border>
+        <Border Grid.Column="2" Height="44" BorderBrush="#FF00FF" BorderThickness="2">
+          <Border Background="{ThemeResource TzTextSecondary}" />
+        </Border>
+      </Grid>
+      <Grid ColumnSpacing="14">
+        <Grid.ColumnDefinitions>
+          <ColumnDefinition Width="150" />
+          <ColumnDefinition Width="210" />
+          <ColumnDefinition Width="210" />
+        </Grid.ColumnDefinitions>
+        <TextBlock Text="TzTextTertiary" FontSize="12" Foreground="{ThemeResource TzText}" VerticalAlignment="Center" />
+        <Border Grid.Column="1" Height="44" BorderBrush="#FF00FF" BorderThickness="2">
+          <Border x:Name="CodeTzTextTertiary" />
+        </Border>
+        <Border Grid.Column="2" Height="44" BorderBrush="#FF00FF" BorderThickness="2">
+          <Border Background="{ThemeResource TzTextTertiary}" />
+        </Border>
+      </Grid>
+      <Grid ColumnSpacing="14">
+        <Grid.ColumnDefinitions>
+          <ColumnDefinition Width="150" />
+          <ColumnDefinition Width="210" />
+          <ColumnDefinition Width="210" />
+        </Grid.ColumnDefinitions>
+        <TextBlock Text="TzStroke" FontSize="12" Foreground="{ThemeResource TzText}" VerticalAlignment="Center" />
+        <Border Grid.Column="1" Height="44" BorderBrush="#FF00FF" BorderThickness="2">
+          <Border x:Name="CodeTzStroke" />
+        </Border>
+        <Border Grid.Column="2" Height="44" BorderBrush="#FF00FF" BorderThickness="2">
+          <Border Background="{ThemeResource TzStroke}" />
+        </Border>
+      </Grid>
+      <Grid ColumnSpacing="14">
+        <Grid.ColumnDefinitions>
+          <ColumnDefinition Width="150" />
+          <ColumnDefinition Width="210" />
+          <ColumnDefinition Width="210" />
+        </Grid.ColumnDefinitions>
+        <TextBlock Text="TzStrokeStrong" FontSize="12" Foreground="{ThemeResource TzText}" VerticalAlignment="Center" />
+        <Border Grid.Column="1" Height="44" BorderBrush="#FF00FF" BorderThickness="2">
+          <Border x:Name="CodeTzStrokeStrong" />
+        </Border>
+        <Border Grid.Column="2" Height="44" BorderBrush="#FF00FF" BorderThickness="2">
+          <Border Background="{ThemeResource TzStrokeStrong}" />
+        </Border>
+      </Grid>
+      <Grid ColumnSpacing="14">
+        <Grid.ColumnDefinitions>
+          <ColumnDefinition Width="150" />
+          <ColumnDefinition Width="210" />
+          <ColumnDefinition Width="210" />
+        </Grid.ColumnDefinitions>
+        <TextBlock Text="TzAccent" FontSize="12" Foreground="{ThemeResource TzText}" VerticalAlignment="Center" />
+        <Border Grid.Column="1" Height="44" BorderBrush="#FF00FF" BorderThickness="2">
+          <Border x:Name="CodeTzAccent" />
+        </Border>
+        <Border Grid.Column="2" Height="44" BorderBrush="#FF00FF" BorderThickness="2">
+          <Border Background="{ThemeResource TzAccent}" />
+        </Border>
+      </Grid>
+      <Grid ColumnSpacing="14">
+        <Grid.ColumnDefinitions>
+          <ColumnDefinition Width="150" />
+          <ColumnDefinition Width="210" />
+          <ColumnDefinition Width="210" />
+        </Grid.ColumnDefinitions>
+        <TextBlock Text="TzAccentSoft" FontSize="12" Foreground="{ThemeResource TzText}" VerticalAlignment="Center" />
+        <Border Grid.Column="1" Height="44" BorderBrush="#FF00FF" BorderThickness="2">
+          <Border x:Name="CodeTzAccentSoft" />
+        </Border>
+        <Border Grid.Column="2" Height="44" BorderBrush="#FF00FF" BorderThickness="2">
+          <Border Background="{ThemeResource TzAccentSoft}" />
+        </Border>
+      </Grid>
+      <Grid ColumnSpacing="14">
+        <Grid.ColumnDefinitions>
+          <ColumnDefinition Width="150" />
+          <ColumnDefinition Width="210" />
+          <ColumnDefinition Width="210" />
+        </Grid.ColumnDefinitions>
+        <TextBlock Text="TzSkeleton" FontSize="12" Foreground="{ThemeResource TzText}" VerticalAlignment="Center" />
+        <Border Grid.Column="1" Height="44" BorderBrush="#FF00FF" BorderThickness="2">
+          <Border x:Name="CodeTzSkeleton" />
+        </Border>
+        <Border Grid.Column="2" Height="44" BorderBrush="#FF00FF" BorderThickness="2">
+          <Border Background="{ThemeResource TzSkeleton}" />
+        </Border>
+      </Grid>
+      <Grid ColumnSpacing="14">
+        <Grid.ColumnDefinitions>
+          <ColumnDefinition Width="150" />
+          <ColumnDefinition Width="210" />
+          <ColumnDefinition Width="210" />
+        </Grid.ColumnDefinitions>
+        <TextBlock Text="TzReaderBackground" FontSize="12" Foreground="{ThemeResource TzText}" VerticalAlignment="Center" />
+        <Border Grid.Column="1" Height="44" BorderBrush="#FF00FF" BorderThickness="2">
+          <Border x:Name="CodeTzReaderBackground" />
+        </Border>
+        <Border Grid.Column="2" Height="44" BorderBrush="#FF00FF" BorderThickness="2">
+          <Border Background="{ThemeResource TzReaderBackground}" />
+        </Border>
+      </Grid>
+      <Grid ColumnSpacing="14">
+        <Grid.ColumnDefinitions>
+          <ColumnDefinition Width="150" />
+          <ColumnDefinition Width="210" />
+          <ColumnDefinition Width="210" />
+        </Grid.ColumnDefinitions>
+        <TextBlock Text="TzReaderChrome" FontSize="12" Foreground="{ThemeResource TzText}" VerticalAlignment="Center" />
+        <Border Grid.Column="1" Height="44" BorderBrush="#FF00FF" BorderThickness="2">
+          <Border x:Name="CodeTzReaderChrome" />
+        </Border>
+        <Border Grid.Column="2" Height="44" BorderBrush="#FF00FF" BorderThickness="2">
+          <Border Background="{ThemeResource TzReaderChrome}" />
+        </Border>
+      </Grid>
+    </StackPanel>
+  </ScrollViewer>
+</UserControl>

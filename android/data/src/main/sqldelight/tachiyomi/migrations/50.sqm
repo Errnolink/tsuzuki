@@ -1,0 +1,1 @@
+CREATE INDEX idx_chapters_last_modified_at ON chapters(last_modified_at);

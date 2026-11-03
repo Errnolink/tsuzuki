@@ -1,0 +1,63 @@
+ALTER TABLE categories ADD COLUMN uid INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE categories ADD COLUMN version INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE categories ADD COLUMN last_modified_at INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE categories ADD COLUMN is_syncing INTEGER NOT NULL DEFAULT 0;
+
+UPDATE categories SET uid = (random() & 9223372036854775807), version = 1,
+    last_modified_at = strftime('%s', 'now') WHERE _id > 0;
+
+CREATE TRIGGER category_sync_identity AFTER INSERT ON categories
+WHEN new._id > 0 AND new.uid = 0
+BEGIN
+    UPDATE categories SET uid = (random() & 9223372036854775807),
+        version = 1, last_modified_at = strftime('%s', 'now') WHERE _id = new._id;
+END;
+
+CREATE TRIGGER category_sync_version AFTER UPDATE ON categories
+WHEN new._id > 0 AND new.is_syncing = 0 AND (
+    new.name != old.name OR new.sort != old.sort OR new.flags != old.flags OR new.hidden != old.hidden
+)
+BEGIN
+    UPDATE categories SET version = old.version + 1,
+        last_modified_at = strftime('%s', 'now') WHERE _id = new._id;
+END;
+
+DROP TRIGGER update_last_favorited_at_mangas;
+CREATE TRIGGER update_last_favorited_at_mangas AFTER UPDATE OF favorite ON mangas
+WHEN new.is_syncing = 0 AND old.is_syncing = 0 AND new.favorite != old.favorite
+BEGIN
+    UPDATE mangas SET favorite_modified_at = strftime('%s', 'now') WHERE _id = new._id;
+END;
+
+DROP TRIGGER update_last_modified_at_mangas;
+CREATE TRIGGER update_last_modified_at_mangas AFTER UPDATE ON mangas
+FOR EACH ROW WHEN new.is_syncing = 0 AND old.is_syncing = 0
+BEGIN
+    UPDATE mangas SET last_modified_at = strftime('%s', 'now') WHERE _id = new._id;
+END;
+
+DROP TRIGGER update_last_modified_at_chapters;
+CREATE TRIGGER update_last_modified_at_chapters AFTER UPDATE ON chapters
+FOR EACH ROW WHEN new.is_syncing = 0 AND old.is_syncing = 0
+BEGIN
+    UPDATE chapters SET last_modified_at = strftime('%s', 'now') WHERE _id = new._id;
+END;
+
+CREATE TRIGGER merged_insert_version AFTER INSERT ON merged
+BEGIN
+    UPDATE mangas SET version = version + 1 WHERE _id = new.merge_id AND is_syncing = 0;
+END;
+
+CREATE TRIGGER merged_update_version AFTER UPDATE ON merged
+WHEN new.info_manga != old.info_manga OR new.get_chapter_updates != old.get_chapter_updates
+    OR new.chapter_sort_mode != old.chapter_sort_mode OR new.chapter_priority != old.chapter_priority
+    OR new.download_chapters != old.download_chapters OR new.manga_url != old.manga_url
+    OR new.manga_source != old.manga_source OR new.merge_url != old.merge_url
+BEGIN
+    UPDATE mangas SET version = version + 1 WHERE _id = new.merge_id AND is_syncing = 0;
+END;
+
+CREATE TRIGGER merged_delete_version AFTER DELETE ON merged
+BEGIN
+    UPDATE mangas SET version = version + 1 WHERE _id = old.merge_id AND is_syncing = 0;
+END;

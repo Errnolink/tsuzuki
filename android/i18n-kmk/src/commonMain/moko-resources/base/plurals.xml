@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <plurals name="ext_sync_installing">
+        <item quantity="one">Installing %1$d extension…</item>
+        <item quantity="other">Installing %1$d extensions…</item>
+    </plurals>
+</resources>

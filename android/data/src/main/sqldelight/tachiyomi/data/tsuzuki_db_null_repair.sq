@@ -1,0 +1,74 @@
+deleteOrphanedChapters:
+DELETE FROM chapters
+WHERE manga_id IS NULL;
+
+repairNullChapterColumns:
+UPDATE chapters
+SET
+    url = COALESCE(url, ''),
+    name = COALESCE(name, ''),
+    read = COALESCE(read, 0),
+    bookmark = COALESCE(bookmark, 0),
+    last_page_read = COALESCE(last_page_read, 0),
+    chapter_number = COALESCE(chapter_number, 0.0),
+    source_order = COALESCE(source_order, 0),
+    date_fetch = COALESCE(date_fetch, 0),
+    date_upload = COALESCE(date_upload, 0),
+    last_modified_at = COALESCE(last_modified_at, 0),
+    version = COALESCE(version, 0),
+    is_syncing = COALESCE(is_syncing, 0),
+    memo = COALESCE(memo, CAST('{}' AS BLOB))
+WHERE url IS NULL
+    OR name IS NULL
+    OR read IS NULL
+    OR bookmark IS NULL
+    OR last_page_read IS NULL
+    OR chapter_number IS NULL
+    OR source_order IS NULL
+    OR date_fetch IS NULL
+    OR date_upload IS NULL
+    OR last_modified_at IS NULL
+    OR version IS NULL
+    OR is_syncing IS NULL
+    OR memo IS NULL;
+
+repairNullMangaColumns:
+UPDATE mangas
+SET
+    source = COALESCE(source, 0),
+    url = COALESCE(url, ''),
+    title = COALESCE(title, ''),
+    status = COALESCE(status, 0),
+    favorite = COALESCE(favorite, 0),
+    initialized = COALESCE(initialized, 0),
+    viewer = COALESCE(viewer, 0),
+    chapter_flags = COALESCE(chapter_flags, 0),
+    cover_last_modified = COALESCE(cover_last_modified, 0),
+    date_added = COALESCE(date_added, 0),
+    update_strategy = COALESCE(update_strategy, 0),
+    calculate_interval = COALESCE(calculate_interval, 0),
+    last_modified_at = COALESCE(last_modified_at, 0),
+    version = COALESCE(version, 0),
+    is_syncing = COALESCE(is_syncing, 0),
+    notes = COALESCE(notes, ''),
+    memo = COALESCE(memo, CAST('{}' AS BLOB))
+WHERE source IS NULL
+    OR url IS NULL
+    OR title IS NULL
+    OR status IS NULL
+    OR favorite IS NULL
+    OR initialized IS NULL
+    OR viewer IS NULL
+    OR chapter_flags IS NULL
+    OR cover_last_modified IS NULL
+    OR date_added IS NULL
+    OR update_strategy IS NULL
+    OR calculate_interval IS NULL
+    OR last_modified_at IS NULL
+    OR version IS NULL
+    OR is_syncing IS NULL
+    OR notes IS NULL
+    OR memo IS NULL;
+
+selectNullRepairCount:
+SELECT changes();

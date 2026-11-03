@@ -1,0 +1,176 @@
+<ResourceDictionary
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:c="using:Tsuzuki.App.Controls">
+  <DataTemplate x:Key="TzTileTemplate">
+    <c:MangaTile Data="{Binding}" />
+  </DataTemplate>
+  <DataTemplate x:Key="TzMediaRowTemplate">
+    <c:MediaRow Data="{Binding}" />
+  </DataTemplate>
+  <DataTemplate x:Key="TzSectionHeaderTemplate">
+    <c:SectionHeader Text="{Binding}" />
+  </DataTemplate>
+  <Style x:Key="TzButtonBase" TargetType="Button">
+    <Setter Property="Background" Value="Transparent" />
+    <Setter Property="Foreground" Value="{ThemeResource TzText}" />
+    <Setter Property="BorderBrush" Value="Transparent" />
+    <Setter Property="BorderThickness" Value="0" />
+    <Setter Property="Padding" Value="16,0" />
+    <Setter Property="MinHeight" Value="40" />
+    <Setter Property="CornerRadius" Value="{StaticResource TzPillRadius}" />
+    <Setter Property="FontFamily" Value="{StaticResource TzTextFont}" />
+    <Setter Property="FontSize" Value="14" />
+    <Setter Property="FontWeight" Value="SemiBold" />
+    <Setter Property="HorizontalContentAlignment" Value="Center" />
+    <Setter Property="VerticalContentAlignment" Value="Center" />
+    <Setter Property="UseSystemFocusVisuals" Value="True" />
+    <Setter Property="FocusVisualMargin" Value="-3" />
+    <Setter Property="Template">
+      <Setter.Value>
+      <ControlTemplate TargetType="Button">
+        <Grid x:Name="Root" Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}"
+              BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="{TemplateBinding CornerRadius}">
+          <Grid.BackgroundTransition><BrushTransition Duration="0:0:0.15" /></Grid.BackgroundTransition>
+          <Border x:Name="State" Background="{ThemeResource TzStateHover}" Opacity="0" CornerRadius="{TemplateBinding CornerRadius}">
+            <Border.OpacityTransition><ScalarTransition Duration="0:0:0.1" /></Border.OpacityTransition>
+          </Border>
+          <ContentPresenter x:Name="Content" Padding="{TemplateBinding Padding}"
+              HorizontalContentAlignment="{TemplateBinding HorizontalContentAlignment}"
+              VerticalContentAlignment="{TemplateBinding VerticalContentAlignment}"
+              Foreground="{TemplateBinding Foreground}"
+              Content="{TemplateBinding Content}" ContentTemplate="{TemplateBinding ContentTemplate}"
+              ContentTransitions="{TemplateBinding ContentTransitions}" />
+          <VisualStateManager.VisualStateGroups>
+            <VisualStateGroup x:Name="CommonStates">
+              <VisualState x:Name="Normal" />
+              <VisualState x:Name="PointerOver">
+                <VisualState.Setters><Setter Target="State.Opacity" Value="1" /></VisualState.Setters>
+              </VisualState>
+              <VisualState x:Name="Pressed">
+                <VisualState.Setters>
+                  <Setter Target="State.Opacity" Value="1" />
+                  <Setter Target="State.Background" Value="{ThemeResource TzStatePressed}" />
+                </VisualState.Setters>
+              </VisualState>
+              <VisualState x:Name="Disabled">
+                <VisualState.Setters><Setter Target="Root.Opacity" Value="0.4" /></VisualState.Setters>
+              </VisualState>
+            </VisualStateGroup>
+          </VisualStateManager.VisualStateGroups>
+        </Grid>
+      </ControlTemplate>
+      </Setter.Value>
+    </Setter>
+  </Style>
+  <Style x:Key="TzAccentButton" TargetType="Button" BasedOn="{StaticResource TzButtonBase}">
+    <Setter Property="Background" Value="{ThemeResource TzAccent}" />
+    <Setter Property="Foreground" Value="{ThemeResource TzOnAccent}" />
+  </Style>
+  <Style x:Key="TzTonalButton" TargetType="Button" BasedOn="{StaticResource TzButtonBase}">
+    <Setter Property="Background" Value="{ThemeResource TzAccentSoft}" />
+    <Setter Property="Foreground" Value="{ThemeResource TzAccent}" />
+  </Style>
+  <Style x:Key="TzSoftButton" TargetType="Button" BasedOn="{StaticResource TzButtonBase}">
+    <Setter Property="Background" Value="{ThemeResource TzCard}" />
+    <Setter Property="BorderBrush" Value="{ThemeResource TzStroke}" />
+    <Setter Property="BorderThickness" Value="1" />
+  </Style>
+  <Style x:Key="TzGhostButton" TargetType="Button" BasedOn="{StaticResource TzButtonBase}">
+    <Setter Property="Padding" Value="12,0" />
+  </Style>
+  <Style x:Key="TzIconButton" TargetType="Button" BasedOn="{StaticResource TzButtonBase}">
+    <Setter Property="Padding" Value="0" />
+    <Setter Property="Width" Value="40" />
+    <Setter Property="Height" Value="40" />
+    <Setter Property="MinHeight" Value="0" />
+    <Setter Property="Foreground" Value="{ThemeResource TzTextSecondary}" />
+  </Style>
+  <Style x:Key="TzRowButton" TargetType="Button" BasedOn="{StaticResource TzButtonBase}">
+    <Setter Property="Padding" Value="0" />
+    <Setter Property="MinHeight" Value="0" />
+    <Setter Property="FontWeight" Value="Normal" />
+    <Setter Property="CornerRadius" Value="{StaticResource TzControlRadius}" />
+    <Setter Property="HorizontalAlignment" Value="Stretch" />
+    <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+    <Setter Property="FocusVisualMargin" Value="0" />
+  </Style>
+  <Style x:Key="TzChip" TargetType="ToggleButton">
+    <Setter Property="Background" Value="{ThemeResource TzChipBackground}" />
+    <Setter Property="Foreground" Value="{ThemeResource TzTextSecondary}" />
+    <Setter Property="BorderBrush" Value="{ThemeResource TzStrokeStrong}" />
+    <Setter Property="BorderThickness" Value="1" />
+    <Setter Property="Padding" Value="14,0" />
+    <Setter Property="MinHeight" Value="36" />
+    <Setter Property="CornerRadius" Value="16" />
+    <Setter Property="FontFamily" Value="{StaticResource TzTextFont}" />
+    <Setter Property="FontSize" Value="13" />
+    <Setter Property="FontWeight" Value="SemiBold" />
+    <Setter Property="HorizontalContentAlignment" Value="Center" />
+    <Setter Property="VerticalContentAlignment" Value="Center" />
+    <Setter Property="UseSystemFocusVisuals" Value="True" />
+    <Setter Property="Template">
+      <Setter.Value>
+      <ControlTemplate TargetType="ToggleButton">
+        <Grid x:Name="Root" Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}"
+              BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="{TemplateBinding CornerRadius}">
+          <Grid.BackgroundTransition><BrushTransition Duration="0:0:0.15" /></Grid.BackgroundTransition>
+          <Border x:Name="State" Background="{ThemeResource TzStateHover}" Opacity="0" CornerRadius="{TemplateBinding CornerRadius}">
+            <Border.OpacityTransition><ScalarTransition Duration="0:0:0.1" /></Border.OpacityTransition>
+          </Border>
+          <ContentPresenter x:Name="Content" Padding="{TemplateBinding Padding}"
+              HorizontalContentAlignment="{TemplateBinding HorizontalContentAlignment}"
+              VerticalContentAlignment="{TemplateBinding VerticalContentAlignment}"
+              Foreground="{TemplateBinding Foreground}"
+              Content="{TemplateBinding Content}" ContentTemplate="{TemplateBinding ContentTemplate}"
+              ContentTransitions="{TemplateBinding ContentTransitions}" />
+          <VisualStateManager.VisualStateGroups>
+            <VisualStateGroup x:Name="CommonStates">
+              <VisualState x:Name="Normal" />
+              <VisualState x:Name="PointerOver">
+                <VisualState.Setters><Setter Target="State.Opacity" Value="1" /></VisualState.Setters>
+              </VisualState>
+              <VisualState x:Name="Pressed">
+                <VisualState.Setters>
+                  <Setter Target="State.Opacity" Value="1" />
+                  <Setter Target="State.Background" Value="{ThemeResource TzStatePressed}" />
+                </VisualState.Setters>
+              </VisualState>
+              <VisualState x:Name="Disabled">
+                <VisualState.Setters><Setter Target="Root.Opacity" Value="0.4" /></VisualState.Setters>
+              </VisualState>
+              <VisualState x:Name="Checked">
+                <VisualState.Setters>
+                  <Setter Target="Root.Background" Value="{ThemeResource TzAccentSoft}" />
+                  <Setter Target="Content.Foreground" Value="{ThemeResource TzAccent}" />
+                </VisualState.Setters>
+              </VisualState>
+              <VisualState x:Name="CheckedPointerOver">
+                <VisualState.Setters>
+                  <Setter Target="Root.Background" Value="{ThemeResource TzAccentSoft}" />
+                  <Setter Target="Content.Foreground" Value="{ThemeResource TzAccent}" />
+                  <Setter Target="State.Opacity" Value="1" />
+                </VisualState.Setters>
+              </VisualState>
+              <VisualState x:Name="CheckedPressed">
+                <VisualState.Setters>
+                  <Setter Target="Root.Background" Value="{ThemeResource TzAccentSoft}" />
+                  <Setter Target="Content.Foreground" Value="{ThemeResource TzAccent}" />
+                  <Setter Target="State.Opacity" Value="1" />
+                  <Setter Target="State.Background" Value="{ThemeResource TzStatePressed}" />
+                </VisualState.Setters>
+              </VisualState>
+              <VisualState x:Name="CheckedDisabled">
+                <VisualState.Setters>
+                  <Setter Target="Root.Background" Value="{ThemeResource TzAccentSoft}" />
+                  <Setter Target="Root.Opacity" Value="0.4" />
+                </VisualState.Setters>
+              </VisualState>
+            </VisualStateGroup>
+          </VisualStateManager.VisualStateGroups>
+        </Grid>
+      </ControlTemplate>
+      </Setter.Value>
+    </Setter>
+  </Style>
+</ResourceDictionary>

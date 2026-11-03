@@ -1,0 +1,10 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <application>
+        <activity
+            android:name="dev.errnolink.tsuzuki.designsystem.DesignGalleryActivity"
+            android:exported="true"
+            android:label="Tsuzuki Design Gallery"
+            android:theme="@android:style/Theme.DeviceDefault.NoActionBar"
+            android:windowSoftInputMode="adjustResize" />
+    </application>
+</manifest>

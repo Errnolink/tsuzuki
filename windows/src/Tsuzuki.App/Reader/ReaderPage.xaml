@@ -1,0 +1,128 @@
+<UserControl
+    x:Class="Tsuzuki.App.Reader.ReaderPage"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    IsTabStop="True">
+  <Grid x:Name="Root" Background="{ThemeResource TzReaderBackground}">
+    <ScrollView x:Name="PagedScroll" ZoomMode="Enabled" MinZoomFactor="1" MaxZoomFactor="6"
+                HorizontalScrollMode="Auto" VerticalScrollMode="Auto"
+                HorizontalScrollBarVisibility="Hidden" VerticalScrollBarVisibility="Auto"
+                ContentOrientation="None">
+      <Grid x:Name="PagedContent">
+        <Grid x:Name="Spread" HorizontalAlignment="Center" VerticalAlignment="Center" ColumnSpacing="0">
+          <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="Auto" />
+            <ColumnDefinition Width="Auto" />
+          </Grid.ColumnDefinitions>
+          <Image x:Name="PageLeft" Stretch="Fill" />
+          <Image x:Name="PageRight" Grid.Column="1" Stretch="Fill" />
+          <Border x:Name="Spine" Grid.ColumnSpan="2" Width="44" HorizontalAlignment="Center" IsHitTestVisible="False" Visibility="Collapsed">
+            <Border.Background>
+              <LinearGradientBrush StartPoint="0,0" EndPoint="1,0">
+                <GradientStop Color="#00000000" Offset="0" />
+                <GradientStop Color="#2E000000" Offset="0.5" />
+                <GradientStop Color="#00000000" Offset="1" />
+              </LinearGradientBrush>
+            </Border.Background>
+          </Border>
+        </Grid>
+      </Grid>
+    </ScrollView>
+
+    <ScrollView x:Name="StripScroll" Visibility="Collapsed" ZoomMode="Enabled" MinZoomFactor="0.5" MaxZoomFactor="4"
+                HorizontalScrollMode="Auto" VerticalScrollMode="Enabled"
+                HorizontalScrollBarVisibility="Hidden" VerticalScrollBarVisibility="Auto">
+      <ItemsRepeater x:Name="Strip" HorizontalAlignment="Center">
+        <ItemsRepeater.Layout>
+          <StackLayout Spacing="0" />
+        </ItemsRepeater.Layout>
+      </ItemsRepeater>
+    </ScrollView>
+
+    <ProgressRing x:Name="LoadingRing" Width="36" Height="36" IsActive="False" Foreground="White" />
+
+    <StackPanel x:Name="Message" Visibility="Collapsed" HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="12" MaxWidth="420">
+      <TextBlock x:Name="MessageTitle" Style="{StaticResource TzTitle}" Foreground="White" HorizontalAlignment="Center" TextAlignment="Center" TextWrapping="Wrap" />
+      <TextBlock x:Name="MessageBody" Style="{StaticResource TzBody}" Foreground="#B0FFFFFF" HorizontalAlignment="Center" TextAlignment="Center" TextWrapping="Wrap" />
+      <Button x:Name="MessageAction" Style="{StaticResource TzAccentButton}" HorizontalAlignment="Center" Content="Try again" />
+    </StackPanel>
+
+    <Border x:Name="EndCard" Visibility="Collapsed" HorizontalAlignment="Center" VerticalAlignment="Center" CornerRadius="20" Padding="28,24" MinWidth="360"
+            Background="{ThemeResource TzReaderChrome}" BorderBrush="#24FFFFFF" BorderThickness="1">
+      <StackPanel Spacing="6">
+        <TextBlock Text="END OF CHAPTER" Style="{StaticResource TzKicker}" Foreground="#99FFFFFF" />
+        <TextBlock x:Name="EndTitle" Style="{StaticResource TzTitle}" Foreground="White" TextWrapping="Wrap" />
+        <TextBlock x:Name="EndBody" Style="{StaticResource TzCaption}" Foreground="#B0FFFFFF" TextWrapping="Wrap" />
+        <StackPanel Orientation="Horizontal" Spacing="10" Margin="0,14,0,0">
+          <Button x:Name="EndNext" Style="{StaticResource TzAccentButton}" Content="Next chapter" />
+          <Button x:Name="EndClose" Style="{StaticResource TzSoftButton}" Content="Back to details" />
+        </StackPanel>
+      </StackPanel>
+    </Border>
+
+    <Grid x:Name="TopBar" VerticalAlignment="Top" Height="56" Padding="10,0,0,0" ColumnSpacing="6"
+          Background="{ThemeResource TzReaderChrome}" BorderBrush="#18FFFFFF" BorderThickness="0,0,0,1">
+      <Grid.ColumnDefinitions>
+        <ColumnDefinition Width="Auto" />
+        <ColumnDefinition Width="Auto" />
+        <ColumnDefinition Width="*" />
+        <ColumnDefinition Width="Auto" />
+        <ColumnDefinition x:Name="CaptionSpace" Width="140" />
+      </Grid.ColumnDefinitions>
+      <Button x:Name="BackButton" Style="{StaticResource TzIconButton}" Foreground="White" ToolTipService.ToolTip="Close reader (Esc)" VerticalAlignment="Center">
+        <FontIcon Glyph="&#xE048;" FontFamily="{StaticResource TzIconFont}" FontSize="18" />
+      </Button>
+      <StackPanel Grid.Column="1" VerticalAlignment="Center" Margin="6,0,0,0" MaxWidth="520">
+        <TextBlock x:Name="TitleLine" Style="{StaticResource TzBodyStrong}" Foreground="White" />
+        <TextBlock x:Name="ChapterLine" Style="{StaticResource TzCaption}" Foreground="#A8FFFFFF" />
+      </StackPanel>
+      <Grid x:Name="DragArea" Grid.Column="2" Background="Transparent" />
+      <StackPanel Grid.Column="3" Orientation="Horizontal" Spacing="2" VerticalAlignment="Center">
+        <Button x:Name="ModeSingle" Style="{StaticResource TzIconButton}" Foreground="White" ToolTipService.ToolTip="Single page (1)">
+          <FontIcon Glyph="&#xE167;" FontFamily="{StaticResource TzIconFont}" FontSize="16" />
+        </Button>
+        <Button x:Name="ModeDouble" Style="{StaticResource TzIconButton}" Foreground="White" ToolTipService.ToolTip="Two pages (2)">
+          <FontIcon Glyph="&#xE098;" FontFamily="{StaticResource TzIconFont}" FontSize="16" />
+        </Button>
+        <Button x:Name="ModeStrip" Style="{StaticResource TzIconButton}" Foreground="White" ToolTipService.ToolTip="Long strip (3)">
+          <FontIcon Glyph="&#xE4D1;" FontFamily="{StaticResource TzIconFont}" FontSize="16" />
+        </Button>
+        <Border Width="1" Height="20" Background="#26FFFFFF" Margin="6,0" />
+        <Button x:Name="DirectionButton" Style="{StaticResource TzIconButton}" Foreground="White" Width="Auto" Padding="10,0" ToolTipService.ToolTip="Reading direction (R)">
+          <TextBlock x:Name="DirectionText" Text="RTL" FontSize="12" FontWeight="SemiBold" />
+        </Button>
+        <Button x:Name="FitButton" Style="{StaticResource TzIconButton}" Foreground="White" ToolTipService.ToolTip="Fit (F)">
+          <FontIcon x:Name="FitIcon" Glyph="&#xE112;" FontFamily="{StaticResource TzIconFont}" FontSize="16" />
+        </Button>
+        <Button x:Name="FullscreenButton" Style="{StaticResource TzIconButton}" Foreground="White" ToolTipService.ToolTip="Full screen (F11)">
+          <FontIcon Glyph="&#xE534;" FontFamily="{StaticResource TzIconFont}" FontSize="16" />
+        </Button>
+      </StackPanel>
+    </Grid>
+
+    <Grid x:Name="BottomBar" VerticalAlignment="Bottom" HorizontalAlignment="Center" Margin="0,0,0,22" Padding="8,6" CornerRadius="26" ColumnSpacing="10" MinWidth="560" MaxWidth="860"
+          Background="{ThemeResource TzReaderChrome}" BorderBrush="#20FFFFFF" BorderThickness="1">
+      <Grid.ColumnDefinitions>
+        <ColumnDefinition Width="Auto" />
+        <ColumnDefinition Width="Auto" />
+        <ColumnDefinition Width="*" />
+        <ColumnDefinition Width="Auto" />
+        <ColumnDefinition Width="Auto" />
+      </Grid.ColumnDefinitions>
+      <Button x:Name="PrevChapter" Style="{StaticResource TzIconButton}" Foreground="White" ToolTipService.ToolTip="Previous chapter ([)">
+        <FontIcon Glyph="&#xE06E;" FontFamily="{StaticResource TzIconFont}" FontSize="17" />
+      </Button>
+      <TextBlock x:Name="PageLabel" Grid.Column="1" Foreground="White" FontSize="13" FontWeight="SemiBold" VerticalAlignment="Center" MinWidth="64" TextAlignment="Center" />
+      <Slider x:Name="PageSlider" Grid.Column="2" Minimum="1" Maximum="1" StepFrequency="1" VerticalAlignment="Center" IsThumbToolTipEnabled="True" />
+      <TextBlock x:Name="PageTotal" Grid.Column="3" Foreground="#A8FFFFFF" FontSize="13" VerticalAlignment="Center" MinWidth="32" />
+      <Button x:Name="NextChapter" Grid.Column="4" Style="{StaticResource TzIconButton}" Foreground="White" ToolTipService.ToolTip="Next chapter (])">
+        <FontIcon Glyph="&#xE06F;" FontFamily="{StaticResource TzIconFont}" FontSize="17" />
+      </Button>
+    </Grid>
+
+    <Border x:Name="HintBar" VerticalAlignment="Bottom" HorizontalAlignment="Center" Margin="0,0,0,96" Padding="18,9" CornerRadius="19" Visibility="Collapsed"
+            Background="{ThemeResource TzReaderChrome}" BorderBrush="#20FFFFFF" BorderThickness="1">
+      <TextBlock x:Name="HintText" Foreground="#C8FFFFFF" FontSize="12" />
+    </Border>
+  </Grid>
+</UserControl>
