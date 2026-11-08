@@ -152,6 +152,12 @@ removeChaptersWithIds:
 DELETE FROM chapters
 WHERE _id IN :chapterIds;
 
+getChapterIdsByMangaIdAndUrls:
+SELECT _id
+FROM chapters
+WHERE manga_id = :mangaId
+AND url IN :urls;
+
 resetIsSyncing:
 UPDATE chapters
 SET is_syncing = 0

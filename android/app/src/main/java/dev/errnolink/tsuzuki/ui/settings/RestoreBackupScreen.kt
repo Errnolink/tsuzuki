@@ -41,6 +41,21 @@ import tachiyomi.i18n.MR
 import tachiyomi.presentation.core.components.material.Scaffold
 import tachiyomi.presentation.core.components.material.padding
 import tachiyomi.presentation.core.i18n.stringResource
+import cafe.adriel.voyager.core.model.screenModelScope
+import dev.errnolink.tsuzuki.mangadex.backup.NekoBackupMapper
+import eu.kanade.presentation.more.settings.screen.browse.ExtensionStoresScreen
+import eu.kanade.tachiyomi.data.backup.BackupDecoder
+import eu.kanade.tachiyomi.extension.ExtensionManager
+import eu.kanade.tachiyomi.extension.model.Extension
+import eu.kanade.tachiyomi.extension.model.InstallStep
+import eu.kanade.tachiyomi.source.online.HttpSource
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.launch
+import tachiyomi.domain.source.service.SourceManager
+import uy.kohesive.injekt.Injekt
+import uy.kohesive.injekt.api.get
 
 class TsuzukiRestoreBackupScreen(
     private val uri: String,
@@ -70,6 +85,17 @@ class TsuzukiRestoreBackupScreen(
                     if (DeviceUtil.isMiui && DeviceUtil.isMiuiOptimizationDisabled()) {
                         item {
                             WarningBanner(MR.strings.restore_miui_warning)
+                        }
+                    }
+
+                    if (state.extensions != RestoreExtensionsState.None) {
+                        item("extensions") {
+                            RestoreExtensionsSection(
+                                state = state.extensions,
+                                onInstall = model::install,
+                                onInstallAll = model::installAll,
+                                onOpenRepos = { navigator.push(ExtensionStoresScreen()) },
+                            )
                         }
                     }
 
@@ -109,17 +135,6 @@ class TsuzukiRestoreBackupScreen(
                         when (error) {
                             is MissingRestoreComponents -> {
                                 appendLine(stringResource(MR.strings.backup_restore_content_full))
-                                if (error.sources.isNotEmpty()) {
-                                    appendLine()
-                                    withStyle(SpanStyle(fontWeight = FontWeight.Bold)) {
-                                        appendLine(stringResource(MR.strings.backup_restore_missing_sources))
-                                    }
-                                    error.sources.joinTo(
-                                        this,
-                                        separator = "\n- ",
-                                        prefix = "- ",
-                                    )
-                                }
                                 if (error.trackers.isNotEmpty()) {
                                     appendLine()
                                     withStyle(SpanStyle(fontWeight = FontWeight.Bold)) {
@@ -167,8 +182,52 @@ private class RestoreBackupScreenModel(
     private val uri: String,
 ) : StateScreenModel<RestoreBackupScreenModel.State>(State()) {
 
+    private val extensionManager: ExtensionManager = Injekt.get()
+    private val sourceManager: SourceManager = Injekt.get()
+    private val installSteps = MutableStateFlow(emptyMap<String, InstallStep>())
+
     init {
         validate(uri.toUri())
+        screenModelScope.launch(Dispatchers.IO) { loadExtensions() }
+    }
+
+    private suspend fun loadExtensions() {
+        val backup = runCatching { BackupDecoder(context).decode(uri.toUri()) }.getOrNull() ?: return
+        fun neededNow() = RestoreExtensions.needed(
+            backup,
+            sourceManager.getAll().map {
+                NekoBackupMapper.SourceIdentity(it.id, it.name, it.lang, (it as? HttpSource)?.baseUrl)
+            },
+        )
+        if (neededNow().isEmpty()) return
+        mutableState.update { it.copy(extensions = RestoreExtensionsState.Checking) }
+        runCatching { extensionManager.findAvailableExtensions() }
+        combine(
+            extensionManager.availableExtensionsFlow,
+            extensionManager.installedExtensionsFlow,
+            installSteps,
+        ) { available, _, steps ->
+            val matches = RestoreExtensions.match(neededNow(), available)
+            if (matches.isEmpty()) RestoreExtensionsState.None else RestoreExtensionsState.Ready(matches, steps)
+        }.collect { extensions -> mutableState.update { it.copy(extensions = extensions) } }
+    }
+
+    fun install(extension: Extension.Available) {
+        val current = installSteps.value[extension.pkgName]
+        if (current != null && !current.isCompleted()) return
+        installSteps.update { it + (extension.pkgName to InstallStep.Pending) }
+        screenModelScope.launch {
+            extensionManager.installExtension(extension).collect { step ->
+                installSteps.update { it + (extension.pkgName to step) }
+            }
+        }
+    }
+
+    fun installAll() {
+        (state.value.extensions as? RestoreExtensionsState.Ready)?.matches
+            ?.mapNotNull { it.extension }
+            ?.distinctBy { it.pkgName }
+            ?.forEach(::install)
     }
 
     fun toggle(setter: (RestoreOptions, Boolean) -> RestoreOptions, enabled: Boolean) {
@@ -198,9 +257,9 @@ private class RestoreBackupScreenModel(
             return
         }
 
-        if (results.missingSources.isNotEmpty() || results.missingTrackers.isNotEmpty()) {
+        if (results.missingTrackers.isNotEmpty()) {
             setError(
-                error = MissingRestoreComponents(uri, results.missingSources, results.missingTrackers),
+                error = MissingRestoreComponents(uri, results.missingTrackers),
                 canRestore = true,
             )
             return
@@ -223,12 +282,12 @@ private class RestoreBackupScreenModel(
         val error: Any? = null,
         val canRestore: Boolean = false,
         val options: RestoreOptions = RestoreOptions(),
+        val extensions: RestoreExtensionsState = RestoreExtensionsState.None,
     )
 }
 
 private data class MissingRestoreComponents(
     val uri: Uri,
-    val sources: List<String>,
     val trackers: List<String>,
 )
 

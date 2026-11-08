@@ -90,6 +90,20 @@ SELECT *
 FROM mangas
 WHERE favorite = 1;
 
+clearFavoriteByUrlAndSource:
+UPDATE mangas
+SET favorite = 0,
+last_modified_at = strftime('%s','now') * 1000
+WHERE url = :url
+AND source = :source
+AND favorite = 1;
+
+clearFavoriteByIds:
+UPDATE mangas
+SET favorite = 0,
+last_modified_at = strftime('%s','now') * 1000
+WHERE _id IN :ids;
+
 getReadMangaNotInLibrary:
 SELECT *
 FROM mangas
@@ -292,6 +306,12 @@ SELECT * FROM mangas WHERE source = :sourceId;
 
 getAll:
 SELECT * FROM mangas;
+
+
+updateMemoById:
+UPDATE mangas
+SET memo = :memo
+WHERE _id = :id;
 
 deleteById:
 DELETE FROM mangas WHERE _id = :id;

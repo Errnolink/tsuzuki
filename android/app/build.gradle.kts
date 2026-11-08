@@ -32,8 +32,8 @@ android {
     defaultConfig {
         applicationId = "dev.errnolink.tsuzuki"
 
-        versionCode = 34
-        versionName = "0.2.0"
+        versionCode = 35
+        versionName = "0.2.1"
 
         buildConfigField("String", "COMMIT_COUNT", "\"${getCommitCount()}\"")
         buildConfigField("String", "COMMIT_SHA", "\"${getGitSha()}\"")

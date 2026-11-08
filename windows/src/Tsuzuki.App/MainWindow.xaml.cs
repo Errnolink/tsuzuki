@@ -71,7 +71,11 @@ public sealed partial class MainWindow : Window
         Root.SizeChanged += (_, e) => Shell.WindowWidthChanged(e.NewSize.Width);
         InfoBarHost.SizeChanged += (_, _) => OffsetPagesForInfoBars();
         ReaderHost.RegisterPropertyChangedCallback(UIElement.VisibilityProperty, (_, _) =>
-            InfoBarHost.Visibility = ReaderHost.Visibility == Visibility.Visible ? Visibility.Collapsed : Visibility.Visible);
+        {
+            var reading = ReaderHost.Visibility == Visibility.Visible;
+            InfoBarHost.Visibility = reading ? Visibility.Collapsed : Visibility.Visible;
+            Shell.Pane.Visibility = reading ? Visibility.Collapsed : Visibility.Visible;
+        });
     }
 
     public void OpenPalette(string text)

@@ -414,6 +414,7 @@ class ExtensionManager(
             registerNewExtension(extension.withUpdateCheck())
             // KMK -->
             ExtensionSync.recordInstall(extension.pkgName)
+            dev.errnolink.tsuzuki.mangadex.backup.NekoMergeReconciler.enqueueAfterExtensionChange()
             // KMK <--
             updatePendingUpdatesCount()
         }
@@ -422,6 +423,7 @@ class ExtensionManager(
             registerUpdatedExtension(extension.withUpdateCheck())
             // KMK -->
             ExtensionSync.recordInstall(extension.pkgName)
+            dev.errnolink.tsuzuki.mangadex.backup.NekoMergeReconciler.enqueueAfterExtensionChange()
             // KMK <--
             updatePendingUpdatesCount()
         }

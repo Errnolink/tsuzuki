@@ -21,7 +21,7 @@ import androidx.compose.ui.layout.boundsInRoot
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
-import androidx.compose.foundation.gestures.awaitVerticalTouchSlopOrCancellation
+import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
 
 class HeroFrame {
@@ -187,32 +187,42 @@ fun Modifier.heroDismissDrag(atTop: () -> Boolean): Modifier {
     val coordinates = remember { arrayOfNulls<LayoutCoordinates>(1) }
     fun LayoutCoordinates?.window(local: Offset): Offset = this?.takeIf { it.isAttached }?.localToWindow(local) ?: local
     return onGloballyPositioned { coordinates[0] = it }.pointerInput(dismiss) {
+        val slop = viewConfiguration.touchSlop
         awaitEachGesture {
-            val down = awaitFirstDown(requireUnconsumed = false)
+            val down = awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
             if (!currentAtTop.value() || !dismiss.canStart()) return@awaitEachGesture
-            var downward = false
-            val slop = awaitVerticalTouchSlopOrCancellation(down.id) { change, over ->
-                if (over > 0f) {
-                    downward = true
-                    change.consume()
+            var travel = Offset.Zero
+            var claimed: androidx.compose.ui.input.pointer.PointerInputChange? = null
+            while (claimed == null) {
+                val change = awaitPointerEvent(PointerEventPass.Initial).changes.firstOrNull { it.id == down.id }
+                    ?: return@awaitEachGesture
+                if (!change.pressed || change.isConsumed) return@awaitEachGesture
+                travel += change.position - change.previousPosition
+                if (kotlin.math.abs(travel.x) > slop || kotlin.math.abs(travel.y) > slop) {
+                    if (travel.y <= 0f || kotlin.math.abs(travel.y) <= kotlin.math.abs(travel.x) || !currentAtTop.value()) {
+                        return@awaitEachGesture
+                    }
+                    claimed = change
                 }
             }
-            if (slop == null || !downward) return@awaitEachGesture
+            val picked = claimed ?: return@awaitEachGesture
+            picked.consume()
             val origin = coordinates[0].window(down.position)
             if (!dismiss.start()) return@awaitEachGesture
             val tracker = androidx.compose.ui.input.pointer.util.VelocityTracker()
-            tracker.addPosition(slop.uptimeMillis, coordinates[0].window(slop.position))
+            tracker.addPosition(picked.uptimeMillis, coordinates[0].window(picked.position))
             var velocityY = 0f
             while (true) {
-                val event = awaitPointerEvent()
+                val event = awaitPointerEvent(PointerEventPass.Initial)
                 val change = event.changes.firstOrNull { it.id == down.id } ?: break
                 val position = coordinates[0].window(change.position)
                 if (!change.pressed) {
                     velocityY = tracker.calculateVelocity().y
+                    change.consume()
                     break
                 }
                 tracker.addPosition(change.uptimeMillis, position)
-                change.consume()
+                event.changes.forEach { it.consume() }
                 dismiss.drag(position - origin)
             }
             dismiss.end(velocityY)

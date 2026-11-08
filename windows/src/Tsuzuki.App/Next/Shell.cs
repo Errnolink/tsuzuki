@@ -252,6 +252,11 @@ public sealed class Shell
 
     private void TogglePane()
     {
+        if (Ui.ReaderOpen)
+        {
+            _ = Reader.ReaderPage.CloseCurrentAsync();
+            return;
+        }
         if (narrow)
         {
             narrowExpanded = !narrowExpanded;

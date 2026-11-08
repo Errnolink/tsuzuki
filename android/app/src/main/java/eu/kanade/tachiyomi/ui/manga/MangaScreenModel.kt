@@ -137,6 +137,8 @@ import tachiyomi.domain.manga.interactor.GetManga
 import tachiyomi.domain.manga.interactor.GetMangaWithChapters
 import tachiyomi.domain.manga.interactor.GetMergedMangaById
 import tachiyomi.domain.manga.interactor.GetMergedReferencesById
+import tachiyomi.domain.manga.interactor.DeleteByMergeId
+import tachiyomi.domain.manga.interactor.DeleteMangaById
 import tachiyomi.domain.manga.interactor.NetworkToLocalManga
 import tachiyomi.domain.manga.interactor.SetCustomMangaInfo
 import tachiyomi.domain.manga.interactor.SetMangaChapterFlags
@@ -194,6 +196,8 @@ class MangaScreenModel(
     private val getMergedChaptersByMangaId: GetMergedChaptersByMangaId = Injekt.get(),
     private val getMergedMangaById: GetMergedMangaById = Injekt.get(),
     private val getMergedReferencesById: GetMergedReferencesById = Injekt.get(),
+    private val deleteByMergeId: DeleteByMergeId = Injekt.get(),
+    private val deleteMangaById: DeleteMangaById = Injekt.get(),
     // KMK -->
     private val smartSearchMerge: SmartSearchMerge = Injekt.get(),
     // KMK <--
@@ -792,7 +796,28 @@ class MangaScreenModel(
 
     fun deleteMerge(reference: MergedMangaReference) {
         screenModelScope.launchNonCancellable {
+            val mergeId = reference.mergeId ?: return@launchNonCancellable
             deleteMergeById.await(reference.id)
+            val remaining = getMergedReferencesById.await(mergeId)
+                .filter { it.mangaSourceId != exh.source.MERGED_SOURCE_ID }
+            when {
+                remaining.isEmpty() -> {
+                    deleteByMergeId.await(mergeId)
+                    updateManga.awaitUpdateFavorite(mergeId, false)
+                    setMangaCategories.await(mergeId, emptyList())
+                }
+                remaining.size == 1 && !reference.isInfoManga || remaining.none { it.isInfoManga } -> {
+                    val sole = remaining.first()
+                    val soleManga = sole.mangaId?.let { getManga.await(it) }
+                    if (soleManga != null && !soleManga.favorite) {
+                        val categories = getCategories.await(mergeId)
+                        updateManga.awaitUpdateFavorite(soleManga.id, true)
+                        setMangaCategories.await(soleManga.id, categories.map { it.id })
+                    }
+                    deleteByMergeId.await(mergeId)
+                    deleteMangaById.await(mergeId)
+                }
+            }
         }
     }
     fun mergeCandidate(candidate: Manga, onMerged: ((Long) -> Unit)? = null) {

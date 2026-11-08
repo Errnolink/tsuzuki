@@ -129,6 +129,8 @@ object ShellTopControls {
     val declarations = mutableStateMapOf<String, ShellTopDeclaration>()
 }
 
+val LocalShellTopActive = androidx.compose.runtime.compositionLocalOf { true }
+
 @Composable
 fun DeclareShellTop(
     title: String,
@@ -144,9 +146,8 @@ fun DeclareShellTop(
     tint: Color? = null,
 ) {
     val owner = LocalShellTopOwner.current ?: return
-    val declaration = remember(owner) {
-        ShellTopControls.declarations.getOrPut(owner) { ShellTopDeclaration() }
-    }
+    val active = LocalShellTopActive.current
+    val declaration = remember(owner) { ShellTopDeclaration() }
     val currentTitle by rememberUpdatedState(title)
     val currentGlass by rememberUpdatedState(glass)
     val currentBack = remember(navigateUp, backLabel, backIcon) {
@@ -164,6 +165,7 @@ fun DeclareShellTop(
     val currentInline by rememberUpdatedState(inlineTitle)
     val inlineNow = currentInline?.invoke() ?: 1f
     SideEffect {
+        if (!active) return@SideEffect
         declaration.title = currentTitle
         declaration.glass = currentGlass
         declaration.back = currentBack

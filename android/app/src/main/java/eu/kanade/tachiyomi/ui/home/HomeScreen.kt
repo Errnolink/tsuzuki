@@ -109,8 +109,12 @@ object HomeScreen : Screen() {
                                 }
                             },
                         ) { tab ->
-                            tabNavigator.saveableState(key = "currentTab", tab) {
-                                tab.Content()
+                            CompositionLocalProvider(
+                                dev.errnolink.tsuzuki.ui.shell.LocalShellTopActive provides (tab == tabSwitch.targetState),
+                            ) {
+                                tabNavigator.saveableState(key = "currentTab", tab) {
+                                    tab.Content()
+                                }
                             }
                         }
                     }

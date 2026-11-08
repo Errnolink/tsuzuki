@@ -245,6 +245,12 @@ class App : Application(), DefaultLifecycleObserver, SingletonImageLoader.Factor
             dev.errnolink.tsuzuki.perf.PerfTimelineTracer.measureStage("DB null repair") {
                 DbNullRepair(Injekt.get(), Injekt.get()).run()
             }
+            dev.errnolink.tsuzuki.perf.PerfTimelineTracer.measureStage("Neko merge reconcile") {
+                val summary = dev.errnolink.tsuzuki.mangadex.backup.NekoMergeReconciler.reconcileOnce()
+                if (summary.touchedTitles > 0) {
+                    logcat(LogPriority.INFO) { "Neko merge reconcile linked ${summary.linkedChapters} chapters across ${summary.touchedTitles} titles" }
+                }
+            }
             dev.errnolink.tsuzuki.perf.PerfTimelineTracer.measureStage("ExtensionSync onAppStart") {
                 ExtensionSync.launchOnAppStart()
             }

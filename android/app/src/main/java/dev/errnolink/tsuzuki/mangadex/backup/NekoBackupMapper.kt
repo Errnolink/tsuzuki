@@ -19,7 +19,8 @@ object NekoBackupMapper {
     const val HIDDEN_CHILD = "nekoMergedChild"
     const val UNAVAILABLE = "nekoUnavailable"
     const val UNRESOLVED_SOURCE = "nekoUnresolvedSource"
-
+    const val UNRESOLVED_CHAPTERS = "nekoUnresolvedChapters"
+    const val MERGE_MANGA_LIST = "nekoMergeMangaList"
     data class SourceIdentity(val id: Long, val name: String, val language: String, val baseUrl: String? = null)
     data class Result(val manga: List<BackupManga>, val warnings: List<String>)
 
@@ -46,7 +47,7 @@ object NekoBackupMapper {
             manga.alternativeArtwork?.let { put("nekoAlternativeArtwork", JsonPrimitive(it)) }
             manga.mergedMangaUrl?.let { put("nekoMergedMangaUrl", JsonPrimitive(it)) }
             manga.mergedMangaImageUrl?.let { put("nekoMergedMangaImageUrl", JsonPrimitive(it)) }
-            if (manga.mergeMangaList.isNotEmpty()) put("nekoMergeMangaList", Json.encodeToJsonElement(manga.mergeMangaList))
+            if (manga.mergeMangaList.isNotEmpty()) put(MERGE_MANGA_LIST, Json.encodeToJsonElement(manga.mergeMangaList))
         })
     }
 
@@ -58,6 +59,16 @@ object NekoBackupMapper {
     fun accessMessage(memo: JsonObject): String? = memo[UNRESOLVED_SOURCE]?.jsonPrimitive?.contentOrNull?.let {
         "Install the $it extension and restore the Neko backup again to read this merged chapter. Its progress has been preserved."
     } ?: if (isUnavailable(memo)) "Chapter is not available on MangaDex" else null
+
+    fun sourceName(mergeType: Int): String = sourceNames[mergeType] ?: "Neko merge type $mergeType"
+
+    fun resolveSource(name: String, mergeHost: String?, sources: List<SourceIdentity>): SourceIdentity? {
+        val candidates = sources.filter { normalize(it.name) == normalize(name) }
+        val matching = if (mergeHost != null) candidates.filter { it.baseUrl == null || host(it.baseUrl) == mergeHost } else candidates
+        return matching.singleOrNull() ?: matching.filter { it.language == "en" }.singleOrNull()
+    }
+    internal fun relativeUrl(url: String, baseUrl: String?): String =
+        if (baseUrl != null && host(url) == host(baseUrl) && host(url) != null) URI(url).let { it.rawPath + (it.rawQuery?.let { query -> "?$query" } ?: "") } else url
 
     fun migrate(mangas: List<BackupManga>, sources: List<SourceIdentity>): Result {
         val warnings = mutableListOf<String>()
@@ -106,7 +117,7 @@ object NekoBackupMapper {
                 }
             }
             val memo = mangaMemo(manga).toMutableMap()
-            if (unresolved.isNotEmpty()) memo["nekoUnresolvedChapters"] = Json.encodeToJsonElement(unresolved)
+            if (unresolved.isNotEmpty()) memo[UNRESOLVED_CHAPTERS] = Json.encodeToJsonElement(unresolved)
             val retained = manga.copy(
                 chapters = remaining,
                 excludedScanlators = excludedScanlators(manga),
@@ -146,6 +157,4 @@ object NekoBackupMapper {
 
     private fun normalize(value: String) = value.lowercase().filter(Char::isLetterOrDigit)
     private fun host(url: String): String? = runCatching { URI(url).host?.lowercase() }.getOrNull()
-    private fun relativeUrl(url: String, baseUrl: String?): String =
-        if (baseUrl != null && host(url) == host(baseUrl) && host(url) != null) URI(url).let { it.rawPath + (it.rawQuery?.let { query -> "?$query" } ?: "") } else url
 }

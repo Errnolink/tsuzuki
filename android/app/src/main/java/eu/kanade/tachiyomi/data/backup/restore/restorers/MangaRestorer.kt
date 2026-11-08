@@ -129,6 +129,13 @@ class MangaRestorer(
             )
             if (backupManga.source == MERGED_SOURCE_ID && (backupManga.mergeMangaList.isNotEmpty() || backupManga.mergedMangaUrl != null)) {
                 restoreNekoChapterOwnership(backupManga.mergedMangaReferences)
+                handler.await(inTransaction = true) {
+                    backupManga.mergedMangaReferences.forEach { reference ->
+                        if (reference.mangaSourceId != MERGED_SOURCE_ID) {
+                            mangasQueries.clearFavoriteByUrlAndSource(reference.mangaUrl, reference.mangaSourceId)
+                        }
+                    }
+                }
             }
 
             if (isSync) {

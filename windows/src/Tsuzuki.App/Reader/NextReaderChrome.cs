@@ -316,6 +316,7 @@ public sealed partial class ReaderPage
         var offsetSwitch = new ToggleSwitch { Header = "Offset page pairs by one" };
         var backgroundChoice = new RadioButtons { Header = "Background", Items = { "Black", "Dark gray", "White" } };
         var hideChoice = new ComboBox { Header = "Hide controls after", Items = { "2 seconds", "4 seconds", "8 seconds", "Never" }, MinWidth = 200 };
+        var wheelChoice = new ComboBox { Header = "Wheel scroll (long strip)", Items = { "System", "Quarter page", "Half page", "Full page" }, MinWidth = 200 };
         AutomationProperties.SetName(layoutChoice, "Layout");
         AutomationProperties.SetName(directionChoice, "Reading direction");
         AutomationProperties.SetName(fitChoice, "Fit");
@@ -332,6 +333,7 @@ public sealed partial class ReaderPage
             offsetSwitch.IsOn = spreadOffset;
             backgroundChoice.SelectedIndex = Math.Max(0, Array.IndexOf(BackgroundChoices, Services.Settings.ReaderBackground));
             hideChoice.SelectedIndex = Math.Max(0, Array.IndexOf(AutoHideChoices, Services.Settings.ReaderAutoHideMs));
+            wheelChoice.SelectedIndex = Math.Min(3, Math.Max(0, Services.Settings.ReaderWheelScroll));
             var paged = layout != ReaderLayout.Strip;
             directionChoice.IsEnabled = paged;
             fitChoice.IsEnabled = paged;
@@ -389,6 +391,14 @@ public sealed partial class ReaderPage
                 ApplyAutoHide();
             }
         };
+        wheelChoice.SelectionChanged += (_, _) =>
+        {
+            if (!syncingSettings && wheelChoice.SelectedIndex >= 0)
+            {
+                Services.Settings.ReaderWheelScroll = wheelChoice.SelectedIndex;
+                Services.Settings.Save();
+            }
+        };
 
         var flyout = new Flyout
         {
@@ -397,7 +407,7 @@ public sealed partial class ReaderPage
             {
                 Spacing = 16,
                 Width = 260,
-                Children = { layoutChoice, directionChoice, fitChoice, offsetSwitch, backgroundChoice, hideChoice },
+                Children = { layoutChoice, directionChoice, fitChoice, offsetSwitch, backgroundChoice, hideChoice, wheelChoice },
             },
         };
         flyout.Opening += (_, _) => Sync();

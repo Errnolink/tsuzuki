@@ -32,6 +32,11 @@ public sealed partial class ReaderPage : UserControl
     private readonly DispatcherQueueTimer chromeTimer;
     private readonly DispatcherQueueTimer saveTimer;
     private readonly DispatcherQueueTimer pillTimer;
+    private readonly DispatcherQueueTimer autoTimer;
+    private readonly Border autoMarker;
+    private bool autoScrollActive;
+    private double autoOriginY;
+    private double autoPointerY;
     private readonly StripFactory stripFactory;
     private CancellationTokenSource generationCts = new();
     private MangaDetails? manga;
@@ -93,6 +98,24 @@ public sealed partial class ReaderPage : UserControl
         stripFactory = new StripFactory(this);
         Strip.ItemTemplate = stripFactory;
 
+        autoTimer = DispatcherQueue.CreateTimer();
+        autoTimer.Interval = TimeSpan.FromMilliseconds(16);
+        autoTimer.Tick += (_, _) => AutoScrollTick();
+        autoMarker = new Border
+        {
+            Width = 30,
+            Height = 30,
+            CornerRadius = new CornerRadius(15),
+            Background = new Microsoft.UI.Xaml.Media.SolidColorBrush(Windows.UI.Color.FromArgb(230, 0, 0, 0)),
+            BorderBrush = new Microsoft.UI.Xaml.Media.SolidColorBrush(Windows.UI.Color.FromArgb(140, 255, 255, 255)),
+            BorderThickness = new Thickness(1),
+            Opacity = 0.85,
+            IsHitTestVisible = false,
+            Child = new FontIcon { Glyph = "\uEC8F", FontSize = 14 },
+        };
+        ToolTipService.SetToolTip(autoMarker, "Auto-scroll: move the mouse above or below to scroll; middle-click or Esc to stop");
+        Root.Children.Add(autoMarker);
+        autoMarker.Visibility = Visibility.Collapsed;
         EndNext.Click += (_, _) => _ = GoChapterAsync(1);
         EndClose.Click += (_, _) => _ = CloseAsync();
         EndRefresh.Click += (_, _) => _ = Log.Guard("reader check chapters", CheckForNewChaptersAsync);
@@ -117,12 +140,23 @@ public sealed partial class ReaderPage : UserControl
         Root.PointerPressed += (_, e) =>
         {
             transition?.Cancel();
-            if (e.GetCurrentPoint(Root).Properties.IsXButton1Pressed)
+            var point = e.GetCurrentPoint(Root);
+            if (point.Properties.IsMiddleButtonPressed && layout == ReaderLayout.Strip)
+            {
+                e.Handled = true;
+                ToggleAutoScroll(point.Position);
+            }
+            else if (autoScrollActive)
+            {
+                StopAutoScroll();
+            }
+            if (point.Properties.IsXButton1Pressed)
             {
                 e.Handled = true;
                 _ = CloseAsync();
             }
         };
+        StripScroll.AddHandler(PointerWheelChangedEvent, new PointerEventHandler(OnStripWheel), true);
     }
 
     public static Task CloseCurrentAsync() => current?.CloseAsync(animate: false) ?? Task.CompletedTask;
@@ -1135,6 +1169,7 @@ public sealed partial class ReaderPage : UserControl
         {
             return;
         }
+        StopAutoScroll();
         Flash(LayoutName(next));
         if (next == layout)
         {
@@ -1322,6 +1357,7 @@ public sealed partial class ReaderPage : UserControl
         list.Add(("G", "Go to page"));
         list.Add(("T", "Page thumbnails"));
         list.Add(("S", "Filmstrip on or off"));
+        list.Add(("Middle-click", "Auto-scroll (long strip): move the mouse above or below the marker; middle-click or Esc stops"));
         list.Add(("[ · ]", "Previous · next chapter"));
         list.Add(("1 · 2 · 3", "Single page · two pages · long strip"));
         list.Add(("D", "Two pages on or off"));
@@ -1470,6 +1506,7 @@ public sealed partial class ReaderPage : UserControl
     private void OnPointerMoved(object sender, PointerRoutedEventArgs e)
     {
         var y = e.GetCurrentPoint(Root).Position.Y;
+        autoPointerY = y;
         if (cursorHidden)
         {
             SetCursorHidden(false);
@@ -1485,6 +1522,10 @@ public sealed partial class ReaderPage : UserControl
     private void OnTapped(object sender, TappedRoutedEventArgs e)
     {
         _ = HideHintAsync();
+        if (autoScrollActive && !IsOverChrome(e.OriginalSource as DependencyObject))
+        {
+            StopAutoScroll();
+        }
         var source = e.OriginalSource as DependencyObject;
         if (ShortcutLayer.Visibility == Visibility.Visible)
         {
@@ -1598,6 +1639,65 @@ public sealed partial class ReaderPage : UserControl
         _ = forward ? NextAsync() : PreviousAsync();
     }
 
+    private void OnStripWheel(object sender, PointerRoutedEventArgs e)
+    {
+        var step = Services.Settings.ReaderWheelScroll;
+        if (step <= 0 || layout != ReaderLayout.Strip)
+        {
+            return;
+        }
+        var delta = e.GetCurrentPoint(StripScroll).Properties.MouseWheelDelta;
+        if (delta == 0)
+        {
+            return;
+        }
+        e.Handled = true;
+        var fraction = step switch { 1 => 0.25, 2 => 0.5, _ => 1.0 };
+        var amount = StripScroll.ViewportHeight * fraction * (delta / 120.0);
+        _ = StripScroll.ScrollBy(0, -amount);
+    }
+
+    private void ToggleAutoScroll(Windows.Foundation.Point at)
+    {
+        if (autoScrollActive)
+        {
+            StopAutoScroll();
+            return;
+        }
+        autoScrollActive = true;
+        autoOriginY = at.Y;
+        autoPointerY = at.Y;
+        Canvas.SetZIndex(autoMarker, 200);
+        autoMarker.RenderTransform = new TranslateTransform { X = at.X - 15, Y = at.Y - 15 };
+        autoMarker.Visibility = Visibility.Visible;
+        SetCursorHidden(false);
+        autoTimer.Start();
+        Flash("Auto-scroll");
+    }
+
+    private void StopAutoScroll()
+    {
+        if (!autoScrollActive)
+        {
+            return;
+        }
+        autoScrollActive = false;
+        autoTimer.Stop();
+        autoMarker.Visibility = Visibility.Collapsed;
+    }
+
+    private void AutoScrollTick()
+    {
+        var dy = autoPointerY - autoOriginY;
+        var magnitude = Math.Max(0, Math.Abs(dy) - 12) / 12.0;
+        if (magnitude == 0)
+        {
+            return;
+        }
+        var speed = Math.Min(4800, Math.Pow(magnitude, 1.35) * 300);
+        _ = StripScroll.ScrollBy(0, Math.Sign(dy) * speed * 0.016);
+    }
+
     private static bool IsModifier(VirtualKey key) => key is VirtualKey.Shift or VirtualKey.LeftShift or VirtualKey.RightShift
         or VirtualKey.Control or VirtualKey.LeftControl or VirtualKey.RightControl
         or VirtualKey.Menu or VirtualKey.LeftMenu or VirtualKey.RightMenu or VirtualKey.LeftWindows or VirtualKey.RightWindows;
@@ -1609,6 +1709,12 @@ public sealed partial class ReaderPage : UserControl
             return;
         }
         _ = HideHintAsync();
+        if (autoScrollActive && e.Key == VirtualKey.Escape)
+        {
+            StopAutoScroll();
+            e.Handled = true;
+            return;
+        }
         var rtl = rightToLeft && layout != ReaderLayout.Strip;
         var ctrl = InputKeyboardSource.GetKeyStateForCurrentThread(VirtualKey.Control).HasFlag(Windows.UI.Core.CoreVirtualKeyStates.Down);
         var shift = InputKeyboardSource.GetKeyStateForCurrentThread(VirtualKey.Shift).HasFlag(Windows.UI.Core.CoreVirtualKeyStates.Down);
@@ -1738,6 +1844,7 @@ public sealed partial class ReaderPage : UserControl
             return;
         }
         closing = true;
+        StopAutoScroll();
         try
         {
             await FlushProgressAsync();

@@ -92,15 +92,3 @@ fun reorderMergePrioritiesToIndex(
 
     return container.map { it.copy(chapterPriority = -1) } + updatedChildren
 }
-
-fun resolveMergePrimarySourceId(
-    manga: Manga,
-    mergedData: MergedMangaData?,
-    installedSourceIds: List<Long>,
-): Long? {
-    val infoSourceId = mergedData?.references
-        ?.firstOrNull { it.isInfoManga }?.mangaSourceId
-    infoSourceId?.takeIf { it in installedSourceIds }?.let { return it }
-    manga.source.takeIf { it != MERGED_SOURCE_ID && it in installedSourceIds }?.let { return it }
-    return installedSourceIds.firstOrNull()
-}

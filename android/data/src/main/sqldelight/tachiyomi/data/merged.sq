@@ -45,6 +45,16 @@ SELECT * FROM merged WHERE merge_id = ?;
 selectByMergeUrl:
 SELECT * FROM merged WHERE merge_url = ?;
 
+getFavoriteMergeChildren:
+SELECT child._id
+FROM mangas AS parent
+JOIN merged AS ref ON ref.merge_id = parent._id
+JOIN mangas AS child ON child._id = ref.manga_id
+WHERE parent.source = :mergedSource
+AND parent.favorite = 1
+AND child.favorite = 1
+AND ref.manga_source != :mergedSource;
+
 deleteByMergeId:
 DELETE FROM merged WHERE merge_id = ?;
 

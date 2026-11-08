@@ -29,6 +29,7 @@ class SmartSearchMerge(
     private val deleteByMergeId: DeleteByMergeId = Injekt.get(),
     private val getCategories: GetCategories = Injekt.get(),
     private val setMangaCategories: SetMangaCategories = Injekt.get(),
+    private val updateManga: UpdateManga = Injekt.get(),
 ) {
     /**
      * @param originalMangaId ID of the existed merged entry or the original manga which will be used to create the new merged entry
@@ -82,6 +83,10 @@ class SmartSearchMerge(
             // todo
             insertMergedReference.awaitAll(mangaReferences)
 
+            if (manga.favorite) {
+                updateManga.awaitUpdateFavorite(manga.id, false)
+                setMangaCategories.await(manga.id, emptyList())
+            }
             return originalManga
         } else {
             if (manga.id == originalMangaId) {
@@ -171,6 +176,15 @@ class SmartSearchMerge(
             )
 
             insertMergedReference.awaitAll(listOf(originalMangaReference, newMangaReference, mergedMangaReference))
+
+            if (originalManga.favorite) {
+                updateManga.awaitUpdateFavorite(originalManga.id, false)
+                setMangaCategories.await(originalManga.id, emptyList())
+            }
+            if (manga.favorite && manga.id != originalMangaId) {
+                updateManga.awaitUpdateFavorite(manga.id, false)
+                setMangaCategories.await(manga.id, emptyList())
+            }
 
             return mergedManga
         }

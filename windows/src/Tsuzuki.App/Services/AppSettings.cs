@@ -59,6 +59,7 @@ public sealed class AppSettings
     public string ReaderBackground { get; set; } = "black";
     public int ReaderAutoHideMs { get; set; } = 2400;
     public bool ReaderFilmstrip { get; set; }
+    public int ReaderWheelScroll { get; set; }
     public string? DownloadsRoot { get; set; }
     public bool DownloadsUnmeteredOnly { get; set; }
     public int? DownloadsDeleteAfterRead { get; set; }

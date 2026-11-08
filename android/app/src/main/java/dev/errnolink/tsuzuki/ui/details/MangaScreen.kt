@@ -471,7 +471,7 @@ fun MangaScreen(
     )
     DetailsCardTheme(state.manga.id) {
     Box(Modifier.fillMaxSize().background(TsuzukiTheme.colors.background)) {
-        Box(Modifier.fillMaxSize()) {
+        Box(Modifier.fillMaxSize().heroDismissDrag { !listState.canScrollBackward && selected.isEmpty() }) {
             LazyColumn(
                 flingBehavior = dev.errnolink.tsuzuki.designsystem.tsuzukiFlingBehavior(),
                 state = listState,
@@ -481,7 +481,6 @@ fun MangaScreen(
                 item("hero") {
                     Box(
                         heroTitle.hero(Modifier)
-                            .heroDismissDrag { listState.firstVisibleItemIndex == 0 && listState.firstVisibleItemScrollOffset == 0 && selected.isEmpty() }
                             .fillMaxWidth()
                             .detailsHeroGlow(
                                 glow = glow,
