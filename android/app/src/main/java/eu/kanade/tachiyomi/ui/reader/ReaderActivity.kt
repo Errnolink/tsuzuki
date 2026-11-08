@@ -218,12 +218,15 @@ class ReaderActivity : BaseActivity() {
     var isScrollingThroughPages = false
         private set
 
+    private var readerStage: dev.errnolink.tsuzuki.reader.ReaderTransition.Stage? = null
+
     /**
      * Called when the activity is created. Initializes the presenter and configuration.
      */
     override fun onCreate(savedInstanceState: Bundle?) {
         registerSecureActivity(this)
-        val reduced = animationsReduced()
+        readerStage = dev.errnolink.tsuzuki.reader.ReaderTransition.take(this)
+        val reduced = animationsReduced() || readerStage != null
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
             overrideActivityTransition(
                 OVERRIDE_TRANSITION_OPEN,
@@ -253,6 +256,7 @@ class ReaderActivity : BaseActivity() {
         binding = ReaderActivityBinding.inflate(layoutInflater)
         setContentView(binding.root)
         binding.setComposeOverlay()
+        readerStage?.enter(binding.root)
 
         if (viewModel.needsInit()) {
             val manga = intent.extras?.getLong("manga", -1) ?: -1L
@@ -660,6 +664,22 @@ class ReaderActivity : BaseActivity() {
      * delegated to the presenter.
      */
     override fun finish() {
+        val stage = readerStage
+        if (stage?.isExiting == true) return
+        if (stage != null && stage.canExit() && !isFinishing) {
+            viewModel.onActivityFinish()
+            stage.exit {
+                readerStage = null
+                super.finish()
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+                    overrideActivityTransition(OVERRIDE_TRANSITION_CLOSE, 0, 0)
+                } else {
+                    @Suppress("DEPRECATION")
+                    overridePendingTransition(0, 0)
+                }
+            }
+            return
+        }
         viewModel.onActivityFinish()
         super.finish()
         val reduced = animationsReduced()

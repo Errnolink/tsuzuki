@@ -18,7 +18,7 @@ public sealed record MangaData(
 public sealed record MangaAttributes(
     [property: JsonPropertyName("title")] IReadOnlyDictionary<string, string> Title,
     [property: JsonPropertyName("altTitles")] IReadOnlyList<IReadOnlyDictionary<string, string>> AltTitles,
-    [property: JsonPropertyName("description")] IReadOnlyDictionary<string, string> Description,
+    [property: JsonPropertyName("description"), JsonConverter(typeof(EmptyArrayDictionaryConverter<string>))] IReadOnlyDictionary<string, string> Description,
     [property: JsonPropertyName("originalLanguage")] string? OriginalLanguage,
     [property: JsonPropertyName("lastVolume")] string? LastVolume,
     [property: JsonPropertyName("lastChapter")] string? LastChapter,
@@ -83,6 +83,9 @@ public sealed class LocalizedNameConverter : JsonConverter<string?>
     }
 }
 
+public sealed record TagListResponse(
+    [property: JsonPropertyName("data")] IReadOnlyList<MangaRelationship> Data);
+
 public sealed record MangaResponse(
     [property: JsonPropertyName("result")] string Result,
     [property: JsonPropertyName("data")] MangaData? Data);
@@ -120,10 +123,31 @@ public sealed record AtHomeChapter(
     [property: JsonPropertyName("dataSaver")] IReadOnlyList<string> DataSaver);
 
 public sealed record AggregateResponse(
-    [property: JsonPropertyName("volumes")] IReadOnlyDictionary<string, AggregateVolume> Volumes);
+    [property: JsonPropertyName("volumes"), JsonConverter(typeof(EmptyArrayDictionaryConverter<AggregateVolume>))] IReadOnlyDictionary<string, AggregateVolume> Volumes);
 
 public sealed record AggregateVolume(
-    [property: JsonPropertyName("chapters")] IReadOnlyDictionary<string, AggregateChapter> Chapters);
+    [property: JsonPropertyName("chapters"), JsonConverter(typeof(EmptyArrayDictionaryConverter<AggregateChapter>))] IReadOnlyDictionary<string, AggregateChapter> Chapters);
+
+public sealed class EmptyArrayDictionaryConverter<TValue> : JsonConverter<IReadOnlyDictionary<string, TValue>>
+{
+    public override IReadOnlyDictionary<string, TValue>? Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
+    {
+        if (reader.TokenType == JsonTokenType.Null) return new Dictionary<string, TValue>();
+        if (reader.TokenType == JsonTokenType.StartArray)
+        {
+            reader.Skip();
+            return new Dictionary<string, TValue>();
+        }
+        var info = (System.Text.Json.Serialization.Metadata.JsonTypeInfo<Dictionary<string, TValue>>)options.GetTypeInfo(typeof(Dictionary<string, TValue>));
+        return JsonSerializer.Deserialize(ref reader, info) ?? new Dictionary<string, TValue>();
+    }
+
+    public override void Write(Utf8JsonWriter writer, IReadOnlyDictionary<string, TValue> value, JsonSerializerOptions options)
+    {
+        var info = (System.Text.Json.Serialization.Metadata.JsonTypeInfo<Dictionary<string, TValue>>)options.GetTypeInfo(typeof(Dictionary<string, TValue>));
+        JsonSerializer.Serialize(writer, new Dictionary<string, TValue>(value), info);
+    }
+}
 
 public sealed record AggregateChapter(
     [property: JsonPropertyName("chapter")] string? Chapter);

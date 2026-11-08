@@ -85,7 +85,7 @@ class MangaDexRateLimitTest {
             repeat(10) { index ->
                 executor.submit<Void> {
                     client.newCall(
-                        Request.Builder().url("https://api.mangadex.org/at-home/server/chapter-$index")
+                        Request.Builder().url("https://api.mangadex.org/manga/manga-$index/feed")
                             .header("X-Call", "background-$index").build(),
                     ).execute().close()
                     null
@@ -123,7 +123,7 @@ class MangaDexRateLimitTest {
     }
 
     @Test
-    fun `mangadex request priorities rank user actions above covers above background`() {
+    fun `mangadex request priorities rank user actions above background`() {
         fun priority(url: String) = MangaDexRateLimit.mangaDexRequestPriority(
             Request.Builder().url(url).build().url,
         )
@@ -132,9 +132,47 @@ class MangaDexRateLimitTest {
         assertEquals(10, priority("https://api.mangadex.org/chapter/01234567-89ab-cdef-0123-456789abcdef"))
         assertEquals(10, priority("https://api.mangadex.org/user/follows/manga"))
         assertEquals(10, priority("https://api.mangadex.org/list/805ba886-dd99-4aa4-b460-4bd7c7b71352"))
-        assertEquals(10, priority("https://antsylich.github.io/mangadex-seasonal/seasonal-list.min.json"))
-        assertEquals(5, priority("https://uploads.mangadex.org/covers/abc/cover.jpg"))
-        assertEquals(1, priority("https://api.mangadex.org/at-home/server/01234567-89ab-cdef-0123-456789abcdef"))
+        assertEquals(10, priority("https://api.mangadex.org/at-home/server/01234567-89ab-cdef-0123-456789abcdef"))
+        assertEquals(1, priority("https://api.mangadex.org/manga/01234567-89ab-cdef-0123-456789abcdef/feed?limit=500"))
         assertEquals(1, priority("https://auth.mangadex.org/realms/mangadex/protocol/openid-connect/token"))
+    }
+
+    @Test
+    fun `requests to other hosts are not held behind a full mangadex api queue`() {
+        val starts = java.util.concurrent.ConcurrentHashMap<String, Long>()
+        val recorder = okhttp3.Interceptor { chain ->
+            starts[chain.request().url.toString()] = System.nanoTime()
+            ok(chain.request())
+        }
+        val client = clientWith(MangaDexRateLimit.interceptor, recorder)
+        val executor = Executors.newFixedThreadPool(16)
+        try {
+            val began = System.nanoTime()
+            val api = (1..15).map { index ->
+                executor.submit<Void> {
+                    client.newCall(Request.Builder().url("https://api.mangadex.org/statistics/manga/$index").build()).execute().close()
+                    null
+                }
+            }
+            Thread.sleep(150)
+            val elsewhere = listOf(
+                "https://cdn.jsdelivr.net/gh/nekomangaorg/similar-data@main/similar/82/822.html",
+                "https://uploads.mangadex.org/covers/abc/cover.jpg.256.jpg",
+                "https://graphql.anilist.co/",
+            )
+            elsewhere.forEach { url -> client.newCall(Request.Builder().url(url).build()).execute().close() }
+            val elsewhereDone = System.nanoTime()
+            api.forEach { it.get(20, TimeUnit.SECONDS) }
+            assertTrue(
+                TimeUnit.NANOSECONDS.toMillis(elsewhereDone - began) < 1_000,
+                "other hosts waited ${TimeUnit.NANOSECONDS.toMillis(elsewhereDone - began)} ms behind the api queue",
+            )
+            val lastApi = (1..15).maxOf { starts.getValue("https://api.mangadex.org/statistics/manga/$it") }
+            assertTrue(TimeUnit.NANOSECONDS.toMillis(lastApi - began) >= 1_900, "api calls were not paced")
+        } finally {
+            executor.shutdownNow()
+            client.dispatcher.executorService.shutdown()
+            client.connectionPool.evictAll()
+        }
     }
 }

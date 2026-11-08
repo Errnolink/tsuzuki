@@ -1,5 +1,6 @@
 package tachiyomi.domain.chapter.service
 
+import exh.source.MERGED_SOURCE_ID
 import tachiyomi.core.common.util.lang.compareToWithCollator
 import tachiyomi.domain.chapter.model.Chapter
 import tachiyomi.domain.manga.model.Manga
@@ -12,9 +13,10 @@ fun getChapterSort(
     Chapter,
 ) -> Int {
     return when (manga.sorting) {
-        Manga.CHAPTER_SORTING_SOURCE -> when (sortDescending) {
-            true -> { c1, c2 -> c1.sourceOrder.compareTo(c2.sourceOrder) }
-            false -> { c1, c2 -> c2.sourceOrder.compareTo(c1.sourceOrder) }
+        Manga.CHAPTER_SORTING_SOURCE -> when {
+            manga.source == MERGED_SOURCE_ID -> mergedSourceSort(sortDescending)
+            sortDescending -> { c1, c2 -> c1.sourceOrder.compareTo(c2.sourceOrder) }
+            else -> { c1, c2 -> c2.sourceOrder.compareTo(c1.sourceOrder) }
         }
         Manga.CHAPTER_SORTING_NUMBER -> when (sortDescending) {
             true -> { c1, c2 -> c2.chapterNumber.compareTo(c1.chapterNumber) }
@@ -30,4 +32,10 @@ fun getChapterSort(
         }
         else -> throw NotImplementedError("Invalid chapter sorting method: ${manga.sorting}")
     }
+}
+
+private fun mergedSourceSort(sortDescending: Boolean): (Chapter, Chapter) -> Int {
+    val oldestFirst = compareBy<Chapter>({ it.chapterNumber }, { it.dateUpload }, { -it.sourceOrder })
+    val comparator = if (sortDescending) oldestFirst.reversed() else oldestFirst
+    return comparator::compare
 }

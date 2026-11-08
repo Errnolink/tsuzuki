@@ -4,34 +4,25 @@ import tachiyomi.core.common.preference.Preference
 import tachiyomi.core.common.preference.PreferenceStore
 import tachiyomi.core.common.preference.getEnum
 
-enum class FeedLayout {
-    NEW,
-    CLASSIC,
-}
-
-enum class BrowseLayout {
-    HYBRID,
-    DISCOVER,
+enum class DetailsHeader {
+    CENTERED,
     CLASSIC,
 }
 
 class TsuzukiPreferences(
     private val preferenceStore: PreferenceStore,
 ) {
-    fun feedLayout(): Preference<FeedLayout> =
-        preferenceStore.getEnum("pref_feed_layout", FeedLayout.NEW)
+    fun libraryProgressRing(): Preference<Boolean> =
+        preferenceStore.getBoolean("pref_library_progress_ring", true)
 
-    fun browseLayout(): Preference<BrowseLayout> =
-        preferenceStore.getEnum("pref_browse_layout", BrowseLayout.HYBRID)
+    fun detailsHeader(): Preference<DetailsHeader> =
+        preferenceStore.getEnum("pref_details_header", DetailsHeader.CENTERED)
 
-    fun motionStandardTokens(): Preference<Boolean> =
-        preferenceStore.getBoolean("pref_layout_motion_tokens", true)
+    fun coverColourCard(): Preference<Boolean> =
+        preferenceStore.getBoolean("pref_cover_colour_card", false)
 
-    fun largeTitles(): Preference<Boolean> =
-        preferenceStore.getBoolean("pref_layout_large_titles", true)
-
-    fun detailsAppleHeader(): Preference<Boolean> =
-        preferenceStore.getBoolean("pref_layout_details_apple_header", false)
+    fun smartUpdate(): Preference<Boolean> =
+        preferenceStore.getBoolean("pref_library_smart_update", false)
 
     fun nullRepairLastVersionCode(): Preference<Int> =
         preferenceStore.getInt("pref_null_repair_last_version_code", 0)

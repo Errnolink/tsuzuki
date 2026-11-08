@@ -39,7 +39,7 @@ class DownloadPreferences(
 
     fun parallelSourceLimit() = preferenceStore.getInt("download_parallel_source_limit", 5)
 
-    fun parallelPageLimit() = preferenceStore.getInt("download_parallel_page_limit", 5)
+    fun parallelPageLimit() = preferenceStore.getInt("download_parallel_page_limit", 4)
 
     // SY -->
     fun includeChapterUrlHash() = preferenceStore.getBoolean("download_include_chapter_url_hash", false)

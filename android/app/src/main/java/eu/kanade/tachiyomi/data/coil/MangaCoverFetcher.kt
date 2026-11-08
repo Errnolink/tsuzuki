@@ -209,10 +209,19 @@ class MangaCoverFetcher(
 
     private suspend fun executeNetworkRequest(): Response {
         val client = sourceLazy.value?.client ?: callFactoryLazy.value
-        val response = client.newCall(newRequest()).await()
+        val refused = dev.errnolink.tsuzuki.network.RefusedCovers.shared
+        val coverUrl = url!!
+        refused.check(coverUrl)
+        val response = try {
+            dev.errnolink.tsuzuki.network.HostGate.covers.pass(coverUrl) { client.newCall(newRequest()).await() }
+        } catch (e: Exception) {
+            refused.onFailure(coverUrl, e)
+            throw e
+        }
+        refused.onResponse(coverUrl, response.code)
         if (!response.isSuccessful && response.code != HTTP_NOT_MODIFIED) {
             response.close()
-            throw IOException(response.message)
+            throw IOException("HTTP ${response.code} ${response.message}")
         }
         return response
     }
@@ -221,9 +230,13 @@ class MangaCoverFetcher(
         val request = Request.Builder().apply {
             url(url!!)
 
-            val sourceHeaders = sourceLazy.value?.headers
+            val source = sourceLazy.value
+            val sourceHeaders = source?.headers
             if (sourceHeaders != null) {
                 headers(sourceHeaders)
+            }
+            if (source !is eu.kanade.tachiyomi.source.online.all.MangaDex) {
+                dev.errnolink.tsuzuki.network.MangaDexCoverAgent.userAgentFor(url!!)?.let { header("User-Agent", it) }
             }
         }
 

@@ -83,6 +83,7 @@ class BackupRestoreEhCompatTest {
         )
         Injekt.addSingleton(LibraryPreferences(preferences))
         Injekt.addSingleton(BackupPreferences(preferences))
+        Injekt.addSingleton(dev.errnolink.tsuzuki.preference.TsuzukiPreferences(preferences))
         mockkStatic(WorkManagerImpl::class)
         every { WorkManagerImpl.getInstance(any()) } returns mockk(relaxed = true)
 
@@ -175,6 +176,8 @@ class BackupRestoreEhCompatTest {
         ): T? {
             return null
         }
+
+        override suspend fun <T> holdingSubscriptions(block: suspend () -> T): T = block()
 
         override fun <T : Any> subscribeToList(
             debounceMillis: Long,

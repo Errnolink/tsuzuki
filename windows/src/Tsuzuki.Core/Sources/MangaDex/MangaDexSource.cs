@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Globalization;
 using System.Text;
 using System.Text.RegularExpressions;
@@ -9,6 +10,8 @@ public sealed partial class MangaDexSource : ISource
     public const int MangaLimit = 20;
     public const int LatestChapterLimit = 100;
     public const int FeedLimit = 500;
+    private const int MaxOffsetWindow = 10000;
+    private static readonly TimeSpan ShortCallTimeout = TimeSpan.FromSeconds(30);
 
     private static readonly IReadOnlyList<string> DefaultBlockedGroups =
     [
@@ -22,14 +25,57 @@ public sealed partial class MangaDexSource : ISource
 
     private static readonly string[] AllContentRatings = ["safe", "suggestive", "erotica", "pornographic"];
 
+    private static readonly FilterSpec OrderFilter = new("order", "Sort", FilterKind.Select,
+    [
+        new("Relevance", "relevance"),
+        new("Latest upload", "latestUploadedChapter"),
+        new("Follows", "followedCount"),
+        new("Rating", "rating"),
+        new("Year", "year"),
+        new("Title", "title"),
+    ]) { Default = ["relevance"] };
+
+    private static readonly FilterSpec DirectionFilter = new("direction", "Sort order", FilterKind.Select,
+        [new("Descending", "desc"), new("Ascending", "asc")]) { Default = ["desc"] };
+
+    private static readonly FilterSpec StatusFilter = new("status", "Publication status", FilterKind.Multi,
+        [new("Ongoing", "ongoing"), new("Completed", "completed"), new("Hiatus", "hiatus"), new("Cancelled", "cancelled")]);
+
+    private static readonly FilterSpec DemographicFilter = new("publicationDemographic", "Demographic", FilterKind.Multi,
+        [new("None", "none"), new("Shounen", "shounen"), new("Shoujo", "shoujo"), new("Seinen", "seinen"), new("Josei", "josei")]);
+
+    private static readonly FilterSpec LanguageFilter = new("originalLanguage", "Original language", FilterKind.Multi,
+        [new("Japanese (manga)", "ja"), new("Chinese (manhua)", "zh"), new("Korean (manhwa)", "ko")]);
+
+    private static readonly FilterSpec IncludedModeFilter = new("includedTagsMode", "Included tags mode", FilterKind.Select,
+        [new("All (and)", "AND"), new("Any (or)", "OR")]) { Default = ["AND"] };
+
+    private static readonly FilterSpec ExcludedModeFilter = new("excludedTagsMode", "Excluded tags mode", FilterKind.Select,
+        [new("All (and)", "AND"), new("Any (or)", "OR")]) { Default = ["OR"] };
+
+    private static readonly string[] TagGroups = ["content", "format", "genre", "theme"];
+
+    private static readonly FilterSpec TagSelection = new("tags", "Tags", FilterKind.TriState, []);
+
+    private const long PageListLifetimeMs = 10 * 60 * 1000;
+
     private readonly MangaDexClient client;
     private readonly MangaDexOptions options;
+    private readonly FilterSpec contentRatingFilter;
+    private readonly ConcurrentDictionary<string, (long At, Task<IReadOnlyList<PageRef>> Pages)> pageLists = new();
+    private readonly Lock filtersGate = new();
+    private Task<IReadOnlyList<FilterSpec>>? filters;
 
     public MangaDexSource(MangaDexClient client, MangaDexOptions options, string lang)
     {
         this.client = client;
         this.options = options;
         Lang = lang;
+        contentRatingFilter = new FilterSpec("contentRating", "Content rating", FilterKind.Multi,
+            [new("Safe", "safe"), new("Suggestive", "suggestive"), new("Erotica", "erotica"), new("Pornographic", "pornographic")])
+        {
+            Default = options.ContentRatings,
+        };
     }
 
     public long Id => MangaDexIds.For(Lang);
@@ -104,25 +150,84 @@ public sealed partial class MangaDexSource : ISource
         return new MangasPage(mangas, HasNextPage(chapterResponse, offset));
     }
 
-    public async Task<MangasPage> SearchAsync(string query, int page, CancellationToken ct = default)
+    public Task<IReadOnlyList<FilterSpec>> GetFiltersAsync(CancellationToken ct = default)
+    {
+        lock (filtersGate)
+        {
+            if (filters is null || filters.IsFaulted || filters.IsCanceled)
+            {
+                filters = FetchFiltersAsync();
+            }
+            return filters.WaitAsync(ct);
+        }
+    }
+
+    public async Task<MangasPage> SearchAsync(SearchQuery query, int page, CancellationToken ct = default)
     {
         var offset = MangaLimit * (page - 1);
         var builder = new QueryBuilder()
             .Add("limit", MangaLimit)
             .Add("offset", offset)
             .Add("includes[]", "cover_art");
-        var trimmed = CollapseWhitespace().Replace(query.Trim(), " ");
+        var trimmed = CollapseWhitespace().Replace(query.Text.Trim(), " ");
         if (trimmed.Length > 0)
         {
             builder.Add("title", trimmed);
         }
-        builder.AddEach("contentRating[]", options.ContentRatings);
-        builder.Add("order[relevance]", "desc");
-        builder.Add("includedTagsMode", "AND");
-        builder.Add("excludedTagsMode", "AND");
+        foreach (var language in query.Get(LanguageFilter))
+        {
+            if (language == "zh")
+            {
+                builder.Add("originalLanguage[]", "zh-hk");
+            }
+            builder.Add("originalLanguage[]", language);
+        }
+        builder.AddEach("contentRating[]", query.Get(contentRatingFilter));
+        builder.AddEach("publicationDemographic[]", query.Get(DemographicFilter));
+        builder.AddEach("status[]", query.Get(StatusFilter));
+        builder.Add($"order[{query.Single(OrderFilter)}]", query.Single(DirectionFilter));
+        builder.AddEach("includedTags[]", query.Get(TagSelection));
+        builder.AddEach("excludedTags[]", query.Excluded(TagSelection));
+        builder.Add("includedTagsMode", query.Single(IncludedModeFilter));
+        builder.Add("excludedTagsMode", query.Single(ExcludedModeFilter));
         var response = await client.GetAsync<MangaListResponse>($"/manga{builder}", ct).ConfigureAwait(false);
         return ToMangasPage(response, offset);
     }
+
+    public Uri WebUrl(string mangaUrl) => new($"https://mangadex.org/title/{UuidFromUrl(mangaUrl)}");
+
+    private async Task<IReadOnlyList<FilterSpec>> FetchFiltersAsync()
+    {
+        var response = await GetWithTimeoutAsync<TagListResponse>("/manga/tag").ConfigureAwait(false)
+            ?? throw new HttpRequestException("MangaDex returned no tag list");
+        var tags = response.Data
+            .Where(tag => tag.Attributes is { Name.Length: > 0 })
+            .OrderBy(tag => Array.IndexOf(TagGroups, tag.Attributes!.Group) is var index and >= 0 ? index : TagGroups.Length)
+            .ThenBy(tag => tag.Attributes!.Name, StringComparer.OrdinalIgnoreCase)
+            .Select(tag => new FilterOption(tag.Attributes!.Name!, tag.Id, GroupLabel(tag.Attributes.Group)))
+            .ToList();
+        return
+        [
+            OrderFilter,
+            DirectionFilter,
+            contentRatingFilter,
+            StatusFilter,
+            DemographicFilter,
+            LanguageFilter,
+            TagSelection with { Options = tags },
+            IncludedModeFilter,
+            ExcludedModeFilter,
+        ];
+    }
+
+    private static string GroupLabel(string? group) => group switch
+    {
+        "content" => "Content",
+        "format" => "Format",
+        "genre" => "Genre",
+        "theme" => "Theme",
+        _ => "Other",
+    };
 
     public async Task<SManga> GetMangaDetailsAsync(string mangaUrl, CancellationToken ct = default)
     {
@@ -163,11 +268,8 @@ public sealed partial class MangaDexSource : ISource
                 .Add("includeEmptyPages", 0)
                 .AddEach("contentRating[]", AllContentRatings)
                 .Add("includeUnavailable", 0);
-            var response = await client.GetAsync<ChapterListResponse>($"/manga/{uuid}/feed{query}", ct).ConfigureAwait(false);
-            if (response is null)
-            {
-                break;
-            }
+            var response = await client.GetAsync<ChapterListResponse>($"/manga/{uuid}/feed{query}", ct).ConfigureAwait(false)
+                ?? throw new HttpRequestException($"MangaDex returned no feed page at offset {offset} for {mangaUrl}");
             chapters.AddRange(response.Data);
             offset += response.Limit;
             if (!HasNextPage(response, response.Offset))
@@ -176,20 +278,48 @@ public sealed partial class MangaDexSource : ISource
             }
         }
         return chapters
-            .Where(c => c.Attributes is null || !MangaDexMapper.IsInvalid(c.Attributes))
+            .Where(c => c.Attributes is { } attributes && !MangaDexMapper.IsInvalid(attributes))
             .Select(MangaDexMapper.CreateChapter)
             .ToList();
     }
 
-    public async Task<IReadOnlyList<PageRef>> GetPageListAsync(string chapterUrl, CancellationToken ct = default)
+    public Task<IReadOnlyList<PageRef>> GetPageListAsync(string chapterUrl, bool refresh = false, CancellationToken ct = default)
     {
         var chapterId = UuidFromUrl(chapterUrl);
-        var response = await client.GetAsync<AtHomeResponse>($"/at-home/server/{chapterId}", ct).ConfigureAwait(false)
+        var now = Environment.TickCount64;
+        if (!refresh && pageLists.TryGetValue(chapterId, out var cached) && now - cached.At < PageListLifetimeMs
+            && !cached.Pages.IsFaulted && !cached.Pages.IsCanceled)
+        {
+            return cached.Pages.WaitAsync(ct);
+        }
+        foreach (var entry in pageLists)
+        {
+            if (now - entry.Value.At >= PageListLifetimeMs)
+            {
+                pageLists.TryRemove(entry);
+            }
+        }
+        var fetch = FetchPageListAsync(chapterId, chapterUrl);
+        pageLists[chapterId] = (now, fetch);
+        return fetch.WaitAsync(ct);
+    }
+
+    public HttpRequestMessage CreateImageRequest(Uri url)
+    {
+        var request = new HttpRequestMessage(HttpMethod.Get, url);
+        request.Headers.UserAgent.ParseAdd(MangaDexClient.UserAgent);
+        return request;
+    }
+
+    private async Task<IReadOnlyList<PageRef>> FetchPageListAsync(string chapterId, string chapterUrl)
+    {
+        var response = await GetWithTimeoutAsync<AtHomeResponse>($"/at-home/server/{chapterId}").ConfigureAwait(false)
             ?? throw new HttpRequestException($"MangaDex returned no at-home server for {chapterUrl}");
+        var quality = options.DataSaver ? "data-saver" : "data";
         var files = options.DataSaver ? response.Chapter.DataSaver : response.Chapter.Data;
-        var prefix = options.DataSaver ? "/data-saver/" : "/data/";
+        var hash = response.Chapter.Hash;
         return files
-            .Select((file, index) => new PageRef(index, new Uri($"{response.BaseUrl}{prefix}{response.Chapter.Hash}/{file}")))
+            .Select((file, index) => new PageRef(index, new Uri($"{response.BaseUrl}/{quality}/{hash}/{file}"), $"{quality}/{hash}/{file}"))
             .ToList();
     }
 
@@ -205,9 +335,25 @@ public sealed partial class MangaDexSource : ISource
         return new MangasPage(mangas, HasNextPage(response, offset));
     }
 
-    private static bool HasNextPage(ChapterListResponse response, int offset) => response.Limit + offset < response.Total;
+    private async Task<T?> GetWithTimeoutAsync<T>(string path) where T : class
+    {
+        using var timeout = new CancellationTokenSource(ShortCallTimeout);
+        try
+        {
+            return await client.GetAsync<T>(path, timeout.Token).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException ex)
+        {
+            throw new HttpRequestException($"MangaDex timed out for {path}", ex);
+        }
+    }
 
-    private static bool HasNextPage(MangaListResponse response, int offset) => response.Limit + offset < response.Total;
+    private static bool HasNextPage(ChapterListResponse response, int offset) => HasNextPage(response.Limit, offset, response.Total);
+
+    private static bool HasNextPage(MangaListResponse response, int offset) => HasNextPage(response.Limit, offset, response.Total);
+
+    private static bool HasNextPage(int limit, int offset, int total) =>
+        limit > 0 && offset + limit < total && offset + 2 * limit <= MaxOffsetWindow;
 
     private static List<string> ChapterMangaIds(IReadOnlyList<ChapterData> chapters)
     {

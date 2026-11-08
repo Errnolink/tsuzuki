@@ -1,6 +1,8 @@
 package eu.kanade.presentation.browse.components
 
 import androidx.compose.material.icons.Icons
+import androidx.compose.foundation.layout.size
+import androidx.compose.ui.unit.dp
 import androidx.compose.material.icons.automirrored.filled.ViewList
 import androidx.compose.material.icons.filled.ViewModule
 import androidx.compose.material3.Text
@@ -38,6 +40,7 @@ fun BrowseSourceSimpleToolbar(
         actions = {
             var selectingDisplayMode by remember { mutableStateOf(false) }
             // KMK -->
+            androidx.compose.foundation.layout.Box {
             AppBarActions(
                 actions = persistentListOf<AppBar.AppBarAction>().builder().apply {
                     displayMode?.let { mode ->
@@ -62,6 +65,9 @@ fun BrowseSourceSimpleToolbar(
                     .build(),
             )
             // KMK <--
+            androidx.compose.foundation.layout.Box(
+                androidx.compose.ui.Modifier.align(androidx.compose.ui.Alignment.CenterStart).size(48.dp),
+            ) {
             DropdownMenu(
                 expanded = selectingDisplayMode,
                 onDismissRequest = { selectingDisplayMode = false },
@@ -96,6 +102,8 @@ fun BrowseSourceSimpleToolbar(
                     onDisplayModeChange(LibraryDisplayMode.List)
                 }
                 // KMK <--
+            }
+            }
             }
         },
         scrollBehavior = scrollBehavior,

@@ -35,6 +35,7 @@ import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.launch
 import tachiyomi.core.common.i18n.stringResource
 import tachiyomi.i18n.MR
+import tachiyomi.data.DatabaseHandler
 import tachiyomi.i18n.kmk.KMR
 import dev.errnolink.tsuzuki.sync.ExtensionSync
 import logcat.LogPriority
@@ -59,6 +60,7 @@ class BackupRestorer(
     // KMK -->
     private val feedRestorer: FeedRestorer = FeedRestorer(),
     // KMK <--
+    private val handler: DatabaseHandler = Injekt.get(),
 ) {
 
     private var restoreAmount = 0
@@ -81,7 +83,7 @@ class BackupRestorer(
     private suspend fun restoreWith(options: RestoreOptions, body: suspend () -> Unit): List<Pair<Date, String>> {
         val startTime = System.currentTimeMillis()
 
-        body()
+        handler.holdingSubscriptions { body() }
 
         val time = System.currentTimeMillis() - startTime
 
@@ -154,6 +156,16 @@ class BackupRestorer(
             }
 
             // TODO: optionally trigger online library + tracker update
+        }
+
+        if (options.libraryEntries) {
+            handler.await(inTransaction = true) {
+                mergedQueries.bindUnresolved()
+                if (!isSync) {
+                    mangasQueries.resetIsSyncing()
+                    chaptersQueries.resetIsSyncing()
+                }
+            }
         }
 
         // KMK -->

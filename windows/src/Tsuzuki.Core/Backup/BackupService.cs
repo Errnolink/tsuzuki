@@ -11,6 +11,9 @@ public sealed class BackupService : IBackupService
     private readonly LibraryDatabase _db;
     private readonly Sync.SyncEngine _engine;
     private readonly Func<IReadOnlyList<IBackupTarget>>? _targetProbe;
+    private readonly Lock _discoveryLock = new();
+    private Task<IReadOnlyList<IBackupTarget>>? _discovery;
+    private long _discoveredAt;
 
     public BackupService(LibraryDatabase db, SqliteLibraryStore? store = null)
     {
@@ -23,7 +26,18 @@ public sealed class BackupService : IBackupService
         _targetProbe = targetProbe;
     }
 
-    public IReadOnlyList<IBackupTarget> DiscoverTargets()
+    public Task<IReadOnlyList<IBackupTarget>> DiscoverTargetsAsync()
+    {
+        lock (_discoveryLock)
+        {
+            var fresh = Environment.TickCount64 - _discoveredAt < (long)TimeSpan.FromMinutes(5).TotalMilliseconds;
+            if (fresh && _discovery is { IsFaulted: false, IsCanceled: false } cached) return cached;
+            _discoveredAt = Environment.TickCount64;
+            return _discovery = Task.Run(Probe);
+        }
+    }
+
+    private IReadOnlyList<IBackupTarget> Probe()
     {
         if (_targetProbe != null) return _targetProbe();
         var targets = new List<IBackupTarget> { new LocalFolderTarget(AppPaths.Default.Backups) };
@@ -34,7 +48,7 @@ public sealed class BackupService : IBackupService
     public async Task<BackupResult> CreateAsync(IBackupTarget target, CancellationToken ct = default)
     {
         var backup = await RenderLibrary().ConfigureAwait(false);
-        var name = "tsuzuki-pc_" + DateTimeOffset.Now.ToString("yyyy-MM-dd_HH-mm") + ".tachibk";
+        var name = BackupFiles.Prefix + DateTimeOffset.Now.ToString("yyyy-MM-dd_HH-mm") + BackupFiles.Extension;
         using var buffer = new MemoryStream();
         using (var gzip = new GZipStream(buffer, CompressionLevel.Fastest, leaveOpen: true))
         {

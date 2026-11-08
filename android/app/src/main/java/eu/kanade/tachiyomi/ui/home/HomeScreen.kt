@@ -135,16 +135,17 @@ object HomeScreen : Screen() {
                         )
                     }
                     if (bottomVisible) {
-                        val visible = if (navigationStyle == NavigationStyle.MangaDex) {
+                        val visible = if (navigationStyle == NavigationStyle.Simple) {
                             tabs
                         } else {
                             tabs.filter { it.isEnabled() }.let { if (it.size in 4..5) it else tabs }
                         }
                         val tabItems = visible.map { tab ->
+                            val badgeCount = key(tab.key) { rememberTabBadgeCount(tab) }
                             TsuzukiTab(
                                 key = tab.key,
                                 title = tab.options.title,
-                                icon = { TabIcon(tab) },
+                                icon = { dev.errnolink.tsuzuki.ui.shell.ShellTabIcon(tab, badgeCount = badgeCount) },
                                 onClick = {
                                     if (tabNavigator.current.key == tab.key) {
                                         reselect.tryEmit(tab.key)
@@ -153,6 +154,7 @@ object HomeScreen : Screen() {
                                         tabNavigator.current = tab
                                     }
                                 },
+                                badge = badgeCount > 0,
                             )
                         }
                         val selectedIndex = visible.indexOfFirst { it.key == tabNavigator.current.key }.coerceAtLeast(0)
@@ -202,7 +204,6 @@ object HomeScreen : Screen() {
                 launch {
                     openTabEvent.receiveAsFlow().collectLatest {
                         openTabFeedSegment(it, navigationStyle)?.let(FeedTab::openSegment)
-                        if (it is Tab.Browse && it.toExtensions) BrowseTab.showExtension()
                         openTabBottomTab(it, navigationStyle)?.let { tab -> tabNavigator.current = tab }
                         if (it is Tab.Library && it.mangaIdToOpen != null) navigator.push(MangaScreen(it.mangaIdToOpen))
                         if (it is Tab.More) {
@@ -221,7 +222,7 @@ object HomeScreen : Screen() {
     }
 
     @Composable
-    private fun TabIcon(tab: eu.kanade.presentation.util.Tab) {
+    private fun rememberTabBadgeCount(tab: eu.kanade.presentation.util.Tab): Int {
         val count by produceState(0, tab.key) {
             when (tab) {
                 UpdatesTab -> {
@@ -233,7 +234,7 @@ object HomeScreen : Screen() {
                 else -> Unit
             }
         }
-        dev.errnolink.tsuzuki.ui.shell.ShellTabIcon(tab, badgeCount = count)
+        return count
     }
 
     suspend fun search(query: String) { librarySearchEvent.send(query) }

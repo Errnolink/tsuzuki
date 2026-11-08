@@ -27,6 +27,10 @@ internal sealed record EngineResult(
 /// </summary>
 internal sealed class SyncEngine
 {
+    private static readonly object LatencyGate = new();
+    private static int _lowLatencyUsers;
+    private static System.Runtime.GCLatencyMode _savedLatency;
+
     private readonly LibraryDatabase _db;
     private readonly SqliteLibraryStore? _store;
 
@@ -36,18 +40,40 @@ internal sealed class SyncEngine
         _store = store;
     }
 
+    private static void EnterLowLatency()
+    {
+        lock (LatencyGate)
+        {
+            if (_lowLatencyUsers++ == 0)
+            {
+                _savedLatency = System.Runtime.GCSettings.LatencyMode;
+                System.Runtime.GCSettings.LatencyMode = System.Runtime.GCLatencyMode.SustainedLowLatency;
+            }
+        }
+    }
+
+    private static void ExitLowLatency()
+    {
+        lock (LatencyGate)
+        {
+            if (--_lowLatencyUsers == 0)
+            {
+                System.Runtime.GCSettings.LatencyMode = _savedLatency;
+            }
+        }
+    }
+
     public async Task<EngineResult> Merge(string deviceId, string deviceName, BackupMessage incoming, long clientCursor,
         bool forceFull, IReadOnlyList<long> deletedCategoryUids, ReadOnlyMemory<byte>? rawIncoming = null, bool chapterDelta = false)
     {
-        var previousLatency = System.Runtime.GCSettings.LatencyMode;
-        System.Runtime.GCSettings.LatencyMode = System.Runtime.GCLatencyMode.SustainedLowLatency;
+        EnterLowLatency();
         try
         {
             return await MergeCore(deviceId, deviceName, incoming, clientCursor, forceFull, deletedCategoryUids, rawIncoming, chapterDelta).ConfigureAwait(false);
         }
         finally
         {
-            System.Runtime.GCSettings.LatencyMode = previousLatency;
+            ExitLowLatency();
         }
     }
 
@@ -234,15 +260,14 @@ internal sealed class SyncEngine
     /// </summary>
     public async Task<Backup.RestoreResult> Restore(BackupMessage incoming, ReadOnlyMemory<byte>? rawIncoming = null)
     {
-        var previousLatency = System.Runtime.GCSettings.LatencyMode;
-        System.Runtime.GCSettings.LatencyMode = System.Runtime.GCLatencyMode.SustainedLowLatency;
+        EnterLowLatency();
         try
         {
             return await RestoreCore(incoming, rawIncoming).ConfigureAwait(false);
         }
         finally
         {
-            System.Runtime.GCSettings.LatencyMode = previousLatency;
+            ExitLowLatency();
         }
     }
 

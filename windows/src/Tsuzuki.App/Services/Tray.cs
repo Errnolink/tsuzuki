@@ -1,5 +1,6 @@
 using System.Runtime.InteropServices;
 using Microsoft.Win32;
+using Tsuzuki.Core;
 
 namespace Tsuzuki.App;
 
@@ -28,7 +29,7 @@ public sealed class Tray : IDisposable
     private const int CommandOpen = 1;
     private const int CommandQuit = 2;
     private const string RunKey = @"Software\Microsoft\Windows\CurrentVersion\Run";
-    private const string RunValue = "Tsuzuki";
+    private const string RunValue = AppIdentity.Name;
 
     [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
     private struct NotifyIconData
@@ -98,10 +99,16 @@ public sealed class Tray : IDisposable
     [DllImport("user32.dll")]
     private static extern bool SetForegroundWindow(IntPtr hwnd);
 
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+    private static extern uint RegisterWindowMessageW(string name);
+
+    private static readonly uint TaskbarCreated = RegisterWindowMessageW("TaskbarCreated");
+
     private readonly IntPtr hwnd;
     private readonly IntPtr icon;
     private readonly SubclassProc proc;
     private bool added;
+    private string tip = string.Empty;
 
     public Tray(IntPtr hwnd, string iconPath)
     {
@@ -116,6 +123,7 @@ public sealed class Tray : IDisposable
 
     public void Show(string tip)
     {
+        this.tip = tip;
         var data = Data(tip);
         data.Flags = NifMessage | NifIcon | NifTip | NifShowTip;
         if (!added)
@@ -157,6 +165,12 @@ public sealed class Tray : IDisposable
 
     private IntPtr WndProc(IntPtr window, uint msg, IntPtr wParam, IntPtr lParam, UIntPtr id, UIntPtr data)
     {
+        if (msg == TaskbarCreated && TaskbarCreated != 0 && added)
+        {
+            added = false;
+            Show(tip);
+            return IntPtr.Zero;
+        }
         if (msg == WmTray)
         {
             var evt = (int)(lParam.ToInt64() & 0xFFFF);

@@ -175,6 +175,25 @@ class UpdateLogicTest {
     }
 
     @Test
+    fun `beta package never offers the stable or dev apk`() {
+        val release = UpdateLogic.parseRelease(sampleReleaseJson)
+        val candidate = UpdateLogic.findReleaseCandidate(
+            release = release,
+            applicationId = "dev.errnolink.tsuzuki.beta",
+            supportedAbis = arrayOf("arm64-v8a", "x86_64"),
+            currentVersionCode = 1L,
+            currentVersionName = "0.1.0",
+        )
+        assertNull(candidate)
+    }
+
+    @Test
+    fun `stable package never falls back to a dev apk`() {
+        val assets = listOf(GithubAsset("tsuzuki-dev-universal.apk", "https://url"))
+        assertNull(UpdateLogic.selectAsset(assets, "dev.errnolink.tsuzuki", arrayOf("arm64-v8a")))
+    }
+
+    @Test
     fun `findReleaseCandidate produces valid candidate when newer`() {
         val release = UpdateLogic.parseRelease(sampleReleaseJson)
         val candidate = UpdateLogic.findReleaseCandidate(
@@ -204,7 +223,7 @@ class UpdateLogicTest {
     }
 
     @Test
-    fun `monorepo picks the newest published android release and ignores windows, drafts and prereleases`() {
+    fun `one release per version picks the newest published v tag and ignores old per-platform tags, drafts and prereleases`() {
         fun release(tag: String, draft: Boolean = false, prerelease: Boolean = false) = GithubRelease(
             tagName = tag,
             htmlUrl = "https://github.com/Errnolink/tsuzuki/releases/tag/$tag",
@@ -213,21 +232,22 @@ class UpdateLogicTest {
             assets = listOf(GithubAsset("tsuzuki-arm64-v8a.apk", "https://example.invalid/$tag.apk")),
         )
         val releases = listOf(
-            release("windows-v0.3.0"),
-            release("android-v0.3.0", draft = true),
-            release("android-v0.3.0-rc1", prerelease = true),
-            release("android-v0.2.0"),
-            release("android-v0.2.1"),
+            release("windows-v0.9.0"),
+            release("android-v0.9.0"),
+            release("v0.3.0", draft = true),
+            release("v0.3.0-rc1", prerelease = true),
+            release("v0.2.0"),
+            release("v0.10.0"),
         )
 
         val picked = UpdateLogic.latestAndroidRelease(releases)
-        assertEquals("android-v0.2.1", picked?.tagName)
+        assertEquals("v0.10.0", picked?.tagName)
 
-        val fromBeta = UpdateLogic.findReleaseCandidate(picked!!, "dev.errnolink.tsuzuki", arrayOf("arm64-v8a"), 32L, "0.1-beta.30")
-        assertEquals("0.2.1", fromBeta?.versionName)
-        assertEquals("tsuzuki-arm64-v8a.apk", fromBeta?.assetName)
-        assertNull(UpdateLogic.findReleaseCandidate(picked, "dev.errnolink.tsuzuki", arrayOf("arm64-v8a"), 35L, "0.2.1"))
-        assertNull(UpdateLogic.latestAndroidRelease(listOf(release("windows-v0.3.0"))))
+        val from010 = UpdateLogic.findReleaseCandidate(picked!!, "dev.errnolink.tsuzuki", arrayOf("arm64-v8a"), 33L, "0.1.0")
+        assertEquals("0.10.0", from010?.versionName)
+        assertEquals("tsuzuki-arm64-v8a.apk", from010?.assetName)
+        assertNull(UpdateLogic.findReleaseCandidate(picked, "dev.errnolink.tsuzuki", arrayOf("arm64-v8a"), 40L, "0.10.0"))
+        assertNull(UpdateLogic.latestAndroidRelease(listOf(release("windows-v0.3.0"), release("android-v0.3.0"))))
     }
 
     @Test

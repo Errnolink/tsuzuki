@@ -13,10 +13,9 @@ class UpdateChapter(
 
     suspend fun await(chapterUpdate: ChapterUpdate) {
         try {
-            val changed = chapterUpdate.lastPageRead != null || (chapterUpdate.read != null &&
-                chapterRepository.getChapterById(chapterUpdate.id)?.read != chapterUpdate.read)
+            val forwarded = forReadSync(chapterUpdate)
             chapterRepository.update(chapterUpdate)
-            if (changed) readSync.onReadStatusChanged(listOf(chapterUpdate))
+            if (forwarded != null) readSync.onReadStatusChanged(listOf(forwarded))
         } catch (e: Exception) {
             logcat(LogPriority.ERROR, e)
         }
@@ -24,13 +23,18 @@ class UpdateChapter(
 
     suspend fun awaitAll(chapterUpdates: List<ChapterUpdate>) {
         try {
-            val changed = chapterUpdates.filter {
-                it.lastPageRead != null || (it.read != null && chapterRepository.getChapterById(it.id)?.read != it.read)
-            }
+            val forwarded = chapterUpdates.mapNotNull { forReadSync(it) }
             chapterRepository.updateAll(chapterUpdates)
-            if (changed.isNotEmpty()) readSync.onReadStatusChanged(changed)
+            if (forwarded.isNotEmpty()) readSync.onReadStatusChanged(forwarded)
         } catch (e: Exception) {
             logcat(LogPriority.ERROR, e)
         }
+    }
+
+    private suspend fun forReadSync(update: ChapterUpdate): ChapterUpdate? {
+        if (update.read == null && update.lastPageRead == null) return null
+        val readChanged = update.read != null && chapterRepository.getChapterById(update.id)?.read != update.read
+        if (!readChanged && update.lastPageRead == null) return null
+        return update.copy(read = update.read.takeIf { readChanged })
     }
 }

@@ -102,16 +102,10 @@ fun ReaderAppBars(
 ) {
     val isRtl = viewer is R2LPagerViewer
     val motion = TsuzukiTheme.motion
-    val moveEnter: FiniteAnimationSpec<IntOffset> = when {
-        motion.reduced -> M3Motion.reducedFade()
-        motion.standardTokens -> androidx.compose.animation.core.tween(M3Motion.Short4, easing = M3Motion.StandardDecelerate)
-        else -> M3Motion.enter()
-    }
-    val moveExit: FiniteAnimationSpec<IntOffset> = when {
-        motion.reduced -> M3Motion.reducedFade()
-        motion.standardTokens -> androidx.compose.animation.core.tween(M3Motion.Short3, easing = M3Motion.StandardAccelerate)
-        else -> M3Motion.emphasized(M3Motion.Medium1)
-    }
+    val moveEnter: FiniteAnimationSpec<IntOffset> =
+        if (motion.reduced) M3Motion.reducedFade() else androidx.compose.animation.core.tween(M3Motion.Short4, easing = M3Motion.StandardDecelerate)
+    val moveExit: FiniteAnimationSpec<IntOffset> =
+        if (motion.reduced) M3Motion.reducedFade() else androidx.compose.animation.core.tween(M3Motion.Short3, easing = M3Motion.StandardAccelerate)
     val fadeSpec: FiniteAnimationSpec<Float> = M3Motion.reducedFade()
     val effectiveBarStyle = resolveEffectiveBarStyle(barStyle, navBarType)
     val readerMenuActions = rememberReaderMenuActions(
@@ -155,6 +149,7 @@ fun ReaderAppBars(
                     onClickChapterList = onClickChapterList,
                     onClickSettings = onClickSettings,
                     moreActions = readerMenuActions,
+                    pagesLeft = pagesLeftInChapter(currentPage, totalPages),
                 )
             }
         }

@@ -97,7 +97,7 @@ public class LibraryBehaviourTests
                 new SChapter("/c/1", "1") { ChapterNumber = 1, Scanlator = "A" },
                 new SChapter("/c/2", "2") { ChapterNumber = 2, Scanlator = "A" },
             });
-            var refresher = new LibraryRefresher(store, new FakeRegistry(source));
+            var refresher = new LibraryRefresher(store, new SourceRegistry([source], _ => null));
             var parent = await store.UpsertFromSourceAsync(6969, new SManga("/manga/agg", "Aggregate"));
             var child = await store.UpsertFromSourceAsync(ChildSource, new SManga("/manga/child", "Child"));
             await store.SetFavoriteAsync(parent, true);
@@ -127,6 +127,33 @@ public class LibraryBehaviourTests
         }
     }
 
+    [Fact]
+    public async Task OneTitleFailingWithAnUnexpectedErrorDoesNotStopTheLibraryUpdate()
+    {
+        var (db, store) = TestLib.NewLibrary();
+        try
+        {
+            var source = new FakeSource([new SChapter("/c/1", "1") { ChapterNumber = 1 }]) { FailingUrl = "/manga/bad" };
+            var refresher = new LibraryRefresher(store, new SourceRegistry([source], _ => null));
+            var ids = new List<long>();
+            foreach (var url in new[] { "/manga/bad", "/manga/a", "/manga/b", "/manga/c" })
+            {
+                var id = await store.UpsertFromSourceAsync(ChildSource, new SManga(url, url));
+                await store.SetFavoriteAsync(id, true);
+                ids.Add(id);
+            }
+
+            var result = await refresher.RefreshLibraryAsync(ct: TestContext.Current.CancellationToken);
+
+            Assert.Equal(new UpdateRunResult(4, 3, 1), result);
+            foreach (var id in ids.Skip(1)) Assert.Single(await store.GetChaptersAsync(id));
+        }
+        finally
+        {
+            db.Dispose();
+        }
+    }
+
     private sealed class FakeSource(SChapter[] chapters) : ISource
     {
         public SChapter[] Chapters = chapters;
@@ -136,29 +163,33 @@ public class LibraryBehaviourTests
         public string Lang => "en";
         public bool SupportsLatest => false;
 
+        public Task<IReadOnlyList<FilterSpec>> GetFiltersAsync(CancellationToken ct = default) =>
+            throw new NotSupportedException();
+
         public Task<MangasPage> GetPopularAsync(int page, CancellationToken ct = default) =>
             throw new NotSupportedException();
 
         public Task<MangasPage> GetLatestAsync(int page, CancellationToken ct = default) =>
             throw new NotSupportedException();
 
-        public Task<MangasPage> SearchAsync(string query, int page, CancellationToken ct = default) =>
+        public Task<MangasPage> SearchAsync(SearchQuery query, int page, CancellationToken ct = default) =>
             throw new NotSupportedException();
 
         public Task<SManga> GetMangaDetailsAsync(string mangaUrl, CancellationToken ct = default) =>
             throw new NotSupportedException();
 
         public Task<IReadOnlyList<SChapter>> GetChapterListAsync(string mangaUrl, CancellationToken ct = default) =>
-            Task.FromResult<IReadOnlyList<SChapter>>(Chapters);
+            mangaUrl == FailingUrl
+                ? throw new FormatException("unparseable publish date")
+                : Task.FromResult<IReadOnlyList<SChapter>>(Chapters);
 
-        public Task<IReadOnlyList<PageRef>> GetPageListAsync(string chapterUrl, CancellationToken ct = default) =>
+        public string? FailingUrl;
+
+        public Task<IReadOnlyList<PageRef>> GetPageListAsync(string chapterUrl, bool refresh = false, CancellationToken ct = default) =>
             throw new NotSupportedException();
-    }
 
-    private sealed class FakeRegistry(ISource source) : ISourceRegistry
-    {
-        public IReadOnlyList<ISource> All => [source];
-        public ISource? Get(long sourceId) => sourceId == source.Id ? source : null;
-        public string DisplayName(long sourceId) => Get(sourceId)?.Name ?? "";
+        public HttpRequestMessage CreateImageRequest(Uri url) => new(HttpMethod.Get, url);
+
+        public Uri WebUrl(string mangaUrl) => throw new NotSupportedException();
     }
 }

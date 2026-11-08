@@ -135,7 +135,7 @@ fun Screen.rememberHistoryFeedContent(): LazyListScope.() -> Unit {
                 is HistoryScreenModel.Event.OpenChapter -> {
                     val chapter = e.chapter
                     if (chapter != null) {
-                        context.startActivity(ReaderActivity.newIntent(context, chapter.mangaId, chapter.id))
+                        dev.errnolink.tsuzuki.reader.ReaderTransition.open(context, ReaderActivity.newIntent(context, chapter.mangaId, chapter.id))
                     } else {
                         snackbarHostState.showSnackbar(context.stringResource(MR.strings.no_next_chapter))
                     }

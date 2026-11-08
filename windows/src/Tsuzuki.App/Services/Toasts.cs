@@ -10,7 +10,7 @@ namespace Tsuzuki.App;
 
 public static class Toasts
 {
-    public static void Show(string title, string? body = null, string? glyph = null, string? actionLabel = null, Action? action = null, string? coverUrl = null, int seconds = 5)
+    public static void Show(string title, string? body = null, string? glyph = null, string? actionLabel = null, Action<FrameworkElement>? action = null, string? coverUrl = null, int seconds = 5, string? key = null)
     {
         var host = App.MainWindow.Toasts;
         var res = Application.Current.Resources;
@@ -56,7 +56,7 @@ public static class Toasts
             var button = new Button { Style = (Style)res["TzAccentButton"], Content = actionLabel, VerticalAlignment = VerticalAlignment.Center, Height = 32, MinHeight = 0, Padding = new Thickness(14, 0, 14, 0), FontSize = 13 };
             button.Click += (_, _) =>
             {
-                action();
+                action(lead);
                 if (card is not null)
                 {
                     _ = Dismiss(host, card);
@@ -68,23 +68,33 @@ public static class Toasts
         card = new Border
         {
             Width = 380,
-            CornerRadius = new CornerRadius(16),
+            CornerRadius = (CornerRadius)Application.Current.Resources["TzCardRadius"],
             Background = Design.Theme.Brush("TzElevated"),
             BorderBrush = Design.Theme.Brush("TzStrokeStrong"),
             BorderThickness = new Thickness(1),
             Child = row,
             Shadow = new ThemeShadow(),
             Translation = new Vector3(0, 0, 32),
+            Tag = key,
         };
-        host.Children.Add(card);
+        var replaced = key is null ? -1 : host.Children.ToList().FindIndex(c => c is Border { Tag: string tag } && tag == key);
+        if (replaced >= 0)
+        {
+            host.Children[replaced] = card;
+            card.Translation = new Vector3(0, 0, 32);
+        }
+        else
+        {
+            host.Children.Add(card);
+        }
         while (host.Children.Count > 3)
         {
             host.Children.RemoveAt(0);
         }
         var v = Motion.VisualOf(card);
         var c = v.Compositor;
-        v.StartAnimation("Opacity", Motion.Scalar(c, 0, 1, Motion.Short4, Curve.StandardDecelerate));
-        if (!Motion.Reduced)
+        v.StartAnimation("Opacity", Motion.Scalar(c, replaced >= 0 ? 0.6f : 0, 1, Motion.Short4, Curve.StandardDecelerate));
+        if (!Motion.Reduced && replaced < 0)
         {
             v.StartAnimation("Translation", Motion.Vector3(c, new Vector3(36, 0, 32), new Vector3(0, 0, 32), Motion.Medium2, Curve.EmphasizedDecelerate));
         }

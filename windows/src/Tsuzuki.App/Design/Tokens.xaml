@@ -16,6 +16,9 @@
       <SolidColorBrush x:Key="TzContentLayer" Color="#101114" Opacity="0.92" />
       <SolidColorBrush x:Key="TzBackground" Color="#101114" />
       <SolidColorBrush x:Key="TzCard" Color="#1A1B20" />
+      <SolidColorBrush x:Key="TzCardBackground" Color="#0DFFFFFF" />
+      <SolidColorBrush x:Key="TzCardBackgroundHover" Color="#15FFFFFF" />
+      <SolidColorBrush x:Key="TzCardStroke" Color="#1A000000" />
       <SolidColorBrush x:Key="TzChipBackground" Color="#1E1F25" />
       <SolidColorBrush x:Key="TzChipCount" Color="#14FFFFFF" />
       <SolidColorBrush x:Key="TzCardHover" Color="#22232A" />
@@ -60,6 +63,9 @@
       <SolidColorBrush x:Key="TzContentLayer" Color="#F7F7FA" Opacity="0.94" />
       <SolidColorBrush x:Key="TzBackground" Color="#F2F2F7" />
       <SolidColorBrush x:Key="TzCard" Color="#FFFFFF" />
+      <SolidColorBrush x:Key="TzCardBackground" Color="#B3FFFFFF" />
+      <SolidColorBrush x:Key="TzCardBackgroundHover" Color="#80F9F9F9" />
+      <SolidColorBrush x:Key="TzCardStroke" Color="#0F000000" />
       <SolidColorBrush x:Key="TzChipBackground" Color="#FFFFFF" />
       <SolidColorBrush x:Key="TzChipCount" Color="#12000000" />
       <SolidColorBrush x:Key="TzCardHover" Color="#F1F1F6" />
@@ -98,7 +104,7 @@
   <FontFamily x:Key="TzIconFont">ms-appx:///Assets/Fonts/lucide.ttf#lucide</FontFamily>
 
   <CornerRadius x:Key="TzCoverRadius">10</CornerRadius>
-  <CornerRadius x:Key="TzCardRadius">14</CornerRadius>
-  <CornerRadius x:Key="TzControlRadius">10</CornerRadius>
+  <CornerRadius x:Key="TzCardRadius">8</CornerRadius>
+  <CornerRadius x:Key="TzControlRadius">4</CornerRadius>
   <CornerRadius x:Key="TzPillRadius">18</CornerRadius>
 </ResourceDictionary>

@@ -26,6 +26,7 @@ import dev.errnolink.tsuzuki.designsystem.PopUpRow
 import dev.errnolink.tsuzuki.designsystem.SegmentedControl
 import eu.kanade.domain.ui.model.NavigationStyle
 import kotlinx.collections.immutable.persistentListOf
+import kotlinx.collections.immutable.toPersistentList
 import kotlinx.collections.immutable.toImmutableMap
 import tachiyomi.i18n.MR
 import tachiyomi.i18n.sy.SYMR
@@ -54,6 +55,7 @@ val prefKeys: Set<String> = setOf(
         "pref_show_history_button",
         "app_date_format",
         "relative_time_v2",
+        "pref_details_header",
     )
 
     @Composable
@@ -121,10 +123,40 @@ val prefKeys: Set<String> = setOf(
         uiPreferences: UiPreferences,
     ): Preference.PreferenceGroup {
         val context = LocalContext.current
+        val tsuzukiPreferences = remember { Injekt.get<dev.errnolink.tsuzuki.preference.TsuzukiPreferences>() }
+        val headerPref = tsuzukiPreferences.detailsHeader()
+        val header by headerPref.collectAsState()
+        val headers = listOf(
+            dev.errnolink.tsuzuki.preference.DetailsHeader.CENTERED to "Centred cover",
+            dev.errnolink.tsuzuki.preference.DetailsHeader.CLASSIC to "Classic",
+        )
 
         return Preference.PreferenceGroup(
             title = "Layout",
             preferenceItems = persistentListOf(
+                Preference.PreferenceItem.CustomPreference(
+                    title = "Title page header",
+                ) {
+                    androidx.compose.foundation.layout.Column(Modifier.padding(start = 16.dp, end = 12.dp, top = 12.dp, bottom = 12.dp)) {
+                        dev.errnolink.tsuzuki.designsystem.TsuzukiText("Title page header", style = dev.errnolink.tsuzuki.designsystem.TsuzukiTheme.typography.body)
+                        dev.errnolink.tsuzuki.designsystem.TsuzukiText(
+                            "How a title's page shows its cover. Both open with the same animation.",
+                            style = dev.errnolink.tsuzuki.designsystem.TsuzukiTheme.typography.footnote,
+                            color = dev.errnolink.tsuzuki.designsystem.TsuzukiTheme.colors.secondary,
+                            modifier = Modifier.padding(top = 2.dp, bottom = 10.dp),
+                        )
+                        SegmentedControl(
+                            options = headers.map { it.second },
+                            selectedIndex = headers.indexOfFirst { it.first == header }.coerceAtLeast(0),
+                            onSelect = { index -> headerPref.set(headers[index].first) },
+                        )
+                    }
+                },
+                Preference.PreferenceItem.SwitchPreference(
+                    preference = tsuzukiPreferences.coverColourCard(),
+                    title = "Cover colour behind title",
+                    subtitle = "The title page takes a deep shade of its cover's colour, with matching buttons.",
+                ),
                 Preference.PreferenceItem.ListPreference(
                     preference = uiPreferences.tabletUiMode(),
                     entries = TabletUiMode.entries
@@ -145,7 +177,7 @@ val prefKeys: Set<String> = setOf(
         val navigationStyle by uiPreferences.navigationStyle().collectAsState()
         return Preference.PreferenceGroup(
             title = "Navigation",
-            preferenceItems = persistentListOf(
+            preferenceItems = listOfNotNull(
                 Preference.PreferenceItem.CustomPreference(
                     title = "Navigation style",
                 ) {
@@ -153,7 +185,7 @@ val prefKeys: Set<String> = setOf(
                         title = "Navigation style",
                         selected = navigationStyle,
                         options = listOf(
-                            PopUpItem(NavigationStyle.MangaDex, "MangaDex"),
+                            PopUpItem(NavigationStyle.Simple, "Simple"),
                             PopUpItem(NavigationStyle.Classic, "Classic"),
                         ),
                         onSelect = { uiPreferences.navigationStyle().set(it) },
@@ -162,12 +194,12 @@ val prefKeys: Set<String> = setOf(
                 Preference.PreferenceItem.SwitchPreference(
                     preference = uiPreferences.showNavUpdates(),
                     title = stringResource(SYMR.strings.pref_hide_updates_button),
-                ),
+                ).takeIf { navigationStyle == NavigationStyle.Classic },
                 Preference.PreferenceItem.SwitchPreference(
                     preference = uiPreferences.showNavHistory(),
                     title = stringResource(SYMR.strings.pref_hide_history_button),
-                ),
-            ),
+                ).takeIf { navigationStyle == NavigationStyle.Classic },
+            ).toPersistentList(),
         )
     }
 

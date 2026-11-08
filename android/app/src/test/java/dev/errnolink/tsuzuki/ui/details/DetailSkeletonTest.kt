@@ -2,7 +2,6 @@ package dev.errnolink.tsuzuki.ui.details
 
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.compositeOver
-import androidx.compose.ui.unit.dp
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNotEquals
 import org.junit.jupiter.api.Assertions.assertTrue
@@ -87,22 +86,5 @@ class DetailSkeletonTest {
         assertEquals(1f, themed.alpha, 1e-4f)
         assertNotEquals(base, themed)
         assertNotEquals(secondary, themed)
-    }
-
-    @Test
-    fun `cover block is 114dp wide at a 2 to 3 aspect`() {
-        assertEquals(114.dp, DetailSkeletonCoverWidth)
-        assertEquals(2f / 3f, DetailSkeletonCoverAspectRatio, 1e-4f)
-        assertEquals(171.dp, DetailSkeletonCoverHeight)
-        assertEquals(171f, DetailSkeletonCoverWidth.value / DetailSkeletonCoverAspectRatio, 0.001f)
-    }
-
-    @Test
-    fun `chapter rows are eight with cycling title widths`() {
-        assertEquals(8, DetailSkeletonChapterRowCount)
-        val cycle = floatArrayOf(0.72f, 0.54f, 0.65f, 0.45f)
-        for (index in 0 until 12) {
-            assertEquals(cycle[index % 4], DetailSkeletonChapterTitleFraction(index), 1e-4f)
-        }
     }
 }

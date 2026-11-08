@@ -167,10 +167,6 @@ class LibraryTopRowLogicTest {
         assertSame(cat1GridA, cat1GridB)
         assertNotSame(cat1GridA, cat2Grid)
 
-        val stripA = holder.libraryStripState
-        val stripB = holder.libraryStripState
-        assertSame(stripA, stripB)
-
         val updatesA = holder.updatesListState
         val updatesB = holder.updatesListState
         assertSame(updatesA, updatesB)
@@ -178,21 +174,6 @@ class LibraryTopRowLogicTest {
         val historyA = holder.historyListState
         val historyB = holder.historyListState
         assertSame(historyA, historyB)
-    }
-
-    @Test
-    fun `category strip auto-scroll target centers when viewport allows`() {
-        // Viewport 400px, item 100px -> center offset = -(400 - 100) / 2 = -150px
-        val offsetCenter = calculateCategoryStripScrollOffset(viewportWidth = 400, itemWidth = 100)
-        assertEquals(-150, offsetCenter)
-
-        // Viewport smaller than item -> no negative centering offset
-        val offsetNarrow = calculateCategoryStripScrollOffset(viewportWidth = 80, itemWidth = 100)
-        assertEquals(0, offsetNarrow)
-
-        // Equal width -> 0
-        val offsetEqual = calculateCategoryStripScrollOffset(viewportWidth = 100, itemWidth = 100)
-        assertEquals(0, offsetEqual)
     }
 
     @Test

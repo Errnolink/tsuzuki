@@ -5,12 +5,6 @@
   <DataTemplate x:Key="TzTileTemplate">
     <c:MangaTile Data="{Binding}" />
   </DataTemplate>
-  <DataTemplate x:Key="TzMediaRowTemplate">
-    <c:MediaRow Data="{Binding}" />
-  </DataTemplate>
-  <DataTemplate x:Key="TzSectionHeaderTemplate">
-    <c:SectionHeader Text="{Binding}" />
-  </DataTemplate>
   <Style x:Key="TzButtonBase" TargetType="Button">
     <Setter Property="Background" Value="Transparent" />
     <Setter Property="Foreground" Value="{ThemeResource TzText}" />

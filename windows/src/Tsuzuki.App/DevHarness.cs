@@ -67,7 +67,7 @@ public sealed class DevHarness
                     i++;
                     seen = true;
                     break;
-                case "--page" when value is "library" or "updates" or "history" or "browse" or "settings":
+                case "--page" when value is "library" or "updates" or "history" or "browse" or "extensions" or "downloads" or "settings":
                     page = value;
                     i++;
                     seen = true;
@@ -188,26 +188,47 @@ public sealed class DevHarness
         {
             window.AddRootPage("brushes", () => new Pages.BrushesProbePage(harness.BrushesOutput));
         }
-        await window.NavigateRootAsync(harness.Page ?? "library");
+        await window.NavigateRootAsync(harness.Page ?? AppHost.StartPage);
         if (Environment.GetEnvironmentVariable("TSUZUKI_PROBE") is { } probe)
         {
             foreach (var step in probe.Split(';', StringSplitOptions.RemoveEmptyEntries))
             {
                 var probeParts = step.Split(':');
-                if (probeParts.Length < 2 || probeParts[0] != "invokerow")
+                if (probeParts.Length < 2)
                 {
                     continue;
                 }
                 var delay = probeParts.Length >= 3 && int.TryParse(probeParts[2], out var parsedDelay) ? parsedDelay : 1500;
                 await Task.Delay(delay);
-                var row = FindInvokableRow(window.Content, probeParts[1]);
-                if (row is { } button)
+                switch (probeParts[0])
                 {
-                    new Microsoft.UI.Xaml.Automation.Peers.ButtonAutomationPeer(button).Invoke();
-                }
-                else
-                {
-                    Log.Error("probe", new InvalidOperationException($"row not found: {probeParts[1]}"));
+                    case "invokerow":
+                        if (FindInvokableRow(window.Content, probeParts[1]) is { } button)
+                        {
+                            new Microsoft.UI.Xaml.Automation.Peers.ButtonAutomationPeer(button).Invoke();
+                        }
+                        else
+                        {
+                            Log.Error("probe", new InvalidOperationException($"row not found: {probeParts[1]}"));
+                        }
+                        break;
+                    case "hero" when int.TryParse(probeParts[1], out var index):
+                        if (NthTile(window.Nav.Top, index) is { Data: { } data } tile)
+                        {
+                            Mark($"probe hero {data.MangaId}");
+                            await AppNav.OpenDetailsAsync(data.MangaId, tile.CoverElement);
+                            Mark("probe hero settled");
+                        }
+                        else
+                        {
+                            Log.Error("probe", new InvalidOperationException($"tile not found: {index}"));
+                        }
+                        break;
+                    case "back":
+                        Mark("probe back");
+                        await window.GoBackAsync();
+                        Mark("probe back settled");
+                        break;
                 }
             }
         }
@@ -249,6 +270,63 @@ public sealed class DevHarness
             AppHost.ApplyTheme();
         };
         themeTimer.Start();
+    }
+
+    private static readonly System.Diagnostics.Stopwatch Clock = System.Diagnostics.Stopwatch.StartNew();
+    private static long frames;
+    private static bool counting;
+
+    public static void Mark(string what)
+    {
+        if (Current is null || Environment.GetEnvironmentVariable("TSUZUKI_PROBE") is null)
+        {
+            return;
+        }
+        if (!counting)
+        {
+            counting = true;
+            Microsoft.UI.Xaml.Media.CompositionTarget.Rendering += (_, _) => frames++;
+        }
+        try
+        {
+            File.AppendAllText(Path.Combine(ResolvePaths().Logs, "probe-marks.log"), $"{DateTime.Now:HH:mm:ss.fff} t={Clock.Elapsed.TotalMilliseconds:F1} frame={frames} {what}{Environment.NewLine}");
+        }
+        catch (IOException)
+        {
+        }
+    }
+
+    private static Controls.MangaTile? NthTile(Microsoft.UI.Xaml.DependencyObject? root, int index)
+    {
+        var tiles = new List<Controls.MangaTile>();
+        Collect(root, tiles);
+        var content = App.MainWindow.Content;
+        return tiles
+            .Where(t => t.Data is not null && t.ActualWidth > 0 && t.Visibility == Microsoft.UI.Xaml.Visibility.Visible)
+            .Select(t => (Tile: t, At: t.TransformToVisual(content).TransformPoint(default)))
+            .Where(x => x.At.Y >= 0)
+            .OrderBy(x => Math.Round(x.At.Y / 10))
+            .ThenBy(x => x.At.X)
+            .Select(x => x.Tile)
+            .ElementAtOrDefault(index);
+    }
+
+    private static void Collect(Microsoft.UI.Xaml.DependencyObject? root, List<Controls.MangaTile> into)
+    {
+        if (root is null)
+        {
+            return;
+        }
+        if (root is Controls.MangaTile tile)
+        {
+            into.Add(tile);
+            return;
+        }
+        var count = Microsoft.UI.Xaml.Media.VisualTreeHelper.GetChildrenCount(root);
+        for (var i = 0; i < count; i++)
+        {
+            Collect(Microsoft.UI.Xaml.Media.VisualTreeHelper.GetChild(root, i), into);
+        }
     }
 
     private static Microsoft.UI.Xaml.Controls.Button? FindInvokableRow(Microsoft.UI.Xaml.DependencyObject? root, string nameText)

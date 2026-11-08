@@ -14,7 +14,8 @@ object UpdateLogic {
     private val tagNumericOnlyRegex = Regex("""^v?(\d+)$""")
     private val semverPrefixRegex = Regex("""^v?(\d+(?:\.\d+)*)""")
 
-    const val ANDROID_TAG_PREFIX = "android-"
+    private val releaseTagRegex = Regex("""^v\d""")
+    private const val STABLE_APPLICATION_ID = "dev.errnolink.tsuzuki"
 
     fun parseRelease(jsonString: String): GithubRelease {
         return json.decodeFromString(GithubRelease.serializer(), jsonString)
@@ -26,11 +27,9 @@ object UpdateLogic {
 
     fun latestAndroidRelease(releases: List<GithubRelease>): GithubRelease? {
         return releases
-            .filter { !it.draft && !it.prerelease && it.tagName.startsWith(ANDROID_TAG_PREFIX) }
-            .maxWithOrNull { a, b -> compareSemver(versionTag(a.tagName), versionTag(b.tagName)) }
+            .filter { !it.draft && !it.prerelease && releaseTagRegex.containsMatchIn(it.tagName) }
+            .maxWithOrNull { a, b -> compareSemver(a.tagName, b.tagName) }
     }
-
-    private fun versionTag(tagName: String): String = tagName.removePrefix(ANDROID_TAG_PREFIX)
 
     fun extractVersionCode(tagName: String, assetVersionCode: Long? = null): Long? {
         if (assetVersionCode != null && assetVersionCode > 0L) {
@@ -93,21 +92,11 @@ object UpdateLogic {
         applicationId: String,
         supportedAbis: Array<String>,
     ): GithubAsset? {
-        val prefix = if (applicationId.endsWith(".dev")) "tsuzuki-dev-" else "tsuzuki-"
-        val apkAssets = assets.filter { it.name.startsWith(prefix) && it.name.endsWith(".apk") }
-        if (apkAssets.isEmpty()) return null
-
-        for (abi in supportedAbis) {
-            val targetName = "${prefix}${abi}.apk"
-            val match = apkAssets.firstOrNull { it.name.equals(targetName, ignoreCase = true) }
-            if (match != null) return match
-        }
-
-        val universalName = "${prefix}universal.apk"
-        val universalMatch = apkAssets.firstOrNull { it.name.equals(universalName, ignoreCase = true) }
-        if (universalMatch != null) return universalMatch
-
-        return apkAssets.firstOrNull()
+        if (!applicationId.startsWith(STABLE_APPLICATION_ID)) return null
+        val channel = applicationId.removePrefix(STABLE_APPLICATION_ID).removePrefix(".")
+        val prefix = if (channel.isEmpty()) "tsuzuki-" else "tsuzuki-$channel-"
+        val wanted = supportedAbis.map { "$prefix$it.apk" } + "${prefix}universal.apk"
+        return wanted.firstNotNullOfOrNull { name -> assets.firstOrNull { it.name.equals(name, ignoreCase = true) } }
     }
 
     fun evaluateInstallStatus(status: Int): InstallDecision {
@@ -128,7 +117,7 @@ object UpdateLogic {
     ): ReleaseCandidate? {
         val asset = selectAsset(release.assets, applicationId, supportedAbis) ?: return null
         val assetVc = asset.versionCode ?: asset.altVersionCode
-        val tag = versionTag(release.tagName)
+        val tag = release.tagName
         val isNewer = isNewerVersion(
             remoteTag = tag,
             remoteAssetVersionCode = assetVc,

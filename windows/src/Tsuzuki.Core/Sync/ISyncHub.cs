@@ -24,4 +24,5 @@ public interface ISyncHub
     Task RemoveDeviceAsync(string deviceId, CancellationToken ct = default);
     event EventHandler<DeviceSyncedEventArgs>? DeviceSynced;
     event EventHandler? StatusChanged;
+    event EventHandler? AuthRejected;
 }

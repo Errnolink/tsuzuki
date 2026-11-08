@@ -264,11 +264,12 @@ class DownloadProvider(
                 // SY <--
             )
 
-        return buildList(2) {
+        return buildList(3) {
             // Chapter name without hash (unable to handle duplicate
             // chapter names)
             add(chapterNameV1)
             add(otherChapterDirName)
+            dev.errnolink.tsuzuki.data.download.NekoDownloadNames.chapterDirName(chapterName, chapterUrl)?.let(::add)
         }
     }
 

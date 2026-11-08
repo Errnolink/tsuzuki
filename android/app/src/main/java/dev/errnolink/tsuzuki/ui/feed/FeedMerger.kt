@@ -51,9 +51,6 @@ data class FeedTitleGroup(
     val groupKey: String = groupKeyOf(mangaId, mangaDexId, mangaTitle)
     val unreadCount: Int = chapters.count { !it.isRead }
     val newCount: Int = chapters.size
-    val oldestUnreadChapter: FeedChapterItem? =
-        chapters.filter { !it.isRead }.minByOrNull { it.chapterNumber.takeIf { n -> n >= 0 } ?: Double.MAX_VALUE }
-            ?: chapters.minByOrNull { it.chapterNumber.takeIf { n -> n >= 0 } ?: Double.MAX_VALUE }
 }
 
 object FeedMerger {

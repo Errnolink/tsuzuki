@@ -4,11 +4,11 @@
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
     Title="Tsuzuki">
   <Window.SystemBackdrop>
-    <MicaBackdrop />
+    <MicaBackdrop Kind="BaseAlt" />
   </Window.SystemBackdrop>
   <Grid x:Name="Root">
     <Grid.ColumnDefinitions>
-      <ColumnDefinition Width="76" />
+      <ColumnDefinition Width="Auto" />
       <ColumnDefinition Width="*" />
     </Grid.ColumnDefinitions>
     <Grid.RowDefinitions>
@@ -16,72 +16,13 @@
       <RowDefinition Height="*" />
     </Grid.RowDefinitions>
 
-    <Grid x:Name="Rail" Grid.RowSpan="2" Padding="0,10,0,12">
-      <Grid.RowDefinitions>
-        <RowDefinition Height="Auto" />
-        <RowDefinition Height="*" />
-        <RowDefinition Height="Auto" />
-      </Grid.RowDefinitions>
-      <StackPanel x:Name="Wordmark" HorizontalAlignment="Center" Margin="0,4,0,18" Spacing="-4">
-        <TextBlock Text="続" FontFamily="{StaticResource TzMinchoFont}" FontSize="23" FontWeight="SemiBold" Foreground="{ThemeResource TzText}" HorizontalAlignment="Center" />
-        <TextBlock Text="き" FontFamily="{StaticResource TzMinchoFont}" FontSize="23" FontWeight="SemiBold" Foreground="{ThemeResource TzText}" HorizontalAlignment="Center" />
-        <Border Width="3" Height="14" CornerRadius="1.5" Background="{ThemeResource TzAccent}" Margin="0,8,0,0" HorizontalAlignment="Center" />
-      </StackPanel>
-      <Grid Grid.Row="1" x:Name="RailItemsHost" VerticalAlignment="Top">
-        <Border x:Name="RailPill" Width="60" Height="56" CornerRadius="14" Background="{ThemeResource TzAccentSoft}" VerticalAlignment="Top" HorizontalAlignment="Center" Opacity="0" />
-        <StackPanel x:Name="RailItems" Spacing="4" />
-      </Grid>
-      <StackPanel Grid.Row="2" x:Name="RailFooter" Spacing="4" />
-    </Grid>
+    <TitleBar x:Name="AppTitleBar" Grid.ColumnSpan="2" Height="48" Canvas.ZIndex="1" IsBackButtonVisible="False" BackRequested="OnTitleBarBack" />
 
-    <TitleBar x:Name="AppTitleBar" Grid.Column="1" Height="48" Canvas.ZIndex="1" IsBackButtonVisible="False" BackRequested="OnTitleBarBack">
-      <TitleBar.Content>
-        <Grid>
-          <AutoSuggestBox x:Name="SearchBox" Width="420" Height="34" CornerRadius="16" PlaceholderText="Search your library and MangaDex"
-                          Background="{ThemeResource TzCard}" BorderBrush="{ThemeResource TzStrokeStrong}" BorderThickness="1"
-                          QuerySubmitted="OnSearchSubmitted" TextChanged="OnSearchTextChanged" VerticalAlignment="Center">
-            <AutoSuggestBox.QueryIcon>
-              <FontIcon FontFamily="{StaticResource TzIconFont}" Glyph="&#xE151;" FontSize="14" Foreground="{ThemeResource TzTextTertiary}" />
-            </AutoSuggestBox.QueryIcon>
-          </AutoSuggestBox>
-          <TextBlock x:Name="TopTitle" Style="{StaticResource TzSubtitle}" FontSize="15" FontWeight="SemiBold"
-                     HorizontalAlignment="Center" VerticalAlignment="Center" Visibility="Collapsed" />
-        </Grid>
-      </TitleBar.Content>
-      <TitleBar.RightHeader>
-        <StackPanel Orientation="Horizontal" Spacing="8">
-          <Button x:Name="SyncChip" AutomationProperties.Name="Phone sync" Style="{StaticResource TzSoftButton}" Height="32" MinHeight="0" CornerRadius="16" Padding="12,0" Click="OnSyncChipClick">
-            <StackPanel Orientation="Horizontal" Spacing="8">
-              <Grid Width="10" Height="10" VerticalAlignment="Center">
-                <Ellipse x:Name="SyncHalo" Width="10" Height="10" Fill="{ThemeResource TzSuccess}" Opacity="0" />
-                <Ellipse x:Name="SyncDot" Width="8" Height="8" Fill="{ThemeResource TzTextTertiary}" />
-              </Grid>
-              <TextBlock x:Name="SyncText" Text="Starting" Style="{StaticResource TzCaption}" VerticalAlignment="Center" />
-            </StackPanel>
-          </Button>
-          <Border x:Name="TopCapsule" Height="34" CornerRadius="17" VerticalAlignment="Center" Width="0" Opacity="0"
-                  BorderBrush="{ThemeResource TzStrokeStrong}" BorderThickness="1" Padding="6,0">
-            <Border.Background>
-              <AcrylicBrush TintColor="#1A1B20" TintOpacity="0.72" FallbackColor="#1A1B20" />
-            </Border.Background>
-            <StackPanel x:Name="TopCapsuleIcons" Orientation="Horizontal" Spacing="2" VerticalAlignment="Center" />
-          </Border>
-        </StackPanel>
-      </TitleBar.RightHeader>
-    </TitleBar>
-
-    <Border x:Name="ContentLayer" Grid.Column="1" Grid.RowSpan="2" CornerRadius="10,0,0,0"
-            Background="{ThemeResource TzContentLayer}" BorderBrush="{ThemeResource TzStroke}" BorderThickness="1,1,0,0">
+    <Border x:Name="ContentLayer" Grid.Column="1" Grid.Row="1" CornerRadius="8,0,0,0"
+            Background="{ThemeResource LayerFillColorDefaultBrush}" BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="1,1,0,0">
       <Grid>
         <Grid x:Name="PageHost" />
-        <Border Height="64" VerticalAlignment="Top" IsHitTestVisible="False" CornerRadius="10,0,0,0">
-          <Border.Background>
-            <LinearGradientBrush StartPoint="0,0" EndPoint="0,1">
-              <GradientStop Color="{ThemeResource TzContentLayerColor}" Offset="0" />
-              <GradientStop Color="{ThemeResource TzContentLayerFade}" Offset="1" />
-            </LinearGradientBrush>
-          </Border.Background>
-        </Border>
+        <StackPanel x:Name="InfoBarHost" VerticalAlignment="Top" Margin="36,16,36,0" Spacing="8" />
       </Grid>
     </Border>
 
@@ -89,8 +30,9 @@
     <Grid x:Name="SheetHost" Grid.ColumnSpan="2" Grid.RowSpan="2" Visibility="Collapsed">
       <Border x:Name="SheetScrim" Background="{ThemeResource TzScrim}" />
       <Border x:Name="SheetCard" HorizontalAlignment="Center" VerticalAlignment="Center" MaxWidth="720" Margin="40"
-              CornerRadius="24" Background="{ThemeResource TzElevated}" BorderBrush="{ThemeResource TzStrokeStrong}" BorderThickness="1" Padding="32,28" />
+              CornerRadius="{StaticResource TzCardRadius}" Background="{ThemeResource TzElevated}" BorderBrush="{ThemeResource TzStrokeStrong}" BorderThickness="1" Padding="32,28" />
     </Grid>
+    <Grid x:Name="PaletteHost" Grid.ColumnSpan="2" Grid.RowSpan="2" Visibility="Collapsed" />
     <StackPanel x:Name="ToastHost" Grid.Column="1" Grid.Row="1" HorizontalAlignment="Right" VerticalAlignment="Bottom"
                 Margin="0,0,24,24" Spacing="10" />
   </Grid>

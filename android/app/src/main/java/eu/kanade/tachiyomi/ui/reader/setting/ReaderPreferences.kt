@@ -188,7 +188,7 @@ class ReaderPreferences(
 
     fun preserveReadingPosition() = preferenceStore.getBoolean("eh_preserve_reading_position", false)
 
-    fun preloadSize() = preferenceStore.getInt("eh_preload_size", 10)
+    fun preloadSize() = preferenceStore.getInt("eh_preload_size", dev.errnolink.tsuzuki.reader.PagePreloadPolicy.LOOKAHEAD)
 
     fun useAutoWebtoon() = preferenceStore.getBoolean("eh_use_auto_webtoon", true)
 

@@ -3,10 +3,7 @@ import eu.kanade.presentation.more.settings.screen.SearchableSettings
 
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.ReadOnlyComposable
-import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
-import dev.errnolink.tsuzuki.preference.BrowseLayout
-import dev.errnolink.tsuzuki.preference.TsuzukiPreferences
 import eu.kanade.domain.source.service.SourcePreferences
 import eu.kanade.domain.ui.UiPreferences
 import eu.kanade.presentation.more.settings.Preference
@@ -14,7 +11,6 @@ import eu.kanade.presentation.more.settings.screen.SettingsBrowseScreen
 import tachiyomi.i18n.MR
 import tachiyomi.i18n.sy.SYMR
 import tachiyomi.presentation.core.i18n.stringResource
-import tachiyomi.presentation.core.util.collectAsState
 import uy.kohesive.injekt.Injekt
 import uy.kohesive.injekt.api.get
 
@@ -84,17 +80,9 @@ object TsuzukiSettingsBrowseScreen : SearchableSettings {
         // Keyless nav row: the last item of the second Sources group (extension repositories).
         val extensionStores = secondSources?.preferenceItems?.lastOrNull()
 
-        val tsuzukiPreferences = remember { Injekt.get<TsuzukiPreferences>() }
-        val browseLayout by tsuzukiPreferences.browseLayout().collectAsState()
-        val classicOnlyRows = browseLayout == BrowseLayout.CLASSIC
-
         val feedHideInLibrary = feed?.preferenceItems?.byStoreKey("feed_hide_in_library_items")
             ?.withRetitle("Hide titles already in your library")
-        val feedRows = listOfNotNull(
-            feed?.preferenceItems?.byStoreKey("hide_latest_tab")?.takeIf { classicOnlyRows },
-            feed?.preferenceItems?.byStoreKey("latest_tab_position")?.takeIf { classicOnlyRows },
-            feedHideInLibrary,
-        )
+        val feedRows = listOfNotNull(feedHideInLibrary)
         val feedGroup = if (feedRows.isNotEmpty()) {
             newGroup(
                 title = stringResource(SYMR.strings.feed),

@@ -16,7 +16,6 @@ import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Rect
-import androidx.compose.ui.geometry.lerp as lerpRect
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.TextFieldValue
@@ -82,6 +81,7 @@ import dev.errnolink.tsuzuki.designsystem.ChevronRight
 import dev.errnolink.tsuzuki.designsystem.EllipsisVertical
 import dev.errnolink.tsuzuki.designsystem.EyeOff
 import dev.errnolink.tsuzuki.designsystem.Folder
+import dev.errnolink.tsuzuki.designsystem.LucideLibrary
 import dev.errnolink.tsuzuki.designsystem.Search
 import dev.errnolink.tsuzuki.designsystem.Trash2
 import dev.errnolink.tsuzuki.designsystem.TsuzukiCorners
@@ -151,6 +151,12 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.DpSize
+import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.positionInWindow
+import androidx.compose.foundation.layout.offset
+import kotlin.math.roundToInt
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -227,10 +233,11 @@ fun TsuzukiLibraryScreen(
         if (orientation == Configuration.ORIENTATION_LANDSCAPE) preferences.landscapeColumns() else preferences.portraitColumns()
     }
     val columnCount by columnPreference.collectAsState()
+    val progressRing by remember { Injekt.get<dev.errnolink.tsuzuki.preference.TsuzukiPreferences>().libraryProgressRing() }.collectAsState()
     val columns = when {
         displayMode == LibraryDisplayMode.List -> StaggeredGridCells.Fixed(1)
         columnCount > 0 -> StaggeredGridCells.Fixed(columnCount)
-        else -> StaggeredGridCells.Adaptive(140.dp)
+        else -> StaggeredGridCells.Adaptive(dev.errnolink.tsuzuki.ui.next.NextLibraryAutoCellWidth(displayMode))
     }
 
     val categories = state.displayedCategories
@@ -239,13 +246,13 @@ fun TsuzukiLibraryScreen(
     val incognito by incognitoPreference.collectAsState()
     val downloadedOnlyPreference = remember { Injekt.get<BasePreferences>().downloadedOnly() }
     val downloadedOnly by downloadedOnlyPreference.collectAsState()
+    val categoryTabs by preferences.categoryTabs().collectAsState()
 
     var categoryMenuVisible by rememberSaveable { mutableStateOf(false) }
     val menuPullDownVisible by LibraryMenuPullDownState.isOpen.collectAsState()
     val searchQuery by ShellSearch.query.collectAsState()
     val filterSheetVisible by LibraryFilterSheetState.isOpen.collectAsState()
     val shellScrollStates = LocalShellTabScrollStates.current
-    val stripListState = shellScrollStates.libraryStripState
 
 
     // ── Pager ⇄ LibraryScreenModel.activeCategoryIndex ────────────────────────────
@@ -273,21 +280,6 @@ fun TsuzukiLibraryScreen(
             collapseThreshold = with(density) { 8.dp.toPx() },
             hysteresis = with(density) { 24.dp.toPx() },
         )
-    }
-
-    LaunchedEffect(currentPage, collapseStateMachine.isExpanded) {
-        val target = currentPage
-        if (target in categories.indices) {
-            val visibleItem = stripListState.layoutInfo.visibleItemsInfo.firstOrNull { it.index == target }
-            val itemWidth = visibleItem?.size ?: with(density) { 90.dp.roundToPx() }
-            val viewportWidth = stripListState.layoutInfo.viewportSize.width
-            val offset = calculateCategoryStripScrollOffset(viewportWidth, itemWidth)
-            if (motion.reduced) {
-                stripListState.scrollToItem(target, offset)
-            } else {
-                stripListState.animateScrollToItem(target, offset)
-            }
-        }
     }
 
     // One grid state per category so each page keeps its own scroll position.
@@ -327,7 +319,50 @@ fun TsuzukiLibraryScreen(
     val statusTop = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
     val chromeHeight = statusTop + LibraryChromeHeight
 
-    Box(Modifier.fillMaxSize().background(colors.background)) {
+    val searchLabel = stringResource(MR.strings.tsuzuki_search)
+    val menuLabel = stringResource(MR.strings.action_menu)
+    dev.errnolink.tsuzuki.ui.shell.DeclareShellTop(
+        title = "",
+        glass = glass,
+        actions = if (state.selectionMode || searchQuery != null) {
+            emptyList()
+        } else {
+            listOf(
+                dev.errnolink.tsuzuki.ui.shell.ShellTopAction(searchLabel, TsuzukiIcons.Search, { ShellSearch.open("") }),
+                dev.errnolink.tsuzuki.ui.shell.ShellTopAction(
+                    label = menuLabel,
+                    icon = TsuzukiIcons.EllipsisVertical,
+                    onClick = { LibraryMenuPullDownState.open() },
+                    content = {
+                        Icon(TsuzukiIcons.EllipsisVertical, null, Modifier.size(22.dp), tint = colors.text)
+                        LibraryMenuPullDown(
+                            expanded = menuPullDownVisible,
+                            incognito = incognito,
+                            onToggleIncognito = { incognitoPreference.set(!incognito) },
+                            downloadedOnly = downloadedOnly,
+                            onToggleDownloadedOnly = { downloadedOnlyPreference.set(!downloadedOnly) },
+                            onOpenDownloadQueue = onOpenDownloadQueue,
+                            onOpenLibraryUpdateErrors = onOpenLibraryUpdateErrors,
+                            onOpenHelp = onOpenHelp,
+                            onOpenSettings = onOpenSettings,
+                            onOpenStats = onOpenStats,
+                            onOpenAbout = onOpenAbout,
+                            onDismissRequest = { LibraryMenuPullDownState.close() },
+                        )
+                    },
+                ),
+            )
+        },
+        inlineTitle = { 0f },
+        edge = false,
+    )
+    var screenOrigin by remember { mutableStateOf(androidx.compose.ui.geometry.Offset.Zero) }
+    Box(
+        Modifier
+            .fillMaxSize()
+            .background(colors.background)
+            .onGloballyPositioned { screenOrigin = it.positionInWindow() },
+    ) {
         ShellRefresh(refreshing, !state.selectionMode, onRefresh) {
             when {
                 state.isLoading -> LibrarySkeleton(chromeHeight, glass, columns)
@@ -440,7 +475,7 @@ fun TsuzukiLibraryScreen(
                                 }
                             }
                         } else {
-                            libraryGrid(items, state, category, screenModel, displayMode, onOpen, onResume)
+                            libraryGrid(items, state, category, screenModel, displayMode, progressRing, onOpen, onResume)
                         }
                     }
                 }
@@ -459,6 +494,7 @@ fun TsuzukiLibraryScreen(
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
+                            .padding(top = LibraryHeaderInset)
                             .height(48.dp)
                             .padding(horizontal = TsuzukiTheme.spacing.gutter),
                         verticalAlignment = Alignment.CenterVertically,
@@ -487,14 +523,18 @@ fun TsuzukiLibraryScreen(
                 } else {
                     val currentCategory = categories.getOrNull(currentPage)
                     val currentCategoryName = currentCategory?.name?.ifBlank { "Default" } ?: "Library"
+                    val currentCategoryCount = remember(state, currentCategory) {
+                        currentCategory?.let(state::getItemCountForCategory)
+                    }
                     val screenWidth = LocalConfiguration.current.screenWidthDp.dp
                     val maxCapsuleWidth = (screenWidth * 0.60f).coerceAtMost((screenWidth - 40.dp - 104.dp).coerceAtLeast(120.dp))
 
                     Box(
                         modifier = Modifier
                             .fillMaxWidth()
+                            .padding(top = LibraryHeaderInset)
                             .height(48.dp)
-                            .padding(horizontal = 20.dp),
+                            .padding(horizontal = 16.dp),
                     ) {
                         androidx.compose.animation.AnimatedVisibility(
                             visible = searchQuery == null,
@@ -502,270 +542,31 @@ fun TsuzukiLibraryScreen(
                             exit = if (motion.reduced) fadeOut(snap()) else fadeOut(tween(90)),
                             modifier = Modifier.align(Alignment.CenterStart),
                         ) {
-                        AnimatedContent(
-                            targetState = collapsed,
-                            transitionSpec = {
-                                if (motion.reduced) {
-                                    ContentTransform(
-                                        fadeIn(snap()),
-                                        fadeOut(snap()),
-                                        0f,
-                                        SizeTransform(clip = false) { _, _ -> snap() },
-                                    )
-                                } else {
-                                    ContentTransform(
-                                        fadeIn(motion.tabSpring()),
-                                        fadeOut(motion.tabSpring()),
-                                        0f,
-                                        SizeTransform(clip = false),
-                                    )
-                                }
-                            },
-                            contentAlignment = Alignment.CenterStart,
-                            modifier = Modifier,
-                            label = "Top zone capsule collapse",
-                        ) { isCollapsed ->
-                            if (isCollapsed) {
-                                val pillInteraction = remember { MutableInteractionSource() }
-                                GlassSurface(
-                                    context = glass,
-                                    shape = CircleShape,
-                                    material = GlassMaterial.Thick,
-                                    modifier = Modifier.height(44.dp).wrapContentWidth().pressScale(pillInteraction),
-                                ) {
-                                    Row(
-                                        modifier = Modifier
-                                            .combinedClickable(
-                                                interactionSource = pillInteraction,
-                                                indication = null,
-                                                role = Role.Button,
-                                                onClick = {
-                                                    val currentOffset = currentGridState.firstVisibleItemScrollOffset.toFloat()
-                                                    collapseStateMachine.onTapCollapsedPill(currentOffset)
-                                                },
-                                            )
-                                            .padding(horizontal = 16.dp)
-                                            .fillMaxHeight(),
-                                        verticalAlignment = Alignment.CenterVertically,
-                                        horizontalArrangement = Arrangement.spacedBy(4.dp),
-                                    ) {
-                                        TsuzukiText(
-                                            text = currentCategoryName,
-                                            style = TextStyle(
-                                                fontSize = 14.sp,
-                                                fontWeight = FontWeight.SemiBold,
-                                                color = colors.text,
-                                            ),
-                                            maxLines = 1,
-                                        )
-                                        Icon(
-                                            imageVector = TsuzukiIcons.ChevronRight,
-                                            contentDescription = null,
-                                            tint = colors.secondary,
-                                            modifier = Modifier.size(16.dp),
-                                        )
-                                    }
-                                }
-                            } else if (categories.isEmpty()) {
-                                GlassSurface(
-                                    context = glass,
-                                    shape = CircleShape,
-                                    material = GlassMaterial.Regular,
-                                    modifier = Modifier.height(44.dp).wrapContentWidth(),
-                                ) {
-                                    Row(
-                                        Modifier.fillMaxHeight().padding(horizontal = 16.dp),
-                                        verticalAlignment = Alignment.CenterVertically,
-                                    ) {
-                                        TsuzukiText(
-                                            text = "Library",
-                                            style = TextStyle(
-                                                fontSize = 14.sp,
-                                                fontWeight = FontWeight.SemiBold,
-                                                color = colors.text,
-                                            ),
-                                            maxLines = 1,
-                                        )
-                                    }
-                                }
-                            } else {
-                                val indicatorProgress = remember { Animatable(1f) }
-                                var indicatorSource by remember { mutableStateOf(currentPage) }
-                                LaunchedEffect(currentPage) {
-                                    if (indicatorSource != currentPage) {
-                                        if (motion.reduced) {
-                                            indicatorProgress.snapTo(1f)
-                                        } else {
-                                            indicatorProgress.snapTo(0f)
-                                            indicatorProgress.animateTo(1f, motion.tabSpring())
-                                        }
-                                        indicatorSource = currentPage
-                                    }
-                                }
-                                GlassSurface(
-                                    context = glass,
-                                    shape = CircleShape,
-                                    material = GlassMaterial.Regular,
-                                    modifier = Modifier
-                                        .height(44.dp)
-                                        .widthIn(max = maxCapsuleWidth)
-                                        .wrapContentWidth(Alignment.Start),
-                                ) {
-                                    Box(
-                                        Modifier
-                                            .matchParentSize()
-                                            .drawWithCache {
-                                                val pillHeight = LibraryTopRowSubPillHeight.toPx()
-                                                val top = (size.height - pillHeight) / 2f
-                                                val radius = CornerRadius(pillHeight / 2f)
-                                                val fill = colors.selectedFill.copy(alpha = if (colors.isDark) 0.5f else 0.35f)
-                                                onDrawBehind {
-                                                    val layout = stripListState.layoutInfo
-                                                    val progress = indicatorProgress.value
-                                                    val target = layout.visibleItemsInfo.firstOrNull { it.index == currentPage }
-                                                        ?: return@onDrawBehind
-                                                    val targetLeft = (target.offset - layout.viewportStartOffset).toFloat()
-                                                    val targetRect = Rect(
-                                                        targetLeft,
-                                                        top,
-                                                        targetLeft + target.size.toFloat(),
-                                                        top + pillHeight,
-                                                    )
-                                                    val rect = if (progress < 1f) {
-                                                        layout.visibleItemsInfo.firstOrNull { it.index == indicatorSource }
-                                                            ?.let { source ->
-                                                                val sourceLeft = (source.offset - layout.viewportStartOffset).toFloat()
-                                                                val sourceRect = Rect(
-                                                                    sourceLeft,
-                                                                    top,
-                                                                    sourceLeft + source.size.toFloat(),
-                                                                    top + pillHeight,
-                                                                )
-                                                                lerpRect(sourceRect, targetRect, progress)
-                                                            } ?: targetRect
-                                                    } else {
-                                                        targetRect
-                                                    }
-                                                    drawRoundRect(fill, rect.topLeft, rect.size, radius)
-                                                }
-                                            },
-                                    )
-                                    LazyRow(
-                                        flingBehavior = dev.errnolink.tsuzuki.designsystem.tsuzukiFlingBehavior(),
-                                        state = stripListState,
-                                        modifier = Modifier.height(48.dp).wrapContentWidth(),
-                                        contentPadding = PaddingValues(horizontal = 4.dp),
-                                        horizontalArrangement = Arrangement.spacedBy(2.dp),
-                                        verticalAlignment = Alignment.CenterVertically,
-                                    ) {
-                                        items(categories.size, key = { categories[it].id }) { i ->
-                                            val cat = categories[i]
-                                            val isCurrent = (i == currentPage)
-                                            CategorySubPill(
-                                                name = cat.name.ifBlank { "Default" },
-                                                isCurrent = isCurrent,
-                                                onClick = {
-                                                    jumpTo(i)
-                                                    collapseStateMachine.onCategorySelected()
-                                                },
-                                            )
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                        }
-
-                        androidx.compose.animation.AnimatedVisibility(
-                            visible = searchQuery == null,
-                            enter = if (motion.reduced) fadeIn(snap()) else fadeIn(tween(90)),
-                            exit = if (motion.reduced) fadeOut(snap()) else fadeOut(tween(90)),
-                            modifier = Modifier.align(Alignment.CenterEnd),
-                        ) {
-                            Row(
-                                modifier = Modifier.heightIn(min = 48.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            dev.errnolink.tsuzuki.ui.next.NextTitlePill(
+                                glass = glass,
+                                title = currentCategoryName,
+                                caption = currentCategoryCount?.let { if (it == 1) "1 title" else "$it titles" },
+                                icon = TsuzukiIcons.LucideLibrary,
+                                actionLabel = "Change category",
+                                onClick = { if (categoryTabs && categories.size > 1) categoryMenuVisible = true },
+                                maxWidth = maxCapsuleWidth,
                             ) {
-                                val searchInteraction = remember { MutableInteractionSource() }
-                                val searchLabel = stringResource(MR.strings.tsuzuki_search)
-                                Box(
-                                    modifier = Modifier
-                                        .size(48.dp)
-                                        .pressScale(searchInteraction)
-                                        .clickable(
-                                            interactionSource = searchInteraction,
-                                            indication = null,
-                                            role = Role.Button,
-                                            onClickLabel = searchLabel,
-                                        ) {
-                                            ShellSearch.open("")
-                                        }
-                                        .semantics { contentDescription = searchLabel },
-                                    contentAlignment = Alignment.Center,
+                                dev.errnolink.tsuzuki.designsystem.PullDownMenu(
+                                    expanded = categoryMenuVisible,
+                                    onDismissRequest = { categoryMenuVisible = false },
+                                    paneTitle = "Categories",
                                 ) {
-                                    GlassSurface(
-                                        context = glass,
-                                        shape = CircleShape,
-                                        material = GlassMaterial.Regular,
-                                        modifier = Modifier.size(44.dp),
-                                    ) {
-                                        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                                            Icon(
-                                                imageVector = TsuzukiIcons.Search,
-                                                contentDescription = null,
-                                                tint = colors.text,
-                                                modifier = Modifier.size(22.dp),
-                                            )
-                                        }
-                                    }
-                                }
-
-                                val menuInteraction = remember { MutableInteractionSource() }
-                                val menuLabel = stringResource(MR.strings.action_menu)
-                                Box(
-                                    modifier = Modifier
-                                        .size(48.dp)
-                                        .pressScale(menuInteraction)
-                                        .clickable(
-                                            interactionSource = menuInteraction,
-                                            indication = null,
-                                            role = Role.Button,
-                                            onClickLabel = menuLabel,
-                                        ) {
-                                            LibraryMenuPullDownState.open()
-                                        }
-                                        .semantics { contentDescription = menuLabel },
-                                    contentAlignment = Alignment.Center,
-                                ) {
-                                    GlassSurface(
-                                        context = glass,
-                                        shape = CircleShape,
-                                        material = GlassMaterial.Regular,
-                                        modifier = Modifier.size(44.dp),
-                                    ) {
-                                        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                                            Icon(
-                                                imageVector = TsuzukiIcons.EllipsisVertical,
-                                                contentDescription = null,
-                                                tint = colors.text,
-                                                modifier = Modifier.size(22.dp),
-                                            )
-                                            LibraryMenuPullDown(
-                                                expanded = menuPullDownVisible,
-                                                incognito = incognito,
-                                                onToggleIncognito = { incognitoPreference.set(!incognito) },
-                                                downloadedOnly = downloadedOnly,
-                                                onToggleDownloadedOnly = { downloadedOnlyPreference.set(!downloadedOnly) },
-                                                onOpenDownloadQueue = onOpenDownloadQueue,
-                                                onOpenLibraryUpdateErrors = onOpenLibraryUpdateErrors,
-                                                onOpenHelp = onOpenHelp,
-                                                onOpenSettings = onOpenSettings,
-                                                onOpenStats = onOpenStats,
-                                                onOpenAbout = onOpenAbout,
-                                                onDismissRequest = { LibraryMenuPullDownState.close() },
-                                            )
-                                        }
+                                    categories.forEachIndexed { index, category ->
+                                        if (index > 0) dev.errnolink.tsuzuki.designsystem.PullDownDivider()
+                                        dev.errnolink.tsuzuki.designsystem.PullDownMenuItem(
+                                            text = category.name.ifBlank { "Default" },
+                                            icon = TsuzukiIcons.Folder,
+                                            selected = index == currentPage,
+                                            onClick = {
+                                                categoryMenuVisible = false
+                                                jumpTo(index)
+                                            },
+                                        )
                                     }
                                 }
                             }
@@ -834,7 +635,7 @@ fun TsuzukiLibraryScreen(
                     }
 
                     LibraryCategoryMenu(
-                        expanded = categoryMenuVisible,
+                        expanded = categoryMenuVisible && searchQuery != null,
                         categories = categories,
                         currentCategoryIndex = currentPage,
                         onSelectCategory = { index ->
@@ -848,10 +649,22 @@ fun TsuzukiLibraryScreen(
             }
         }
         ShellSnackbar(snackbar, Modifier.align(Alignment.BottomCenter).padding(bottom = LocalShellBottomPadding.current + 12.dp))
+        val filterButton = LibraryFilterSheetState.buttonBoundsInWindow
         Box(
-            modifier = Modifier
-                .align(Alignment.BottomEnd)
-                .padding(end = 16.dp, bottom = LocalShellBottomPadding.current + 8.dp),
+            modifier = if (filterButton != null) {
+                Modifier
+                    .offset {
+                        IntOffset(
+                            (filterButton.left - screenOrigin.x).roundToInt(),
+                            (filterButton.top - screenOrigin.y).roundToInt(),
+                        )
+                    }
+                    .size(with(density) { DpSize(filterButton.width.toDp(), filterButton.height.toDp()) })
+            } else {
+                Modifier
+                    .align(Alignment.BottomEnd)
+                    .padding(end = 16.dp, bottom = LocalShellBottomPadding.current + 8.dp)
+            },
         ) {
             LibraryFilterMenu(
                 expanded = filterSheetVisible,
@@ -867,54 +680,8 @@ private object RecentHistoryCache {
     var value: List<HistoryWithRelations> = emptyList()
 }
 
-/** Header geometry (below the status bar): 4dp + 48dp actions row + 4dp + 46dp titles + 10dp. */
 private val LibraryChromeHeight = 56.dp
-
-@OptIn(ExperimentalFoundationApi::class)
-@Composable
-private fun CategorySubPill(
-    name: String,
-    isCurrent: Boolean,
-    onClick: () -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    val colors = TsuzukiTheme.colors
-    val shape = CircleShape
-    val pillInteraction = remember { MutableInteractionSource() }
-    val textColor = if (isCurrent) colors.text else colors.secondary
-    val fontWeight = if (isCurrent) FontWeight.SemiBold else FontWeight.Normal
-
-    Box(
-        modifier = modifier
-            .heightIn(min = 48.dp)
-            .pressScale(pillInteraction)
-            .combinedClickable(
-                interactionSource = pillInteraction,
-                indication = null,
-                role = Role.Button,
-                onClick = onClick,
-            ),
-        contentAlignment = Alignment.Center,
-    ) {
-        Box(
-            Modifier
-                .height(LibraryTopRowSubPillHeight)
-                .clip(shape)
-                .padding(horizontal = 14.dp),
-            contentAlignment = Alignment.Center,
-        ) {
-            TsuzukiText(
-                text = name,
-                style = TextStyle(
-                    fontSize = 13.sp,
-                    fontWeight = fontWeight,
-                    color = textColor,
-                ),
-                maxLines = 1,
-            )
-        }
-    }
-}
+private val LibraryHeaderInset = 8.dp
 
 @Composable
 private fun LibraryTopSearchField(
@@ -1110,6 +877,7 @@ private fun LazyStaggeredGridScope.libraryGrid(
     category: Category?,
     screenModel: LibraryScreenModel,
     displayMode: LibraryDisplayMode,
+    progressRing: Boolean,
     onOpen: (Long) -> Unit,
     onResume: (Long, Long) -> Unit,
 ) {
@@ -1198,27 +966,15 @@ private fun LazyStaggeredGridScope.libraryGrid(
                         )
                     }
                 }
-                LibraryDisplayMode.CoverOnlyGrid -> Box(
-                    Modifier.background(
-                        if (selected) colors.selectedFill else androidx.compose.ui.graphics.Color.Transparent,
-                        RoundedCornerShape(14.dp),
-                    ).padding(if (selected) 4.dp else 0.dp),
-                ) {
-                    ShellCover(manga.manga.asMangaCover(), manga.manga.title)
-                    LibraryTileOverlayStack(
-                        overlays = overlays,
-                        badges = badges,
-                        selected = selected,
-                        onResume = resume,
-                        modifier = Modifier.matchParentSize(),
-                    )
-                }
-                else -> ShellMangaTile(
-                    manga.manga,
-                    selected,
+                else -> dev.errnolink.tsuzuki.ui.next.NextLibraryTile(
+                    manga = manga.manga,
+                    progress = dev.errnolink.tsuzuki.ui.next.NextTileProgress.of(manga.readCount, manga.totalChapters, overlays.unread),
                     overlays = overlays,
                     badges = badges,
+                    selected = selected,
                     onResume = resume,
+                    showText = displayMode != LibraryDisplayMode.CoverOnlyGrid,
+                    progressRing = progressRing,
                 )
             }
         }
@@ -1255,7 +1011,7 @@ private fun ContinueCard(
                 overflow = TextOverflow.Ellipsis,
             )
             TsuzukiText(
-                "Ch. ${entry.chapterNumber.toString().removeSuffix(".0")} · Page ${entry.lastPageRead + 1}",
+                "Ch. ${eu.kanade.presentation.util.formatChapterNumber(entry.chapterNumber)} · Page ${entry.lastPageRead + 1}",
                 style = TsuzukiTheme.typography.caption1,
                 color = colors.secondary,
                 maxLines = 1,

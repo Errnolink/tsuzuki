@@ -1,7 +1,3 @@
-using System.Buffers.Binary;
-using System.Security.Cryptography;
-using System.Text;
-
 namespace Tsuzuki.Core.Sources.MangaDex;
 
 public static class MangaDexIds
@@ -18,10 +14,5 @@ public static class MangaDexIds
         "ta", "te", "th", "tr", "uk", "ur", "uz", "vi",
     ];
 
-    public static long For(string lang)
-    {
-        var input = $"{SourceName.ToLowerInvariant()}/{lang}/{VersionId}";
-        var digest = MD5.HashData(Encoding.UTF8.GetBytes(input));
-        return BinaryPrimitives.ReadInt64BigEndian(digest) & long.MaxValue;
-    }
+    public static long For(string lang) => SourceIds.Generate(SourceName, lang, VersionId);
 }

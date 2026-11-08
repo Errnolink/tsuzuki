@@ -7,6 +7,7 @@
     <PackageVersion Include="Google.Protobuf" Version="3.36.2" />
     <PackageVersion Include="Grpc.Tools" Version="2.85.0" />
     <PackageVersion Include="QRCoder" Version="1.8.1" />
+    <PackageVersion Include="AngleSharp" Version="1.9.1" />
     <PackageVersion Include="Velopack" Version="1.2.161" />
     <PackageVersion Include="xunit.v3" Version="4.0.2" />
     <PackageVersion Include="xunit.runner.visualstudio" Version="4.0.1" />

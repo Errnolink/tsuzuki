@@ -1,8 +1,6 @@
 package eu.kanade.tachiyomi.data.backup.restore.restorers
 
 import dev.errnolink.tsuzuki.mangadex.backup.NekoBackupMapper
-import kotlinx.serialization.json.booleanOrNull
-import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.JsonObject
 import eu.kanade.domain.manga.interactor.UpdateManga
 import eu.kanade.tachiyomi.data.backup.models.BackupCategory
@@ -37,7 +35,6 @@ import uy.kohesive.injekt.api.get
 import java.time.ZonedDateTime
 import java.util.Date
 import kotlin.math.max
-import kotlin.math.min
 
 class MangaRestorer(
     private var isSync: Boolean = false,
@@ -99,13 +96,10 @@ class MangaRestorer(
                 backupWins = wins
                 updated
             }
-            val nekoMemo = manga.memo.filterKeys { it.startsWith("neko") }
-            if (nekoMemo.isNotEmpty()) {
+            val nekoMemo = manga.memo.filterKeys { it.startsWith("neko") } - NekoBackupMapper.HIDDEN_CHILD
+            if (nekoMemo.isNotEmpty() || NekoBackupMapper.HIDDEN_CHILD in restoredManga.memo) {
                 restoredManga = updateManga(
-                    restoredManga.copy(
-                        favorite = restoredManga.favorite && nekoMemo[NekoBackupMapper.HIDDEN_CHILD]?.jsonPrimitive?.booleanOrNull != true,
-                        memo = JsonObject(restoredManga.memo + nekoMemo),
-                    ),
+                    restoredManga.copy(memo = JsonObject(restoredManga.memo - NekoBackupMapper.HIDDEN_CHILD + nekoMemo)),
                 )
             }
 
@@ -254,6 +248,7 @@ class MangaRestorer(
             .associateBy { it.url }
 
         val (existingChapters, newChapters) = backupChapters
+            .distinctBy { it.url }
             .mapNotNull { backupChapter ->
                 val chapter = backupChapter.toChapterImpl().copy(mangaId = manga.id)
                 val dbChapter = dbChaptersByUrl[chapter.url]
@@ -270,39 +265,8 @@ class MangaRestorer(
         updateExistingChapters(existingChapters)
     }
 
-    private fun updateChapterBasedOnSyncState(chapter: Chapter, dbChapter: Chapter): Chapter {
-        return if (isSync) {
-            chapter.copy(
-                id = dbChapter.id,
-                bookmark = chapter.bookmark || dbChapter.bookmark,
-                read = chapter.read,
-                lastPageRead = chapter.lastPageRead,
-                // KMK -->
-                sourceOrder = max(chapter.sourceOrder, dbChapter.sourceOrder),
-                dateUpload = min(chapter.dateUpload, dbChapter.dateUpload),
-                // KMK <--
-            )
-        } else {
-            chapter.copyFrom(dbChapter)
-                // KMK -->
-                .copy(
-                    id = dbChapter.id,
-                    bookmark = chapter.bookmark || dbChapter.bookmark,
-                    sourceOrder = max(chapter.sourceOrder, dbChapter.sourceOrder),
-                    dateUpload = min(chapter.dateUpload, dbChapter.dateUpload),
-                )
-                // KMK <--
-                .let {
-                    when {
-                        dbChapter.read && !it.read -> it.copy(read = true, lastPageRead = dbChapter.lastPageRead)
-                        it.lastPageRead == 0L && dbChapter.lastPageRead != 0L -> it.copy(
-                            lastPageRead = dbChapter.lastPageRead,
-                        )
-                        else -> it
-                    }
-                }
-        }
-    }
+    private fun updateChapterBasedOnSyncState(chapter: Chapter, dbChapter: Chapter): Chapter =
+        dev.errnolink.tsuzuki.data.backup.RestoredChapterMerge.merge(chapter, dbChapter, isSync)
 
     private fun Chapter.forComparison() =
         this.copy(

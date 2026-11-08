@@ -14,17 +14,16 @@ namespace Tsuzuki.App;
 
 public sealed partial class MainWindow : Window
 {
-    private readonly Dictionary<string, (Button Button, FontIcon Icon, TextBlock Label)> rail = [];
     private readonly Dictionary<string, Func<FrameworkElement>> rootFactories = [];
-    private readonly System.Runtime.CompilerServices.ConditionalWeakTable<FrameworkElement, Design.TopBarState> topBars = new();
-    private string? selectedRail;
-    private float pillTargetY = float.NaN;
+    private Design.CommandPalette? palette;
+    private (SyncChipState State, string Status) sync = (SyncChipState.Starting, "Starting sync");
 
     public NavHost Nav { get; }
-    public Design.TopControls TopRow { get; }
+    public Next.Shell Shell { get; }
 
     public Grid ReaderLayer => ReaderHost;
     public StackPanel Toasts => ToastHost;
+    public StackPanel InfoBars => InfoBarHost;
     public UIElement ContentRoot => Root;
 
     public MainWindow()
@@ -43,32 +42,55 @@ public sealed partial class MainWindow : Window
         SizeWindow();
 
         Nav = new NavHost(PageHost);
-        TopRow = new Design.TopControls(TopCapsule, TopCapsuleIcons, TopTitle, SearchBox);
+        Shell = new Next.Shell(this, AppTitleBar);
+        Grid.SetRow(Shell.Pane, 1);
+        Grid.SetColumn(Shell.Pane, 0);
+        Root.Children.Add(Shell.Pane);
         Nav.Changed += (_, _) =>
         {
             AppTitleBar.IsBackButtonVisible = Nav.CanGoBack;
-            TopRow.Present(Nav.Top is { } top && topBars.TryGetValue(top, out var bar) ? bar : Design.TopBarState.Empty);
+            Shell.UpdateBreadcrumb(Nav);
         };
+        Root.KeyboardAcceleratorPlacementMode = KeyboardAcceleratorPlacementMode.Hidden;
         Root.KeyboardAccelerators.Add(Accelerator(VirtualKey.Left, VirtualKeyModifiers.Menu, () => _ = GoBackAsync()));
         Root.KeyboardAccelerators.Add(Accelerator(VirtualKey.F, VirtualKeyModifiers.Control, () =>
         {
             if (ReaderLayer.Visibility == Visibility.Visible) return;
-            TopRow.RevealSearch();
+            Shell.FocusSearch();
         }));
-        SearchBox.KeyDown += (s, e) =>
+        Root.KeyboardAccelerators.Add(Accelerator(VirtualKey.K, VirtualKeyModifiers.Control, () =>
         {
-            if (e.Key == VirtualKey.Escape)
+            palette ??= new Design.CommandPalette(this, PaletteHost);
+            if (!palette.IsOpen)
             {
-                SearchBox.Text = string.Empty;
-                e.Handled = true;
-                PageHost.Focus(FocusState.Programmatic);
+                palette.Open(Shell.SearchText.Trim());
+                return;
             }
-        };
-        Root.Loaded += (_, _) => MoveRailPill(selectedRail, animate: false);
-        RailItemsHost.LayoutUpdated += OnRailLayout;
-        Rail.AddHandler(UIElement.PointerMovedEvent, new PointerEventHandler((_, e) => SyncRailHover(e)), true);
-        Rail.AddHandler(UIElement.PointerExitedEvent, new PointerEventHandler((_, _) => SyncRailHover(null)), true);
+            palette.Toggle();
+        }));
+        Root.SizeChanged += (_, e) => Shell.WindowWidthChanged(e.NewSize.Width);
+        InfoBarHost.SizeChanged += (_, _) => OffsetPagesForInfoBars();
+        ReaderHost.RegisterPropertyChangedCallback(UIElement.VisibilityProperty, (_, _) =>
+            InfoBarHost.Visibility = ReaderHost.Visibility == Visibility.Visible ? Visibility.Collapsed : Visibility.Visible);
     }
+
+    public void OpenPalette(string text)
+    {
+        palette ??= new Design.CommandPalette(this, PaletteHost);
+        palette.Open(text);
+    }
+
+    public void RefreshTitle() => Shell.UpdateBreadcrumb(Nav);
+
+    public void ShowBrowseSource(long sourceId) => Shell.Pane.SelectSource(sourceId);
+
+    public SyncChipState SyncState => sync.State;
+
+    public string SyncStatus => sync.Status;
+
+    public event EventHandler? SyncStatusChanged;
+
+    internal void RaiseSearchChanged(string text) => SearchChanged?.Invoke(this, text);
 
 
     private static KeyboardAccelerator Accelerator(VirtualKey key, VirtualKeyModifiers modifiers, Action action)
@@ -140,103 +162,10 @@ public sealed partial class MainWindow : Window
 
     public void AddRootPage(string key, Func<FrameworkElement> factory) => rootFactories[key] = factory;
 
-    public void AddRailItem(string key, string glyph, string label, Func<FrameworkElement> factory, bool footer = false)
-    {
-        rootFactories[key] = factory;
-        var icon = new FontIcon { Glyph = glyph, FontFamily = (FontFamily)Application.Current.Resources["TzIconFont"], FontSize = 20 };
-        var text = new TextBlock
-        {
-            Text = label,
-            FontSize = 11,
-            FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
-            HorizontalAlignment = HorizontalAlignment.Center,
-            TextTrimming = TextTrimming.CharacterEllipsis,
-        };
-        var stack = new StackPanel { Spacing = 4, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center };
-        stack.Children.Add(icon);
-        stack.Children.Add(text);
-        var button = new Button
-        {
-            Style = (Style)Application.Current.Resources["TzRowButton"],
-            Width = 60,
-            Height = 56,
-            HorizontalAlignment = HorizontalAlignment.Center,
-            CornerRadius = new CornerRadius(14),
-            Content = stack,
-        };
-        ToolTipService.SetToolTip(button, label);
-        Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(button, label);
-        button.Click += (_, _) => _ = NavigateRootAsync(key);
-        rail[key] = (button, icon, text);
-        (footer ? RailFooter : RailItems).Children.Add(button);
-        ApplyRailColors();
-    }
-
     public async Task NavigateRootAsync(string key)
     {
-        selectedRail = key;
-        ApplyRailColors();
-        MoveRailPill(key, animate: true);
+        Shell.Select(key);
         await Nav.ShowRootAsync(key, rootFactories[key]);
-    }
-
-    private void ApplyRailColors()
-    {
-        foreach (var (key, item) in rail)
-        {
-            var selected = key == selectedRail;
-            item.Icon.Foreground = Design.Theme.Brush(selected ? "TzAccent" : "TzTextSecondary");
-            item.Label.Foreground = Design.Theme.Brush(selected ? "TzAccent" : "TzTextSecondary");
-            VisualStateManager.GoToState(item.Button, "Normal", false);
-        }
-    }
-
-    private void SyncRailHover(PointerRoutedEventArgs? e)
-    {
-        foreach (var (_, item) in rail)
-        {
-            var over = false;
-            if (e != null)
-            {
-                var p = e.GetCurrentPoint(item.Button).Position;
-                over = p.X >= 0 && p.Y >= 0 && p.X < item.Button.ActualWidth && p.Y < item.Button.ActualHeight;
-            }
-            VisualStateManager.GoToState(item.Button, over ? "PointerOver" : "Normal", false);
-        }
-    }
-
-    private void MoveRailPill(string? key, bool animate)
-    {
-        if (key is null || !rail.TryGetValue(key, out var item) || item.Button.Parent != RailItems)
-        {
-            RailPill.Opacity = 0;
-            return;
-        }
-        var y = (float)item.Button.TransformToVisual(RailItemsHost).TransformPoint(default).Y;
-        pillTargetY = y;
-        var visual = Motion.VisualOf(RailPill);
-        RailPill.Opacity = 1;
-        if (!animate)
-        {
-            visual.Properties.InsertVector3("Translation", new(0, y, 0));
-            return;
-        }
-        Motion.Spring(RailPill, "Translation", new(0, y, 0), damping: 0.78f, periodMs: 55);
-    }
-
-    private void OnRailLayout(object? sender, object e)
-    {
-        if (selectedRail is null || !rail.TryGetValue(selectedRail, out var item) || float.IsNaN(pillTargetY) || item.Button.Parent != RailItems)
-        {
-            return;
-        }
-        var y = (float)item.Button.TransformToVisual(RailItemsHost).TransformPoint(default).Y;
-        if (Math.Abs(y - pillTargetY) <= 0.5f)
-        {
-            return;
-        }
-        pillTargetY = y;
-        Motion.Spring(RailPill, "Translation", new(0, y, 0), damping: 0.78f, periodMs: 55);
     }
 
     public Task GoBackAsync() => Nav.PopAsync();
@@ -253,48 +182,26 @@ public sealed partial class MainWindow : Window
         }
     }
 
-    public event EventHandler<string>? SearchSubmitted;
     public event EventHandler<string>? SearchChanged;
-    public event EventHandler? SyncChipClicked;
 
-    private void OnSearchSubmitted(AutoSuggestBox sender, AutoSuggestBoxQuerySubmittedEventArgs args) =>
-        SearchSubmitted?.Invoke(this, args.QueryText.Trim());
+    public void ClearSearch() => Shell.ClearSearch();
 
-    private void OnSearchTextChanged(AutoSuggestBox sender, AutoSuggestBoxTextChangedEventArgs args)
+    public string SearchText => Shell.SearchText;
+
+    private void OffsetPagesForInfoBars()
     {
-        if (args.Reason == AutoSuggestionBoxTextChangeReason.UserInput)
+        if (InfoBarHost.Visibility == Visibility.Collapsed)
         {
-            SearchChanged?.Invoke(this, sender.Text);
+            return;
         }
+        PageHost.Margin = new Thickness(0, InfoBarHost.Children.Count == 0 ? 0 : InfoBarHost.ActualHeight + InfoBarHost.Margin.Top + 8, 0, 0);
     }
 
-    public void ClearSearch() => SearchBox.Text = string.Empty;
-
-    private void OnSyncChipClick(object sender, RoutedEventArgs e) => SyncChipClicked?.Invoke(this, EventArgs.Empty);
-
-    public void SetTopBar(FrameworkElement page, Design.TopBarState state)
+    public void SetSyncState(SyncChipState state, string text, string description, string status)
     {
-        topBars.AddOrUpdate(page, state);
-        if (Nav.Top == page)
-        {
-            TopRow.Present(state);
-        }
-    }
-
-
-    public void SetSyncState(string text, Brush dot, bool pulse)
-    {
-        SyncText.Text = text;
-        SyncDot.Fill = dot;
-        SyncHalo.Fill = dot;
-        if (pulse)
-        {
-            var v = Motion.VisualOf(SyncHalo);
-            var c = v.Compositor;
-            v.CenterPoint = new(5, 5, 0);
-            v.StartAnimation("Scale", Motion.Vector3(c, new(1, 1, 1), new(2.6f, 2.6f, 1), TimeSpan.FromMilliseconds(900), Curve.StandardDecelerate));
-            v.StartAnimation("Opacity", Motion.Scalar(c, 0.55f, 0, TimeSpan.FromMilliseconds(900), Curve.StandardDecelerate));
-        }
+        sync = (state, status);
+        SyncStatusChanged?.Invoke(this, EventArgs.Empty);
+        Shell.SetSync(state, text, description, status);
     }
 
     public void SetTheme(ElementTheme theme)
@@ -303,11 +210,19 @@ public sealed partial class MainWindow : Window
         var dark = theme == ElementTheme.Dark || (theme == ElementTheme.Default && Application.Current.RequestedTheme == ApplicationTheme.Dark);
         AppWindow.TitleBar.ButtonForegroundColor = dark ? Colors.White : Colors.Black;
         AppWindow.TitleBar.ButtonHoverBackgroundColor = dark ? Windows.UI.Color.FromArgb(24, 255, 255, 255) : Windows.UI.Color.FromArgb(18, 0, 0, 0);
-        ApplyRailColors();
-        TopRow.Retint();
     }
 
-    public void RestoreTitleBar() => SetTitleBar(AppTitleBar);
+    public void EnterReaderTitleBar(UIElement dragArea)
+    {
+        AppTitleBar.Visibility = Visibility.Collapsed;
+        SetTitleBar(dragArea);
+    }
+
+    public void RestoreTitleBar()
+    {
+        AppTitleBar.Visibility = Visibility.Visible;
+        SetTitleBar(AppTitleBar);
+    }
 
     public void BringToFront()
     {
@@ -465,4 +380,13 @@ public sealed partial class MainWindow : Window
     }
 
     public event EventHandler? SheetClosed;
+}
+
+public enum SyncChipState
+{
+    Starting,
+    Synced,
+    Unpaired,
+    Off,
+    Error,
 }

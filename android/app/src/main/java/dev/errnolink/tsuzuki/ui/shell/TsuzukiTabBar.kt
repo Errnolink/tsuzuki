@@ -38,7 +38,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.requiredWidth
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
@@ -47,7 +46,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import dev.errnolink.tsuzuki.designsystem.GlassContext
 import dev.errnolink.tsuzuki.designsystem.GlassMaterial
 import dev.errnolink.tsuzuki.designsystem.GlassSurface
-import dev.errnolink.tsuzuki.designsystem.LocalMotionTokens
 import dev.errnolink.tsuzuki.designsystem.M3Motion
 import dev.errnolink.tsuzuki.designsystem.SlidersHorizontal
 import dev.errnolink.tsuzuki.designsystem.TsuzukiIcons
@@ -85,7 +83,6 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
-import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
@@ -96,6 +93,10 @@ import dev.errnolink.tsuzuki.designsystem.TsuzukiText
 import dev.errnolink.tsuzuki.designsystem.TsuzukiTheme
 import dev.errnolink.tsuzuki.ui.library.formatFilterCount
 import kotlin.math.roundToInt
+import androidx.compose.ui.layout.layout
+import androidx.compose.ui.layout.boundsInWindow
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.unit.Constraints
 
 @Immutable
 data class TsuzukiTab(
@@ -103,6 +104,7 @@ data class TsuzukiTab(
     val title: String,
     val icon: @Composable () -> Unit,
     val onClick: () -> Unit,
+    val badge: Boolean = false,
 )
 
 @Immutable
@@ -113,6 +115,7 @@ data class TsuzukiTabBarColors(
     val unselectedTextColor: Color,
     val accentColor: Color,
     val onAccentColor: Color,
+    val badgeColor: Color,
 )
 
 @Immutable
@@ -145,11 +148,12 @@ object TsuzukiTabBarDefaults {
     @Composable
     fun colors(
         backgroundColor: Color = TsuzukiShellMaterial.surfaceColor(TsuzukiTheme.colors),
-        indicatorColor: Color = TsuzukiTheme.colors.accent.copy(alpha = 0.14f),
+        indicatorColor: Color = TsuzukiTheme.colors.text.copy(alpha = if (TsuzukiTheme.colors.isDark) 0.14f else 0.08f),
         textColor: Color = TsuzukiTheme.colors.text,
         unselectedTextColor: Color = TsuzukiTheme.colors.secondary,
         accentColor: Color = TsuzukiTheme.colors.accent,
         onAccentColor: Color = TsuzukiTheme.colors.onAccent,
+        badgeColor: Color = TsuzukiTheme.colors.destructive,
     ): TsuzukiTabBarColors = TsuzukiTabBarColors(
         backgroundColor = backgroundColor,
         indicatorColor = indicatorColor,
@@ -157,6 +161,7 @@ object TsuzukiTabBarDefaults {
         unselectedTextColor = unselectedTextColor,
         accentColor = accentColor,
         onAccentColor = onAccentColor,
+        badgeColor = badgeColor,
     )
 
     @Composable
@@ -229,10 +234,21 @@ data class TabBarMorphGeometry(
     val contentBoxWidthPx: Float,
     val contentBoxOffset: Offset,
     val tabStepPx: Float,
-    val tabsAlpha: Float,
-    val collapsedAlpha: Float,
-    val expandedAlpha: Float,
+    val tabAlphas: List<Float>,
+    val labelAlpha: Float,
+    val indicatorAlpha: Float,
+    val badgeDotAlpha: Float,
 )
+
+private const val MorphTabFadeShare = 0.35f
+private const val MorphLabelFadeEnd = 0.45f
+private const val MorphIndicatorFadeEnd = 0.6f
+private const val MorphBadgeDotStart = 0.55f
+private const val MorphOthersShrink = 0.15f
+internal const val TabBarMinimizeMillis = 300
+internal const val TabBarExpandMillis = 250
+internal val TabBarMorphEasing: androidx.compose.animation.core.Easing =
+    androidx.compose.animation.core.CubicBezierEasing(0.3f, 0.5f, 0.2f, 1f)
 
 internal fun tabBarMorphGeometry(
     progress: Float,
@@ -246,27 +262,36 @@ internal fun tabBarMorphGeometry(
     collapsedIconCenterXPx: Float,
     iconLiftYPx: Float,
 ): TabBarMorphGeometry {
-    val p = progress.coerceIn(0f, 1f)
-    val capsuleWidthPx = lerp(expandedWidthPx, collapsedWidthPx, p)
+    val travel = progress.coerceIn(0f, 1f)
+    val capsuleWidthPx = lerp(expandedWidthPx, collapsedWidthPx, travel)
     val contentBoxWidthPx = expandedWidthPx.coerceAtLeast(0f)
     val innerWidth = (contentBoxWidthPx - contentPaddingLeftPx - contentPaddingRightPx).coerceAtLeast(0f)
     val tabStepPx = if (tabCount > 0) innerWidth / tabCount else 0f
     val selected = selectedIndex.coerceIn(0, (tabCount - 1).coerceAtLeast(0))
-    val iconCenterInBoxX = contentPaddingLeftPx + if (isRtl) {
-        innerWidth - (selected + 0.5f) * tabStepPx
-    } else {
-        (selected + 0.5f) * tabStepPx
+    fun slotLeftInBox(index: Int) = contentPaddingLeftPx + if (isRtl) innerWidth - (index + 1) * tabStepPx else index * tabStepPx
+    val iconCenterInBoxX = slotLeftInBox(selected) + tabStepPx / 2f
+    val offsetX = lerp(0f, collapsedIconCenterXPx - iconCenterInBoxX, travel)
+    val fadeDistance = (tabStepPx * MorphTabFadeShare).coerceAtLeast(1f)
+    val alphas = List(tabCount) { index ->
+        if (index == selected) {
+            1f
+        } else {
+            val left = slotLeftInBox(index) + tabStepPx * 0.15f
+            val right = slotLeftInBox(index) + tabStepPx * 0.85f
+            val restClearance = minOf(left, expandedWidthPx - right)
+            val clearance = minOf(offsetX + left, capsuleWidthPx - (offsetX + right))
+            (clearance / minOf(fadeDistance, restClearance).coerceAtLeast(1f)).coerceIn(0f, 1f)
+        }
     }
-    val restX = 0f
-    val collapsedX = collapsedIconCenterXPx - iconCenterInBoxX
     return TabBarMorphGeometry(
         capsuleWidthPx = capsuleWidthPx,
         contentBoxWidthPx = contentBoxWidthPx,
-        contentBoxOffset = Offset(lerp(restX, collapsedX, p), lerp(0f, iconLiftYPx, p)),
+        contentBoxOffset = Offset(offsetX, lerp(0f, iconLiftYPx, travel)),
         tabStepPx = tabStepPx,
-        tabsAlpha = ((0.6f - p) / 0.2f).coerceIn(0f, 1f),
-        collapsedAlpha = ((p - 0.6f) / 0.4f).coerceIn(0f, 1f),
-        expandedAlpha = (1f - p / 0.4f).coerceIn(0f, 1f),
+        tabAlphas = alphas,
+        labelAlpha = (1f - travel / MorphLabelFadeEnd).coerceIn(0f, 1f),
+        indicatorAlpha = (1f - travel / MorphIndicatorFadeEnd).coerceIn(0f, 1f),
+        badgeDotAlpha = ((travel - MorphBadgeDotStart) / (1f - MorphBadgeDotStart)).coerceIn(0f, 1f),
     )
 }
 
@@ -289,45 +314,48 @@ fun TsuzukiTabBar(
     glass: GlassContext? = LocalShellGlass.current,
 ) {
     val motion = TsuzukiTheme.motion
-    val tokens = LocalMotionTokens.current
     val density = LocalDensity.current
     val isAccessoryShared = accessory != null && expandedAccessory != null
 
     val progress = remember { Animatable(if (isInline) 1f else 0f) }
     LaunchedEffect(isInline) {
+        val target = if (isInline) 1f else 0f
+        val full = if (isInline) TabBarMinimizeMillis else TabBarExpandMillis
+        val millis = (full * kotlin.math.abs(target - progress.value)).toInt().coerceAtLeast(60)
         progress.animateTo(
-            targetValue = if (isInline) 1f else 0f,
-            animationSpec = when {
-                motion.reduced -> snap()
-                else -> tween(M3Motion.Medium1, easing = M3Motion.Emphasized)
-            },
+            targetValue = target,
+            animationSpec = if (motion.reduced) snap() else tween(millis, easing = TabBarMorphEasing),
         )
     }
 
-    val inlineAccessoryEnter: EnterTransition = when {
-        motion.reduced -> fadeIn(snap())
-        tokens -> expandHorizontally(tween(M3Motion.Medium1, easing = M3Motion.EmphasizedDecelerate), expandFrom = Alignment.End) +
-            fadeIn(tween(M3Motion.Short3, easing = M3Motion.Standard))
-        else -> expandHorizontally(motion.tabSpring(), expandFrom = Alignment.End) + fadeIn(tween(160))
-    }
-    val inlineAccessoryExit: ExitTransition = when {
-        motion.reduced -> fadeOut(snap())
-        tokens -> shrinkHorizontally(tween(M3Motion.Short3, easing = M3Motion.EmphasizedAccelerate), shrinkTowards = Alignment.End) +
-            fadeOut(tween(M3Motion.Short3, easing = M3Motion.StandardAccelerate))
-        else -> shrinkHorizontally(motion.tabSpring(), shrinkTowards = Alignment.End) + fadeOut(tween(120))
-    }
-    val topAccessoryEnter: EnterTransition = when {
-        motion.reduced -> fadeIn(snap())
-        tokens -> expandVertically(tween(M3Motion.Medium1, easing = M3Motion.EmphasizedDecelerate), expandFrom = Alignment.Bottom) +
-            fadeIn(tween(M3Motion.Short3, easing = M3Motion.Standard))
-        else -> expandVertically(motion.tabSpring(), expandFrom = Alignment.Bottom) + fadeIn(tween(160))
-    }
-    val topAccessoryExit: ExitTransition = when {
-        motion.reduced -> fadeOut(snap())
-        tokens -> shrinkVertically(tween(M3Motion.Short3, easing = M3Motion.EmphasizedAccelerate), shrinkTowards = Alignment.Bottom) +
-            fadeOut(tween(M3Motion.Short3, easing = M3Motion.StandardAccelerate))
-        else -> shrinkVertically(motion.tabSpring(), shrinkTowards = Alignment.Bottom) + fadeOut(tween(120))
-    }
+    val inlineAccessoryEnter: EnterTransition =
+        if (motion.reduced) {
+            fadeIn(snap())
+        } else {
+            expandHorizontally(tween(M3Motion.Medium1, easing = M3Motion.EmphasizedDecelerate), expandFrom = Alignment.End) +
+                fadeIn(tween(M3Motion.Short3, easing = M3Motion.Standard))
+        }
+    val inlineAccessoryExit: ExitTransition =
+        if (motion.reduced) {
+            fadeOut(snap())
+        } else {
+            shrinkHorizontally(tween(M3Motion.Short3, easing = M3Motion.EmphasizedAccelerate), shrinkTowards = Alignment.End) +
+                fadeOut(tween(M3Motion.Short3, easing = M3Motion.StandardAccelerate))
+        }
+    val topAccessoryEnter: EnterTransition =
+        if (motion.reduced) {
+            fadeIn(snap())
+        } else {
+            expandVertically(tween(M3Motion.Medium1, easing = M3Motion.EmphasizedDecelerate), expandFrom = Alignment.Bottom) +
+                fadeIn(tween(M3Motion.Short3, easing = M3Motion.Standard))
+        }
+    val topAccessoryExit: ExitTransition =
+        if (motion.reduced) {
+            fadeOut(snap())
+        } else {
+            shrinkVertically(tween(M3Motion.Short3, easing = M3Motion.EmphasizedAccelerate), shrinkTowards = Alignment.Bottom) +
+                fadeOut(tween(M3Motion.Short3, easing = M3Motion.StandardAccelerate))
+        }
 
     SharedTransitionLayout(modifier = modifier) {
         Column(
@@ -484,43 +512,23 @@ private fun TabCapsule(
         fontSize = sizes.labelFontSize,
         lineHeight = sizes.labelLineHeight,
     )
-    val textMeasurer = rememberTextMeasurer()
-    val collapsedLabelLayout = remember(currentTab?.title, showLabels, labelStyle) {
-        if (showLabels && currentTab != null) {
-            textMeasurer.measure(AnnotatedString(currentTab.title), labelStyle, softWrap = false, maxLines = 1)
-        } else {
-            null
-        }
-    }
-
     val barHeightPx = with(density) { sizes.barHeight.toPx() }
     val iconSizePx = with(density) { sizes.iconSize.toPx() }
     val labelGapPx = with(density) { 6.dp.toPx() }
     val labelLineHeightPx = with(density) { sizes.labelLineHeight.toPx() }
-    val inlinePadLeftPx = with(density) { sizes.tabInlineContentPadding.calculateLeftPadding(layoutDirection).toPx() }
-    val inlinePadRightPx = with(density) { sizes.tabInlineContentPadding.calculateRightPadding(layoutDirection).toPx() }
     val padLeftPx = with(density) { sizes.tabExpandedContentPadding.calculateLeftPadding(layoutDirection).toPx() }
     val padRightPx = with(density) { sizes.tabExpandedContentPadding.calculateRightPadding(layoutDirection).toPx() }
     val padTopPx = with(density) { sizes.tabExpandedContentPadding.calculateTopPadding().toPx() }
     val padBottomPx = with(density) { sizes.tabExpandedContentPadding.calculateBottomPadding().toPx() }
 
-    val collapsedContentWidthPx = if (collapsedLabelLayout != null) {
-        inlinePadLeftPx + inlinePadRightPx + iconSizePx + labelGapPx + collapsedLabelLayout.size.width
-    } else {
-        barHeightPx
-    }
-    val collapsedWidthPx = collapsedContentWidthPx.coerceAtMost(expandedWidthPx.coerceAtLeast(barHeightPx))
+    val collapsedWidthPx = barHeightPx.coerceAtMost(expandedWidthPx.coerceAtLeast(barHeightPx))
 
     val tabCount = tabs.size
     val selectedTabIndex = selectedIndex.coerceIn(0, (tabCount - 1).coerceAtLeast(0))
     val contentInnerHeightPx = (barHeightPx - padTopPx - padBottomPx).coerceAtLeast(0f)
-    val stackHeightPx = iconSizePx + labelGapPx + labelLineHeightPx
+    val stackHeightPx = iconSizePx + if (showLabels) labelGapPx + labelLineHeightPx else 0f
     val expandedIconCenterY = padTopPx + (contentInnerHeightPx - stackHeightPx).coerceAtLeast(0f) / 2f + iconSizePx / 2f
-    val collapsedIconCenterX = when {
-        collapsedLabelLayout == null -> collapsedWidthPx / 2f
-        isRtl -> collapsedWidthPx - (inlinePadLeftPx + iconSizePx / 2f)
-        else -> inlinePadLeftPx + iconSizePx / 2f
-    }
+    val collapsedIconCenterX = collapsedWidthPx / 2f
     val iconLiftYPx = barHeightPx / 2f - expandedIconCenterY
     val geometry = tabBarMorphGeometry(
         progress = progress,
@@ -636,7 +644,6 @@ private fun TabCapsule(
                             onClick = {
                                 haptics.select()
                                 onExpand()
-                                currentTab.onClick()
                             },
                             indication = null,
                             interactionSource = capsuleInteraction,
@@ -659,7 +666,7 @@ private fun TabCapsule(
                 Box(
                     modifier = Modifier
                         .fillMaxSize()
-                        .graphicsLayer { alpha = geometry.expandedAlpha }
+                        .graphicsLayer { alpha = geometry.indicatorAlpha }
                         .then(
                             pill.placement(restSize, liftedSize) {
                                 pillCenterInCapsule(pill.position)
@@ -670,14 +677,14 @@ private fun TabCapsule(
             }
             Box(
                 modifier = Modifier
-                    .offset {
-                        IntOffset(
-                            geometry.contentBoxOffset.x.roundToInt(),
-                            geometry.contentBoxOffset.y.roundToInt(),
+                    .layout { measurable, constraints ->
+                        val placeable = measurable.measure(
+                            Constraints.fixed(geometry.contentBoxWidthPx.roundToInt().coerceAtLeast(0), constraints.maxHeight),
                         )
+                        layout(constraints.maxWidth, constraints.maxHeight) {
+                            placeable.place(geometry.contentBoxOffset.x.roundToInt(), geometry.contentBoxOffset.y.roundToInt())
+                        }
                     }
-                    .requiredWidth(with(density) { geometry.contentBoxWidthPx.toDp() })
-                    .fillMaxHeight()
                     .semantics { if (isInline) invisibleToUser() }
                     .then(dragModifier)
                     .padding(
@@ -701,10 +708,12 @@ private fun TabCapsule(
                                 .weight(1f)
                                 .fillMaxHeight()
                                 .graphicsLayer {
-                                    alpha = if (tabSelected) {
-                                        maxOf(geometry.tabsAlpha, 1f - geometry.collapsedAlpha)
-                                    } else {
-                                        geometry.tabsAlpha
+                                    if (!tabSelected) {
+                                        val tabAlpha = geometry.tabAlphas.getOrElse(tabIndex) { 1f }
+                                        alpha = tabAlpha
+                                        val s = 1f - MorphOthersShrink * (1f - tabAlpha)
+                                        scaleX = s
+                                        scaleY = s
                                     }
                                 }
                                 .then(
@@ -733,7 +742,7 @@ private fun TabCapsule(
                                 Spacer(Modifier.height(3.dp))
                                 TsuzukiText(
                                     text = tab.title,
-                                    modifier = Modifier.graphicsLayer { alpha = geometry.tabsAlpha },
+                                    modifier = Modifier.graphicsLayer { if (tabSelected) alpha = geometry.labelAlpha },
                                     style = labelStyle,
                                     color = if (tabSelected) colors.textColor else colors.unselectedTextColor,
                                     maxLines = 1,
@@ -745,50 +754,19 @@ private fun TabCapsule(
                 }
             }
 
-            if (currentTab != null && geometry.collapsedAlpha > 0f) {
+            val badgeHidden = tabs.withIndex().any { (index, tab) -> tab.badge && index != selectedIndex }
+            if (badgeHidden && geometry.badgeDotAlpha > 0f) {
                 Box(
                     modifier = Modifier
-                        .fillMaxSize()
-                        .graphicsLayer { alpha = geometry.collapsedAlpha }
-                        .semantics { if (!isInline) invisibleToUser() },
-                ) {
-                    if (collapsedLabelLayout != null) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            modifier = Modifier
-                                .fillMaxHeight()
-                                .padding(start = with(density) { inlinePadLeftPx.toDp() }),
-                        ) {
-                            CompositionLocalProvider(LocalShellTabSelected provides true) {
-                                currentTab.icon()
-                            }
-                            Spacer(Modifier.width(with(density) { labelGapPx.toDp() }))
-                            TsuzukiText(
-                                text = currentTab.title,
-                                modifier = Modifier.width(
-                                    with(density) {
-                                        (collapsedWidthPx - inlinePadLeftPx - inlinePadRightPx - iconSizePx - labelGapPx)
-                                            .coerceAtLeast(0f)
-                                            .toDp()
-                                    },
-                                ),
-                                style = labelStyle,
-                                color = colors.textColor,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
-                            )
-                        }
-                    } else {
-                        Box(
-                            modifier = Modifier.fillMaxSize(),
-                            contentAlignment = Alignment.Center,
-                        ) {
-                            CompositionLocalProvider(LocalShellTabSelected provides true) {
-                                currentTab.icon()
-                            }
-                        }
-                    }
-                }
+                        .offset(
+                            x = with(density) { (collapsedWidthPx * 0.64f).toDp() },
+                            y = with(density) { (barHeightPx * 0.2f).toDp() },
+                        )
+                        .size(sizes.badgeSize * 0.6f)
+                        .graphicsLayer { alpha = geometry.badgeDotAlpha }
+                        .background(colors.badgeColor, CircleShape)
+                        .semantics { invisibleToUser() },
+                )
             }
         }
     }
@@ -797,35 +775,28 @@ private fun TabCapsule(
 @Composable
 private fun FilterSlot(visible: Boolean, spacing: androidx.compose.ui.unit.Dp, content: @Composable () -> Unit) {
     val motion = TsuzukiTheme.motion
-    val tokens = LocalMotionTokens.current
     AnimatedVisibility(
         visible = visible,
         modifier = Modifier.fillMaxHeight(),
         enter = if (motion.reduced) {
             fadeIn(snap())
-        } else if (tokens) {
+        } else {
             expandHorizontally(
                 tween(M3Motion.Medium1, easing = M3Motion.EmphasizedDecelerate),
                 expandFrom = Alignment.Start,
             ) +
                 scaleIn(tween(M3Motion.Medium1, easing = M3Motion.EmphasizedDecelerate), initialScale = 0.6f) +
                 fadeIn(tween(M3Motion.Short3, easing = M3Motion.EmphasizedDecelerate))
-        } else {
-            expandHorizontally(motion.tabSpring(), expandFrom = Alignment.Start) +
-                scaleIn(motion.tabSpring(), initialScale = 0.6f) + fadeIn(tween(160))
         },
         exit = if (motion.reduced) {
             fadeOut(snap())
-        } else if (tokens) {
+        } else {
             shrinkHorizontally(
                 tween(M3Motion.Short3, easing = M3Motion.EmphasizedAccelerate),
                 shrinkTowards = Alignment.Start,
             ) +
                 scaleOut(tween(M3Motion.Short3, easing = M3Motion.EmphasizedAccelerate), targetScale = 0.6f) +
                 fadeOut(tween(M3Motion.Short3, easing = M3Motion.EmphasizedAccelerate))
-        } else {
-            shrinkHorizontally(motion.tabSpring(), shrinkTowards = Alignment.Start) +
-                scaleOut(motion.tabSpring(), targetScale = 0.6f) + fadeOut(tween(120))
         },
     ) {
         Box(Modifier.fillMaxHeight().padding(start = spacing)) { content() }
@@ -844,7 +815,11 @@ private fun FilterCircle(
 ) {
     val filterInteraction = remember { MutableInteractionSource() }
     val motion = TsuzukiTheme.motion
-    Box(modifier = modifier.pressScale(filterInteraction)) {
+    Box(
+        modifier = modifier
+            .onGloballyPositioned { dev.errnolink.tsuzuki.ui.library.LibraryFilterSheetState.buttonBoundsInWindow = it.boundsInWindow() }
+            .pressScale(filterInteraction),
+    ) {
         GlassSurface(
             context = glass,
             shape = shapes.standaloneTabShape as? CornerBasedShape ?: CircleShape,
@@ -888,19 +863,15 @@ private fun FilterCircle(
             visible = activeCount > 0,
             enter = if (motion.reduced) {
                 fadeIn(snap())
-            } else if (LocalMotionTokens.current) {
+            } else {
                 scaleIn(tween(M3Motion.Short2, easing = M3Motion.Standard), initialScale = 0f) +
                     fadeIn(tween(M3Motion.Short2, easing = M3Motion.Standard))
-            } else {
-                scaleIn(motion.tabSpring(), initialScale = 0f) + fadeIn(tween(120))
             },
             exit = if (motion.reduced) {
                 fadeOut(snap())
-            } else if (LocalMotionTokens.current) {
+            } else {
                 scaleOut(tween(M3Motion.Short2, easing = M3Motion.StandardAccelerate), targetScale = 0f) +
                     fadeOut(tween(M3Motion.Short2, easing = M3Motion.StandardAccelerate))
-            } else {
-                scaleOut(motion.tabSpring(), targetScale = 0f) + fadeOut(tween(120))
             },
             modifier = Modifier
                 .align(Alignment.TopEnd)

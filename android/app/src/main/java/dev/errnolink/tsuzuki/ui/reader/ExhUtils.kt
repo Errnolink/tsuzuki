@@ -53,20 +53,18 @@ fun ExhUtils(
         if (!isAutoScrollEnabled) TsuzukiText(stringResource(SYMR.strings.eh_autoscroll_freq_invalid), color = TsuzukiTheme.colors.destructive)
         GroupedRow(stringResource(SYMR.strings.eh_retry_all), onClick = onClickRetryAll)
         GroupedRow(stringResource(SYMR.strings.eh_boost_page), onClick = onClickBoostPage)
-        GroupedRow("Help", chevron = true, onClick = { helpExpanded = true })
-        if (helpExpanded) {
-            Box {
-                GlassMenu(
-                    expanded = true,
-                    label = "Help",
-                    listOf(
-                        ContextMenuAction(stringResource(SYMR.strings.eh_autoscroll_help)) { helpExpanded = false; onClickAutoScrollHelp() },
-                        ContextMenuAction(stringResource(SYMR.strings.eh_retry_all_help)) { helpExpanded = false; onClickRetryAllHelp() },
-                        ContextMenuAction(stringResource(SYMR.strings.eh_boost_page_help)) { helpExpanded = false; onClickBoostPageHelp() },
-                    ),
-                    onDismissRequest = { helpExpanded = false },
-                )
-            }
+        Box {
+            GroupedRow("Help", chevron = true, onClick = { helpExpanded = true })
+            GlassMenu(
+                expanded = helpExpanded,
+                label = "Help",
+                listOf(
+                    ContextMenuAction(stringResource(SYMR.strings.eh_autoscroll_help)) { helpExpanded = false; onClickAutoScrollHelp() },
+                    ContextMenuAction(stringResource(SYMR.strings.eh_retry_all_help)) { helpExpanded = false; onClickRetryAllHelp() },
+                    ContextMenuAction(stringResource(SYMR.strings.eh_boost_page_help)) { helpExpanded = false; onClickBoostPageHelp() },
+                ),
+                onDismissRequest = { helpExpanded = false },
+            )
         }
     }
 }

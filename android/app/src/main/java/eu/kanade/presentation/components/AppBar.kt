@@ -264,6 +264,7 @@ fun AppBarActions(
 
     val overflowActions = actions.filterIsInstance<AppBar.OverflowAction>()
     if (overflowActions.isNotEmpty()) {
+        Box {
         TooltipBox(
             positionProvider = rememberTooltipPositionProvider(TooltipAnchorPosition.Above),
             tooltip = {
@@ -298,6 +299,7 @@ fun AppBarActions(
                     },
                 )
             }
+        }
         }
     }
 }

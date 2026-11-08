@@ -102,7 +102,6 @@ object NekoBackupMapper {
                         chapters = owned,
                         history = manga.history.filter { it.url in urls },
                         excludedScanlators = excludedScanlators(manga),
-                        memo = hiddenChildMemo(),
                     )
                 }
             }
@@ -120,7 +119,7 @@ object NekoBackupMapper {
                 categories = emptyList(),
                 tracking = emptyList(),
                 history = manga.history.filter { entry -> remaining.any { it.url == entry.url } },
-                memo = MemoColumnAdapter.encode(JsonObject(memo + (HIDDEN_CHILD to JsonPrimitive(true)))),
+                memo = MemoColumnAdapter.encode(JsonObject(memo)),
             )
             val allChildren = listOf(primary) + children
             val references = allChildren.mapIndexed { index, child ->
@@ -145,7 +144,6 @@ object NekoBackupMapper {
         return Result(result, warnings)
     }
 
-    private fun hiddenChildMemo() = MemoColumnAdapter.encode(JsonObject(mapOf(HIDDEN_CHILD to JsonPrimitive(true))))
     private fun normalize(value: String) = value.lowercase().filter(Char::isLetterOrDigit)
     private fun host(url: String): String? = runCatching { URI(url).host?.lowercase() }.getOrNull()
     private fun relativeUrl(url: String, baseUrl: String?): String =

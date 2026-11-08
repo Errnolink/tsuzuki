@@ -11,7 +11,7 @@ namespace Tsuzuki.App.Controls;
 
 public delegate void TileAction(MangaTile tile);
 
-public sealed record TileData(long MangaId, string Title, string? ThumbnailUrl, string Caption, int Badge, bool PhoneOnly, bool Merged, object? Tag = null, bool InLibrary = false, TileAction? AddAction = null);
+public sealed record TileData(long MangaId, string Title, string? ThumbnailUrl, string Caption, int Badge, bool PhoneOnly, bool Merged, object? Tag = null, bool InLibrary = false, TileAction? AddAction = null, long Source = 0);
 
 public sealed partial class MangaTile : Button
 {
@@ -24,8 +24,9 @@ public sealed partial class MangaTile : Button
     private readonly StackPanel marks;
     private readonly TextBlock title;
     private readonly TextBlock caption;
-    private readonly Button add;
-    private readonly FontIcon addIcon;
+    private readonly Grid coverGrid;
+    private Button? add;
+    private FontIcon? addIcon;
     private MenuFlyout? addMenu;
     private bool addShown;
     private string marksShown = "|";
@@ -52,7 +53,7 @@ public sealed partial class MangaTile : Button
             </Style>
             """);
 
-        cover = new CoverImage { DecodeWidth = 220 };
+        cover = new CoverImage { DecodeWidth = 320 };
         var aspect = new AspectBox { Ratio = 1.5 };
         aspect.Children.Add(cover);
 
@@ -80,47 +81,10 @@ public sealed partial class MangaTile : Button
             Margin = new Thickness(8),
         };
 
-        var coverGrid = new Grid();
+        coverGrid = new Grid();
         coverGrid.Children.Add(aspect);
         coverGrid.Children.Add(badge);
         coverGrid.Children.Add(marks);
-
-        addIcon = new FontIcon { Glyph = Icons.Plus, FontFamily = Res<FontFamily>("TzIconFont"), FontSize = 16 };
-        add = new Button
-        {
-            Style = addButtonStyle ??= (Style)Microsoft.UI.Xaml.Markup.XamlReader.Load(
-                """
-                <Style xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" TargetType="Button">
-                  <Setter Property="Background" Value="{ThemeResource TzTileAction}" />
-                  <Setter Property="Foreground" Value="{ThemeResource TzTileActionIcon}" />
-                  <Setter Property="BorderThickness" Value="0" />
-                  <Setter Property="Padding" Value="0" />
-                  <Setter Property="IsTabStop" Value="False" />
-                  <Setter Property="Template">
-                    <Setter.Value>
-                      <ControlTemplate TargetType="Button">
-                        <Grid Background="{TemplateBinding Background}" CornerRadius="16">
-                          <ContentPresenter Margin="{TemplateBinding Padding}" HorizontalAlignment="Center" VerticalAlignment="Center" Content="{TemplateBinding Content}" ContentTemplate="{TemplateBinding ContentTemplate}" Foreground="{TemplateBinding Foreground}" />
-                        </Grid>
-                      </ControlTemplate>
-                    </Setter.Value>
-                  </Setter>
-                </Style>
-                """),
-            Width = 36,
-            Height = 36,
-            HorizontalAlignment = HorizontalAlignment.Right,
-            VerticalAlignment = VerticalAlignment.Bottom,
-            Margin = new Thickness(6),
-            Content = addIcon,
-            Visibility = Visibility.Collapsed,
-            IsHitTestVisible = false,
-            Shadow = new ThemeShadow(),
-            Translation = new Vector3(0, 0, 8),
-        };
-        add.Click += OnAddClick;
-        Motion.VisualOf(add).Opacity = 0f;
-        coverGrid.Children.Add(add);
 
         coverFrame = new Border
         {
@@ -128,7 +92,6 @@ public sealed partial class MangaTile : Button
             BorderBrush = Design.Theme.Brush("TzStrokeStrong"),
             BorderThickness = new Thickness(1),
             Child = coverGrid,
-            Shadow = new ThemeShadow(),
             TranslationTransition = new Vector3Transition { Duration = TimeSpan.FromMilliseconds(220) },
             ScaleTransition = new Vector3Transition { Duration = TimeSpan.FromMilliseconds(220) },
         };
@@ -154,6 +117,7 @@ public sealed partial class MangaTile : Button
         PointerEntered += (_, _) => { Lift(true); ShowAddPointer(true); };
         PointerExited += (_, _) => { Lift(false); ShowAddPointer(false); };
         PointerCanceled += (_, _) => { Lift(false); ShowAddPointer(false); };
+        GotFocus += (_, _) => EnsureAdd();
         AddHandler(PointerPressedEvent, new PointerEventHandler((_, _) => Press(true)), true);
         AddHandler(PointerReleasedEvent, new PointerEventHandler((_, _) => Press(false)), true);
         coverFrame.SizeChanged += (_, e) => coverFrame.CenterPoint = new Vector3((float)e.NewSize.Width / 2, (float)e.NewSize.Height / 2, 0);
@@ -185,6 +149,7 @@ public sealed partial class MangaTile : Button
         title.Text = data.Title;
         caption.Text = data.Caption;
         var url = data.ThumbnailUrl;
+        cover.SourceId = data.Source;
         if (cover.Url != url)
         {
             cover.Url = url;
@@ -225,7 +190,7 @@ public sealed partial class MangaTile : Button
     {
         if (data.AddAction is null)
         {
-            if (add.Visibility != Visibility.Collapsed)
+            if (add is not null && add.Visibility != Visibility.Collapsed)
             {
                 add.Visibility = Visibility.Collapsed;
             }
@@ -235,15 +200,13 @@ public sealed partial class MangaTile : Button
             }
             return;
         }
-        add.Visibility = Visibility.Visible;
-        addIcon.Glyph = data.InLibrary ? Icons.Check : Icons.Plus;
-        add.IsEnabled = !data.InLibrary;
-        AutomationProperties.SetName(add, data.InLibrary ? "In your library" : "Add to library");
-        ToolTipService.SetToolTip(add, data.InLibrary ? "In your library" : "Add to library");
-        HideAdd();
-        if (DevHarness.HoverForced || IsPointerOver)
+        if (DevHarness.HoverForced || IsPointerOver || FocusState != FocusState.Unfocused)
         {
-            ShowAdd(true);
+            EnsureAdd();
+        }
+        if (add is not null)
+        {
+            ApplyAdd(data);
         }
         if (data.InLibrary)
         {
@@ -252,6 +215,63 @@ public sealed partial class MangaTile : Button
         }
         addMenu ??= CreateAddMenu();
         ContextFlyout = addMenu;
+    }
+
+    private void EnsureAdd()
+    {
+        if (add is not null || Data is not { AddAction: not null } data)
+        {
+            return;
+        }
+        addIcon = new FontIcon { Glyph = Icons.Plus, FontFamily = Res<FontFamily>("TzIconFont"), FontSize = 16 };
+        add = new Button
+        {
+            Style = addButtonStyle ??= (Style)Microsoft.UI.Xaml.Markup.XamlReader.Load(
+                """
+                <Style xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" TargetType="Button">
+                  <Setter Property="Background" Value="{ThemeResource TzTileAction}" />
+                  <Setter Property="Foreground" Value="{ThemeResource TzTileActionIcon}" />
+                  <Setter Property="BorderBrush" Value="{ThemeResource TzStroke}" />
+                  <Setter Property="BorderThickness" Value="1" />
+                  <Setter Property="Padding" Value="0" />
+                  <Setter Property="IsTabStop" Value="False" />
+                  <Setter Property="Template">
+                    <Setter.Value>
+                      <ControlTemplate TargetType="Button">
+                        <Grid Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="16">
+                          <ContentPresenter Margin="{TemplateBinding Padding}" HorizontalAlignment="Center" VerticalAlignment="Center" Content="{TemplateBinding Content}" ContentTemplate="{TemplateBinding ContentTemplate}" Foreground="{TemplateBinding Foreground}" />
+                        </Grid>
+                      </ControlTemplate>
+                    </Setter.Value>
+                  </Setter>
+                </Style>
+                """),
+            Width = 36,
+            Height = 36,
+            HorizontalAlignment = HorizontalAlignment.Right,
+            VerticalAlignment = VerticalAlignment.Bottom,
+            Margin = new Thickness(6),
+            Content = addIcon,
+            IsHitTestVisible = false,
+        };
+        add.Click += OnAddClick;
+        Motion.VisualOf(add).Opacity = 0f;
+        coverGrid.Children.Add(add);
+        ApplyAdd(data);
+    }
+
+    private void ApplyAdd(TileData data)
+    {
+        add!.Visibility = Visibility.Visible;
+        addIcon!.Glyph = data.InLibrary ? Icons.Check : Icons.Plus;
+        add.IsEnabled = !data.InLibrary;
+        AutomationProperties.SetName(add, data.InLibrary ? "In your library" : "Add to library");
+        ToolTipService.SetToolTip(add, data.InLibrary ? "In your library" : "Add to library");
+        HideAdd();
+        if (DevHarness.HoverForced || IsPointerOver || FocusState != FocusState.Unfocused)
+        {
+            ShowAdd(true);
+        }
     }
 
     private MenuFlyout CreateAddMenu()
@@ -273,7 +293,7 @@ public sealed partial class MangaTile : Button
         return menu;
     }
 
-    public bool IsAddOrigin(RoutedEventArgs e) => ReferenceEquals(e.OriginalSource, add);
+    public bool IsAddOrigin(RoutedEventArgs e) => add is not null && ReferenceEquals(e.OriginalSource, add);
 
     private void OnAddClick(object sender, RoutedEventArgs e)
     {
@@ -285,6 +305,10 @@ public sealed partial class MangaTile : Button
 
     private void ShowAddPointer(bool on)
     {
+        if (on)
+        {
+            EnsureAdd();
+        }
         if (!DevHarness.HoverForced)
         {
             ShowAdd(on);
@@ -293,7 +317,7 @@ public sealed partial class MangaTile : Button
 
     private void ShowAdd(bool on)
     {
-        if (add.Visibility != Visibility.Visible || addShown == on)
+        if (add is null || add.Visibility != Visibility.Visible || addShown == on)
         {
             return;
         }
@@ -312,6 +336,10 @@ public sealed partial class MangaTile : Button
     private void HideAdd()
     {
         addShown = false;
+        if (add is null)
+        {
+            return;
+        }
         add.IsHitTestVisible = false;
         var visual = Motion.VisualOf(add);
         visual.StopAnimation("Opacity");
@@ -337,6 +365,10 @@ public sealed partial class MangaTile : Button
         if (Motion.Reduced)
         {
             return;
+        }
+        if (on && coverFrame.Shadow is null)
+        {
+            coverFrame.Shadow = new ThemeShadow();
         }
         coverFrame.Translation = on ? new Vector3(0, -5, 18) : Vector3.Zero;
         coverFrame.Scale = on ? new Vector3(1.025f, 1.025f, 1) : Vector3.One;

@@ -28,22 +28,14 @@ fun TachiyomiTheme(
 ) {
     val preferences = remember { Injekt.get<UiPreferences>() }
     val mode by preferences.themeMode().collectAsState()
-    val tsuzukiPreferences = remember { Injekt.get<dev.errnolink.tsuzuki.preference.TsuzukiPreferences>() }
-    val motionTokens by tsuzukiPreferences.motionStandardTokens().collectAsState()
-    val largeTitles by tsuzukiPreferences.largeTitles().collectAsState()
-    CompositionLocalProvider(
-        dev.errnolink.tsuzuki.designsystem.LocalMotionTokens provides motionTokens,
-        dev.errnolink.tsuzuki.designsystem.LocalLargeTitles provides largeTitles,
+    TsuzukiTheme(
+        dark = when (mode) {
+            ThemeMode.SYSTEM -> isSystemInDarkTheme()
+            ThemeMode.LIGHT -> false
+            ThemeMode.DARK -> true
+        },
     ) {
-        TsuzukiTheme(
-            dark = when (mode) {
-                ThemeMode.SYSTEM -> isSystemInDarkTheme()
-                ThemeMode.LIGHT -> false
-                ThemeMode.DARK -> true
-            },
-        ) {
-            BaseTachiyomiTheme(content)
-        }
+        BaseTachiyomiTheme(content)
     }
 }
 

@@ -24,3 +24,4 @@
 *.swp binary
 *.db binary
 *.perfetto-trace binary
+*.mp4 binary

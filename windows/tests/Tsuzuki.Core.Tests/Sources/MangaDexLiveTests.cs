@@ -24,7 +24,7 @@ public sealed class MangaDexLiveTests(ITestOutputHelper output)
         http.DefaultRequestHeaders.UserAgent.ParseAdd(MangaDexClient.UserAgent);
         var source = MangaDexSources.Create(http, new MangaDexOptions())[0];
 
-        var search = await source.SearchAsync("Yotsuba", 1, TestContext.Current.CancellationToken);
+        var search = await source.SearchAsync(SearchQuery.ForText("Yotsuba"), 1, TestContext.Current.CancellationToken);
         Report($"search 'Yotsuba' page 1: {search.Mangas.Count} mangas, hasNextPage={search.HasNextPage}");
         Assert.NotEmpty(search.Mangas);
 
@@ -38,7 +38,7 @@ public sealed class MangaDexLiveTests(ITestOutputHelper output)
         Assert.NotEmpty(chapters);
 
         var readable = chapters.First(c => (c.PageCount ?? 0) > 0);
-        var pages = await source.GetPageListAsync(readable.Url, TestContext.Current.CancellationToken);
+        var pages = await source.GetPageListAsync(readable.Url, ct: TestContext.Current.CancellationToken);
         Report($"pages for '{readable.Name}': {pages.Count}");
         Assert.NotEmpty(pages);
 

@@ -32,12 +32,10 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.Image
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.spring
 import androidx.compose.ui.draw.alpha
-import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.draw.shadow
@@ -48,7 +46,6 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.graphics.CompositingStrategy
 import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
@@ -74,6 +71,9 @@ import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.layout.SubcomposeLayout
 import androidx.compose.ui.layout.boundsInWindow
 import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.runtime.snapshotFlow
+import androidx.compose.runtime.withFrameNanos
+import kotlinx.coroutines.flow.first
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.paneTitle
 import androidx.compose.ui.semantics.semantics
@@ -97,11 +97,14 @@ data class MenuPositionResult(
     val origin: TransformOrigin,
     val maxAvailableHeightPx: Int,
     val isAbove: Boolean,
+    val anchorInPopup: IntRect = IntRect.Zero,
 )
 
 private const val MenuEdgeMarginPx = 16
-private const val MenuSettleDamping = 0.75f
-private const val ActionHandoffMillis = 180L
+private const val MorphDamping = 0.86f
+private const val MorphStiffness = 420f
+private const val MorphCloseMillis = 240
+private const val MorphFadeSpan = 0.12f
 private val SubmenuCardElevation = 8.dp
 private const val ParentContentDimAlpha = 0.45f
 private const val ParentRecedeScale = 0.93f
@@ -115,10 +118,13 @@ fun computeMenuPosition(
     verticalGapPx: Int = 6,
     offsetPx: IntOffset = IntOffset.Zero,
     glueToAnchor: Boolean = false,
+    overlapAnchor: Boolean = false,
 ): MenuPositionResult {
     val anchorCenter = anchorBounds.center.x
-    val targetX = if (!isLtr || anchorCenter > windowSize.width / 2) {
-        anchorBounds.right - popupSize.width + offsetPx.x
+    val onRightHalf = anchorCenter > windowSize.width / 2
+    val alignRight = if (isLtr) onRightHalf else anchorCenter >= windowSize.width / 2
+    val targetX = if (alignRight) {
+        anchorBounds.right - popupSize.width - offsetPx.x
     } else {
         anchorBounds.left + offsetPx.x
     }
@@ -126,8 +132,11 @@ fun computeMenuPosition(
     val maxX = (windowSize.width - popupSize.width - marginPx).coerceAtLeast(minX)
     val clampedX = targetX.coerceIn(minX, maxX)
 
-    val spaceBelow = (windowSize.height - anchorBounds.bottom - marginPx).coerceAtLeast(0)
-    val spaceAbove = (anchorBounds.top - marginPx).coerceAtLeast(0)
+    val belowEdge = if (overlapAnchor) anchorBounds.top else anchorBounds.bottom
+    val aboveEdge = if (overlapAnchor) anchorBounds.bottom else anchorBounds.top
+    val gapPx = if (overlapAnchor) 0 else verticalGapPx
+    val spaceBelow = (windowSize.height - belowEdge - marginPx).coerceAtLeast(0)
+    val spaceAbove = (aboveEdge - marginPx).coerceAtLeast(0)
 
     val placeAbove = when {
         popupSize.height <= spaceBelow -> false
@@ -140,9 +149,9 @@ fun computeMenuPosition(
     val placedHeight = if (glueToAnchor && popupSize.height > sideSpace) sideSpace else popupSize.height
 
     val targetY = if (placeAbove) {
-        anchorBounds.top - placedHeight - verticalGapPx + offsetPx.y
+        aboveEdge - placedHeight - gapPx - offsetPx.y
     } else {
-        anchorBounds.bottom + verticalGapPx + offsetPx.y
+        belowEdge + gapPx + offsetPx.y
     }
 
     val minY = marginPx
@@ -161,6 +170,7 @@ fun computeMenuPosition(
         origin = TransformOrigin(originX, originY),
         maxAvailableHeightPx = availableHeight.coerceAtLeast(120),
         isAbove = placeAbove,
+        anchorInPopup = anchorBounds.translate(-clampedX, -clampedY),
     )
 }
 
@@ -169,12 +179,15 @@ class PullDownMenuPositionProvider(
     private val marginPx: Int = 16,
     private val verticalGapPx: Int = 6,
     private val glueToAnchor: Boolean = false,
+    private val overlapAnchor: Boolean = false,
 ) : PopupPositionProvider {
     var origin by mutableStateOf(TransformOrigin.Center)
         private set
     var maxAvailableHeightPx by mutableIntStateOf(Int.MAX_VALUE)
         private set
     var contentOffset by mutableStateOf(IntOffset.Zero)
+        private set
+    var anchorInPopup by mutableStateOf(IntRect.Zero)
         private set
     var positionLocked: Boolean = false
 
@@ -196,10 +209,12 @@ class PullDownMenuPositionProvider(
             verticalGapPx = verticalGapPx,
             offsetPx = offsetPx,
             glueToAnchor = glueToAnchor,
+            overlapAnchor = overlapAnchor,
         )
         origin = result.origin
         maxAvailableHeightPx = result.maxAvailableHeightPx
         contentOffset = result.offset
+        anchorInPopup = result.anchorInPopup
         return result.offset
     }
 }
@@ -290,53 +305,35 @@ fun PullDownMenu(
     val offsetPx = remember(offset, density) {
         with(density) { IntOffset(offset.x.roundToPx(), offset.y.roundToPx()) }
     }
-    val positionProvider = remember(offsetPx, glueToAnchor) {
-        PullDownMenuPositionProvider(offsetPx = offsetPx, glueToAnchor = glueToAnchor)
+    val morph = !motion.reduced
+    val positionProvider = remember(offsetPx, glueToAnchor, morph, density) {
+        PullDownMenuPositionProvider(
+            offsetPx = offsetPx,
+            marginPx = with(density) { 16.dp.roundToPx() },
+            verticalGapPx = with(density) { 6.dp.roundToPx() },
+            glueToAnchor = glueToAnchor,
+            overlapAnchor = morph,
+        )
     }
     val submenuHolder = remember { SubmenuHolder() }
     val activeSubmenu = submenuHolder.activeSubmenu
     var mounted by remember { mutableStateOf(false) }
-    val menuScale = remember { Animatable(1f) }
-    val menuBlur = remember { Animatable(0f) }
+    val morphProgress = remember { Animatable(0f) }
+    var panelPlaced by remember { mutableStateOf(false) }
     LaunchedEffect(expanded) {
         if (expanded) {
             submenuHolder.activeSubmenu = null
             submenuHolder.anchorBounds = null
             mounted = true
             haptics.select()
-            if (motion.reduced) {
-                menuScale.snapTo(1f)
-                menuBlur.snapTo(0f)
-            } else {
-                menuScale.snapTo(0.6f)
-                menuBlur.snapTo(12f)
-                launch {
-                    menuBlur.animateTo(
-                        targetValue = 0f,
-                        animationSpec = tween(durationMillis = 260, easing = M3Motion.EmphasizedDecelerate),
-                    )
-                }
-                menuScale.animateTo(
-                    targetValue = 1f,
-                    animationSpec = spring(dampingRatio = MenuSettleDamping, stiffness = Spring.StiffnessMediumLow),
-                )
+            if (morph) {
+                morphProgress.snapTo(0f)
+                snapshotFlow { panelPlaced }.first { it }
+                withFrameNanos { }
+                morphProgress.animateTo(1f, spring(dampingRatio = MorphDamping, stiffness = MorphStiffness))
             }
-        } else {
-            if (motion.reduced) {
-                menuScale.snapTo(1f)
-                menuBlur.snapTo(0f)
-            } else {
-                launch {
-                    menuBlur.animateTo(
-                        targetValue = 8f,
-                        animationSpec = tween(durationMillis = 180, easing = M3Motion.EmphasizedAccelerate),
-                    )
-                }
-                menuScale.animateTo(
-                    targetValue = 0.6f,
-                    animationSpec = tween(durationMillis = 180, easing = M3Motion.EmphasizedAccelerate),
-                )
-            }
+        } else if (morph) {
+            morphProgress.animateTo(0f, tween(MorphCloseMillis, easing = M3Motion.EmphasizedAccelerate))
         }
     }
 
@@ -348,7 +345,7 @@ fun PullDownMenu(
             } else if (targetState) {
                 tween(120, easing = M3Motion.EmphasizedDecelerate)
             } else {
-                tween(180, easing = M3Motion.EmphasizedAccelerate)
+                tween(if (morph) MorphCloseMillis else 180, easing = M3Motion.EmphasizedAccelerate)
             }
         },
         label = "MenuAlpha",
@@ -356,6 +353,7 @@ fun PullDownMenu(
     LaunchedEffect(transition.currentState, transition.targetState) {
         if (!transition.currentState && !transition.targetState) {
             mounted = false
+            panelPlaced = false
         }
     }
 
@@ -384,15 +382,13 @@ fun PullDownMenu(
             if (motion.reduced) {
                 submenuProgress.snapTo(1f)
             } else {
-                val dur = if (motion.standardTokens) M3Motion.Medium2 else M3Motion.Medium1
-                submenuProgress.animateTo(1f, M3Motion.emphasized(dur))
+                submenuProgress.animateTo(1f, M3Motion.emphasized(M3Motion.Medium2))
             }
         } else if (submenuProgress.value > 0f) {
             if (motion.reduced) {
                 submenuProgress.snapTo(0f)
             } else {
-                val dur = if (motion.standardTokens) M3Motion.Medium2 else M3Motion.Medium1
-                submenuProgress.animateTo(0f, M3Motion.emphasized(dur))
+                submenuProgress.animateTo(0f, M3Motion.emphasized(M3Motion.Medium2))
             }
         }
     }
@@ -425,24 +421,29 @@ fun PullDownMenu(
                         modifier = modifier
                             .then(if (width != null) Modifier.width(width) else Modifier.width(IntrinsicSize.Max).widthIn(min = 180.dp, max = 280.dp))
                             .heightIn(max = dynamicMaxHeight)
+                            .onGloballyPositioned { panelPlaced = true }
                             .graphicsLayer {
                                 val recede = lerp(1f, ParentRecedeScale, submenuProgress.value)
-                                scaleX = menuScale.value * recede
-                                scaleY = menuScale.value * recede
-                                this.alpha = alpha
+                                scaleX = recede
+                                scaleY = recede
                                 transformOrigin = if (submenuProgress.value > 0f) {
                                     TransformOrigin(1f, 0f)
                                 } else {
                                     positionProvider.origin
                                 }
-                            }
-                            .then(
-                                if (motion.reduced || menuBlur.value <= 0.01f) {
-                                    Modifier
+                                if (morph) {
+                                    val anchor = positionProvider.anchorInPopup
+                                    this.alpha = (morphProgress.value / MorphFadeSpan).coerceIn(0f, 1f)
+                                    clip = true
+                                    shape = MenuMorphShape(
+                                        Rect(anchor.left.toFloat(), anchor.top.toFloat(), anchor.right.toFloat(), anchor.bottom.toFloat()),
+                                        morphProgress.value,
+                                        TsuzukiCorners.group.toPx(),
+                                    )
                                 } else {
-                                    Modifier.blur(menuBlur.value.dp)
-                                },
-                            )
+                                    this.alpha = alpha
+                                }
+                            }
                             .semantics { this.paneTitle = paneTitle ?: labels.menu },
                     ) {
                         Column(
@@ -451,7 +452,8 @@ fun PullDownMenu(
                                 .fadeEdges(menuScroll)
                                 .then(if (scrollable) Modifier.verticalScroll(menuScroll) else Modifier)
                                 .graphicsLayer {
-                                    this.alpha = 1f - (1f - ParentContentDimAlpha) * submenuProgress.value
+                                    this.alpha = (1f - (1f - ParentContentDimAlpha) * submenuProgress.value) *
+                                        if (morph) menuMorphContentAlpha(morphProgress.value) else 1f
                                 },
                             content = content,
                         )
@@ -633,7 +635,7 @@ fun PullDownMenu(
                         action.onClick()
                     } else {
                         scope.launch {
-                            delay(ActionHandoffMillis)
+                            withFrameNanos { }
                             action.onClick()
                         }
                     }
@@ -664,7 +666,7 @@ fun PullDownMenuItem(
     val iconTint = when {
         !enabled -> colors.secondary.copy(alpha = 0.5f)
         destructive -> colors.destructive
-        else -> colors.secondary
+        else -> colors.text
     }
 
     Row(
@@ -679,6 +681,16 @@ fun PullDownMenuItem(
             .padding(horizontal = 16.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
+        if (icon != null || iconContent != null) {
+            Box(Modifier.size(20.dp), contentAlignment = Alignment.Center) {
+                if (icon != null) {
+                    Image(imageVector = icon, contentDescription = null, colorFilter = ColorFilter.tint(iconTint), modifier = Modifier.size(20.dp))
+                } else {
+                    iconContent?.invoke()
+                }
+            }
+            Spacer(Modifier.width(14.dp))
+        }
         Column(
             modifier = Modifier.weight(1f).padding(end = TsuzukiSpacing.medium),
             verticalArrangement = Arrangement.spacedBy(2.dp),
@@ -707,17 +719,6 @@ fun PullDownMenuItem(
                 colorFilter = ColorFilter.tint(colors.accent),
                 modifier = Modifier.size(18.dp),
             )
-        } else if (icon != null) {
-            Image(
-                imageVector = icon,
-                contentDescription = null,
-                colorFilter = ColorFilter.tint(iconTint),
-                modifier = Modifier.size(18.dp),
-            )
-        } else if (iconContent != null) {
-            Box(modifier = Modifier.size(18.dp), contentAlignment = Alignment.Center) {
-                iconContent()
-            }
         }
     }
 }
@@ -914,11 +915,10 @@ fun PullDownTriStateItem(
 ) {
     val colors = TsuzukiTheme.colors
     val haptics = LocalHaptics.current ?: rememberHaptics()
-    val isExcluded = state == PullDownTriState.Exclude
     val stateLabel = when (state) {
-        PullDownTriState.Off -> "Off"
-        PullDownTriState.Include -> "Include"
-        PullDownTriState.Exclude -> "Exclude"
+        PullDownTriState.Off -> "Show all"
+        PullDownTriState.Include -> "Show only these"
+        PullDownTriState.Exclude -> "Hide these"
     }
     Row(
         modifier = modifier
@@ -935,15 +935,10 @@ fun PullDownTriStateItem(
     ) {
         TsuzukiText(
             text = label,
-            style = if (isExcluded) {
-                TsuzukiTheme.typography.callout.copy(textDecoration = TextDecoration.LineThrough)
-            } else {
-                TsuzukiTheme.typography.callout
-            },
+            style = TsuzukiTheme.typography.callout,
             color = when {
                 !enabled -> colors.secondary.copy(alpha = 0.5f)
                 state == PullDownTriState.Include -> colors.accent
-                isExcluded -> colors.secondary
                 else -> colors.text
             },
             maxLines = 1,
@@ -951,9 +946,9 @@ fun PullDownTriStateItem(
             modifier = Modifier.weight(1f, fill = false).padding(end = 8.dp),
         )
         val (chipText, chipBg, chipFg) = when (state) {
-            PullDownTriState.Off -> Triple("Any", colors.separator.copy(alpha = 0.25f), colors.secondary)
+            PullDownTriState.Off -> Triple("All", colors.separator.copy(alpha = 0.25f), colors.secondary)
             PullDownTriState.Include -> Triple("Only", colors.accent.copy(alpha = 0.16f), colors.accent)
-            PullDownTriState.Exclude -> Triple("Hide", colors.destructive.copy(alpha = 0.16f), colors.destructive)
+            PullDownTriState.Exclude -> Triple("Hide", colors.text.copy(alpha = 0.12f), colors.text)
         }
         Box(
             modifier = Modifier
@@ -1342,35 +1337,37 @@ fun <T> PopUpRow(
                     }
                 }
             }
-            PopUpButton(
-                selected = selected,
-                options = options,
-                onSelect = onSelect,
-                enabled = enabled,
-                interactive = false,
-            )
+            Box {
+                PopUpButton(
+                    selected = selected,
+                    options = options,
+                    onSelect = onSelect,
+                    enabled = enabled,
+                    interactive = false,
+                )
+                PullDownMenu(
+                    expanded = expanded,
+                    onDismissRequest = { expanded = false },
+                ) {
+                    options.forEachIndexed { index, option ->
+                        if (index > 0) PullDownDivider()
+                        val isSelected = option.value == selected
+                        PullDownMenuItem(
+                            text = option.label,
+                            subtitle = option.subtitle,
+                            icon = option.icon,
+                            selected = isSelected,
+                            onClick = {
+                                onSelect(option.value)
+                                expanded = false
+                            },
+                        )
+                    }
+                }
+            }
         }
         if (divider) {
             PullDownDivider()
-        }
-    }
-    PullDownMenu(
-        expanded = expanded,
-        onDismissRequest = { expanded = false },
-    ) {
-        options.forEachIndexed { index, option ->
-            if (index > 0) PullDownDivider()
-            val isSelected = option.value == selected
-            PullDownMenuItem(
-                text = option.label,
-                subtitle = option.subtitle,
-                icon = option.icon,
-                selected = isSelected,
-                onClick = {
-                    onSelect(option.value)
-                    expanded = false
-                },
-            )
         }
     }
 }

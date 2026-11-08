@@ -11,10 +11,16 @@ import app.cash.sqldelight.db.SqlDriver
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.conflate
 import kotlinx.coroutines.flow.debounce
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.emitAll
+import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.withContext
 
 class AndroidDatabaseHandler(
@@ -25,6 +31,28 @@ class AndroidDatabaseHandler(
 ) : DatabaseHandler {
 
     val suspendingTransactionId = ThreadLocal<Int>()
+
+    private val holds = MutableStateFlow(0)
+
+    override suspend fun <T> holdingSubscriptions(block: suspend () -> T): T {
+        holds.update { it + 1 }
+        try {
+            return block()
+        } finally {
+            holds.update { it - 1 }
+        }
+    }
+
+    private fun <T : Any> Query<T>.changes(): Flow<Query<T>> = flow {
+        var delivered = false
+        emitAll(
+            asFlow()
+                .combine(holds.map { it > 0 }.distinctUntilChanged()) { query, held ->
+                    query.takeIf { !held || !delivered }?.also { delivered = true }
+                }
+                .filterNotNull(),
+        )
+    }
 
     override suspend fun <T> await(inTransaction: Boolean, block: suspend Database.() -> T): T {
         return dispatch(inTransaction, block)
@@ -78,7 +106,7 @@ class AndroidDatabaseHandler(
         debounceMillis: Long,
         block: Database.() -> Query<T>,
     ): Flow<List<T>> {
-        val queries = block(db).asFlow()
+        val queries = block(db).changes()
         if (debounceMillis == 0L) return queries.mapToList(queryDispatcher)
         return flow {
             var first = true
@@ -96,11 +124,11 @@ class AndroidDatabaseHandler(
     }
 
     override fun <T : Any> subscribeToOne(block: Database.() -> Query<T>): Flow<T> {
-        return block(db).asFlow().mapToOne(queryDispatcher)
+        return block(db).changes().mapToOne(queryDispatcher)
     }
 
     override fun <T : Any> subscribeToOneOrNull(block: Database.() -> Query<T>): Flow<T?> {
-        return block(db).asFlow().mapToOneOrNull(queryDispatcher)
+        return block(db).changes().mapToOneOrNull(queryDispatcher)
     }
 
     override fun <T : Any> subscribeToPagingSource(

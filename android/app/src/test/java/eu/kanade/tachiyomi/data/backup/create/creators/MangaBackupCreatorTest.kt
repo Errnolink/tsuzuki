@@ -384,5 +384,33 @@ class MangaBackupCreatorTest {
         }
     }
 
+    @Test
+    fun `a title that is both a favorite and a merge member is written once with its chapters once`() = runBlocking {
+        val parent = insertManga("Soccer Genius")
+        val other = insertManga("Other")
+        insertChapter(parent, sourceOrder = 1L, name = "Episode 1")
+        insertChapter(parent, sourceOrder = 0L, name = "Episode 2")
+        listOf(parent, other).forEach { every { runBlocking { getCategories.await(it.id) } } returns emptyList() }
+        val options = BackupOptions(
+            libraryEntries = true,
+            categories = true,
+            chapters = true,
+            tracking = false,
+            history = false,
+            appSettings = false,
+            extensionStores = false,
+            sourceSettings = false,
+            privateSettings = false,
+            customInfo = false,
+            readEntries = true,
+            savedSearchesFeeds = false,
+        )
+
+        val written = creator(listOf(parent, other, parent), options)
+
+        assertEquals(listOf("Soccer Genius", "Other"), written.map { it.title })
+        assertEquals(listOf("Episode 1", "Episode 2"), written.first().chapters.map { it.name }.sorted())
+    }
+
     private val protoBuf = kotlinx.serialization.protobuf.ProtoBuf
 }

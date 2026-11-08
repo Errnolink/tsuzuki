@@ -59,10 +59,14 @@ class SyncDataJob(private val context: Context, workerParams: WorkerParameters) 
 
         setForegroundSafely()
 
-        var syncRan = false
         return try {
-            syncLock.withLock { SyncManager(context).syncData() }
-            syncRan = true
+            syncLock.withLock {
+                var runs = 0
+                do {
+                    SyncManager(context).syncData()
+                    runs++
+                } while (runs < MAX_FOLLOW_UPS && pendingFollowUp.compareAndSet(true, false))
+            }
             Result.success()
         } catch (e: Exception) {
             logcat(LogPriority.ERROR, e)
@@ -75,12 +79,7 @@ class SyncDataJob(private val context: Context, workerParams: WorkerParameters) 
             // KMK <--
             Result.success() // try again next time
         } finally {
-            // KMK -->
             syncStatus.stop()
-            if (syncRan) {
-                runFollowUpIfNeeded(context)
-            }
-            // KMK <--
         }
     }
 
@@ -109,6 +108,7 @@ class SyncDataJob(private val context: Context, workerParams: WorkerParameters) 
 
         // KMK -->
         private val pendingFollowUp = AtomicBoolean(false)
+        private const val MAX_FOLLOW_UPS = 3
         // KMK <--
         private val syncLock = Mutex()
 
@@ -162,14 +162,6 @@ class SyncDataJob(private val context: Context, workerParams: WorkerParameters) 
                 .build()
             wm.enqueueUniqueWork(if (manual) TAG_MANUAL else UNIQUE_PUSH, ExistingWorkPolicy.KEEP, request)
         }
-
-        // KMK -->
-        private fun runFollowUpIfNeeded(context: Context) {
-            if (pendingFollowUp.compareAndSet(true, false)) {
-                startNow(context)
-            }
-        }
-        // KMK <--
 
         fun stop(context: Context) {
             val wm = context.workManager

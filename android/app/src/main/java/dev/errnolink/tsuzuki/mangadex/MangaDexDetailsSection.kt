@@ -59,6 +59,7 @@ import eu.kanade.tachiyomi.ui.browse.source.browse.BrowseSourceScreen
 import eu.kanade.tachiyomi.ui.manga.MangaScreen
 import eu.kanade.tachiyomi.ui.webview.WebViewActivity
 import exh.md.dto.RelationshipDto
+import exh.md.dto.MangaDataDto
 import exh.md.dto.StatisticsDto
 import exh.md.handlers.MangaDexFeatureMapper
 import exh.md.handlers.MangaDexFeatures
@@ -69,6 +70,7 @@ import exh.md.service.SimilarService
 import exh.md.service.ThirdPartySimilarService
 import exh.md.utils.MdUtil
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -95,7 +97,7 @@ data class MergedRecommendationItem(
     val subtitle: String,
     val badge: String,
     val coverUrl: String?,
-    val localMangaId: Long? = null,
+    val dexId: String? = null,
     val searchQuery: String? = null,
     val openUrl: String? = null,
 )
@@ -178,120 +180,132 @@ internal object MangaDexDetailsStore {
                 return@withContext
             }
             val id = MdUtil.getMangaId(resolved.manga.url)
-            val client = resolved.source.baseHttpClient
-            val features = MangaDexFeatures(resolved.source)
-            val mangaDexService = MangaDexService(client, MangaDexFeatureRequests.headers)
-            try {
-                val manga = MangaDexSharedFetch.viewManga(client, id).data
-                val stats = features.request<StatisticsDto>(MangaDexFeatureRequests.statistics(id)).statistics.getValue(id)
-                val statistics = MangaDexFeatureMapper.statistics(
-                    stats,
-                    MangaDexFeatureMapper.estimatedMissing(MangaDexSharedFetch.aggregate(client, id, features.language)),
-                )
-                state.value = state.value.copy(
-                    source = resolved,
-                    creators = manga.relationships.filter { it.type == "author" || it.type == "artist" }.distinctBy { it.id },
-                    altTitles = manga.attributes.altTitles.mapNotNull { it["en"] ?: it.values.firstOrNull() },
-                    statistics = statistics,
-                )
-                MangaDexHeroStatsCache.put(mangaId, MangaDexHeroStats(statistics.rating, statistics.follows))
-
-                entry.recsWanted.first { it }
-                state.value = state.value.copy(recsLoading = true)
-                val similarService = SimilarService(resolved.source.baseHttpClient)
-                val thirdPartyService = ThirdPartySimilarService(resolved.source.baseHttpClient, Injekt.get<Application>())
-                val trackerLinks = MangaDexFeatureMapper.trackerLinks(manga.attributes.links)
-
-                try {
-                    coroutineScope {
-                        val similarDef = async {
-                            runCatching { similarService.getSimilarManga(id) }.getOrNull()
-                        }
-                        val thirdPartyDef = async {
-                            runCatching { thirdPartyService.fetchRecommendations(id, trackerLinks) }.getOrDefault(emptyList())
-                        }
-
-                        val similarDto = similarDef.await()
-                        val thirdPartyRecs = thirdPartyDef.await()
-
-                        val similarIds = similarDto?.matches.orEmpty().take(8).map { it.id }
-                        val resolvedDexMap = if (similarIds.isNotEmpty()) {
-                            runCatching {
-                                mangaDexService.viewMangas(similarIds).data.associateBy { it.id }
-                            }.getOrDefault(emptyMap())
-                        } else emptyMap()
-
-                        val importManga = Injekt.get<NetworkToLocalManga>()
-                        val lang = MangaDexFeatures(resolved.source).language
-
-                        val items = mutableListOf<MergedRecommendationItem>()
-                        val seenDexIds = mutableSetOf(id)
-
-                        similarDto?.matches.orEmpty().forEach { match ->
-                            if (seenDexIds.add(match.id)) {
-                                val dto = resolvedDexMap[match.id]
-                                val title = dto?.let { MdUtil.getTitleFromManga(it.attributes, lang, true) }
-                                    ?: match.title["en"] ?: match.title.values.firstOrNull() ?: "Similar title"
-                                val coverFile = dto?.relationships?.firstOrNull { it.type == "cover_art" }?.attributes?.fileName
-                                val coverUrl = coverFile?.let { MdUtil.cdnCoverUrl(match.id, it) }
-                                val localManga = dto?.let {
-                                    runCatching {
-                                        importManga(MdUtil.createMangaEntry(it, lang).toDomainManga(resolved.source.id), updateInfo = false)
-                                    }.getOrNull()
-                                }
-
-                                items.add(
-                                    MergedRecommendationItem(
-                                        title = title,
-                                        subtitle = String.format("%.0f%% match", match.score * 100),
-                                        badge = "MangaDex",
-                                        coverUrl = coverUrl,
-                                        localMangaId = localManga?.id,
-                                        searchQuery = title,
-                                    ),
-                                )
-                            }
-                        }
-
-                        thirdPartyRecs.forEach { rec ->
-                            val dexUuid = rec.mangadexId
-                            if (dexUuid == null || seenDexIds.add(dexUuid)) {
-                                val localManga = if (dexUuid != null) {
-                                    runCatching {
-                                        val dto = mangaDexService.viewManga(dexUuid).data
-                                        importManga(MdUtil.createMangaEntry(dto, lang).toDomainManga(resolved.source.id), updateInfo = false)
-                                    }.getOrNull()
-                                } else null
-
-                                items.add(
-                                    MergedRecommendationItem(
-                                        title = rec.title,
-                                        subtitle = rec.scoreOrVotes,
-                                        badge = rec.source,
-                                        coverUrl = rec.coverUrl,
-                                        localMangaId = localManga?.id,
-                                        searchQuery = rec.title,
-                                        openUrl = rec.originalUrl,
-                                    ),
-                                )
-                            }
-                        }
-
-                        state.value = state.value.copy(recommendations = items, recsLoading = false)
-                    }
-                } catch (e: Exception) {
-                    if (e is CancellationException) throw e
-                    android.util.Log.w("TsuzukiMD", "details: recommendations failed for $mangaId", e)
-                    state.value = state.value.copy(recsLoading = false)
-                }
-            } catch (e: CancellationException) {
-                throw e
-            } catch (e: Exception) {
-                android.util.Log.w("TsuzukiMD", "details: load failed for $mangaId", e)
-                state.value = state.value.copy(error = e.message ?: "MangaDex details could not be loaded", recsLoading = false)
+            state.value = state.value.copy(source = resolved)
+            val trackerLinks = CompletableDeferred<Map<String, String>>()
+            coroutineScope {
+                launch { loadDetails(mangaId, id, resolved, state, trackerLinks) }
+                launch { loadRecommendations(mangaId, id, resolved, entry, trackerLinks) }
             }
         }
     }
+
+    private suspend fun loadDetails(
+        mangaId: Long,
+        id: String,
+        resolved: MangaDexContext,
+        state: MutableStateFlow<MangaDexDetailsData>,
+        trackerLinks: CompletableDeferred<Map<String, String>>,
+    ) {
+        val client = resolved.source.baseHttpClient
+        val features = MangaDexFeatures(resolved.source)
+        try {
+            val manga = MangaDexSharedFetch.viewManga(client, id).data
+            trackerLinks.complete(MangaDexFeatureMapper.trackerLinks(manga.attributes.links))
+            state.value = state.value.copy(
+                creators = manga.relationships.filter { it.type == "author" || it.type == "artist" }.distinctBy { it.id },
+                altTitles = manga.attributes.altTitles.mapNotNull { it["en"] ?: it.values.firstOrNull() },
+            )
+            val stats = features.request<StatisticsDto>(MangaDexFeatureRequests.statistics(id)).statistics.getValue(id)
+            val statistics = MangaDexFeatureMapper.statistics(
+                stats,
+                MangaDexFeatureMapper.estimatedMissing(MangaDexSharedFetch.aggregate(client, id, features.language)),
+            )
+            state.value = state.value.copy(statistics = statistics)
+            MangaDexHeroStatsCache.put(mangaId, MangaDexHeroStats(statistics.rating, statistics.follows))
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            android.util.Log.w("TsuzukiMD", "details: load failed for $mangaId", e)
+            state.value = state.value.copy(error = e.message ?: "MangaDex details could not be loaded")
+        } finally {
+            trackerLinks.complete(emptyMap())
+        }
+    }
+
+    private suspend fun loadRecommendations(
+        mangaId: Long,
+        id: String,
+        resolved: MangaDexContext,
+        entry: Entry,
+        trackerLinks: CompletableDeferred<Map<String, String>>,
+    ) {
+        val state = entry.state
+        entry.recsWanted.first { it }
+        state.value = state.value.copy(recsLoading = true)
+        val client = resolved.source.baseHttpClient
+        val mangaDexService = MangaDexService(client, MangaDexFeatureRequests.headers)
+        val lang = MangaDexFeatures(resolved.source).language
+        suspend fun lookup(ids: List<String>): Map<String, MangaDataDto> =
+            ids.chunked(LOOKUP_BATCH).flatMap { chunk ->
+                runCatching { mangaDexService.viewMangas(chunk).data }.getOrDefault(emptyList())
+            }.onEach { lookedUp.put(it.id, it) }.associateBy { it.id }
+        fun coverOf(dto: MangaDataDto?): String? = dto?.let { d ->
+            d.relationships.firstOrNull { it.type == "cover_art" }?.attributes?.fileName?.let { MdUtil.cdnCoverUrl(d.id, it) }
+        }
+        try {
+            coroutineScope {
+                val thirdPartyDef = async {
+                    runCatching {
+                        ThirdPartySimilarService(client, Injekt.get<Application>()).fetchRecommendations(id, trackerLinks.await())
+                    }.getOrDefault(emptyList())
+                }
+                val seenDexIds = mutableSetOf(id)
+                val matches = runCatching { SimilarService(client).getSimilarManga(id) }.getOrNull()
+                    ?.matches.orEmpty()
+                    .filter { seenDexIds.add(it.id) }
+                val similarDtos = lookup(matches.map { it.id })
+                val similarItems = matches.map { match ->
+                    val dto = similarDtos[match.id]
+                    val title = dto?.let { MdUtil.getTitleFromManga(it.attributes, lang, true) }
+                        ?: match.title["en"] ?: match.title.values.firstOrNull() ?: "Similar title"
+                    MergedRecommendationItem(
+                        title = title,
+                        subtitle = String.format("%.0f%% match", match.score * 100),
+                        badge = "MangaDex",
+                        coverUrl = coverOf(dto),
+                        dexId = match.id,
+                        searchQuery = title,
+                    )
+                }
+                if (similarItems.isNotEmpty()) state.value = state.value.copy(recommendations = similarItems)
+
+                val thirdParty = thirdPartyDef.await().filter { rec -> rec.mangadexId.let { it == null || seenDexIds.add(it) } }
+                val thirdPartyDtos = lookup(thirdParty.mapNotNull { it.mangadexId })
+                val thirdPartyItems = thirdParty.map { rec ->
+                    val dto = rec.mangadexId?.let(thirdPartyDtos::get)
+                    MergedRecommendationItem(
+                        title = rec.title,
+                        subtitle = rec.scoreOrVotes,
+                        badge = rec.source,
+                        coverUrl = rec.coverUrl ?: coverOf(dto),
+                        dexId = rec.mangadexId,
+                        searchQuery = rec.title,
+                        openUrl = rec.originalUrl,
+                    )
+                }
+                state.value = state.value.copy(recommendations = similarItems + thirdPartyItems, recsLoading = false)
+            }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            android.util.Log.w("TsuzukiMD", "details: recommendations failed for $mangaId", e)
+            state.value = state.value.copy(recsLoading = false)
+        }
+    }
+
+    suspend fun localMangaId(item: MergedRecommendationItem, context: MangaDexContext): Long? = withContext(Dispatchers.IO) {
+        val dexId = item.dexId ?: return@withContext null
+        runCatching {
+            val dto = lookedUp.get(dexId)
+                ?: MangaDexService(context.source.baseHttpClient, MangaDexFeatureRequests.headers).viewMangas(listOf(dexId)).data.firstOrNull()
+                ?: return@runCatching null
+            val lang = MangaDexFeatures(context.source).language
+            Injekt.get<NetworkToLocalManga>()(MdUtil.createMangaEntry(dto, lang).toDomainManga(context.source.id), updateInfo = false).id
+        }.getOrNull()
+    }
+
+    private val lookedUp = android.util.LruCache<String, MangaDataDto>(256)
+    private const val LOOKUP_BATCH = 100
 }
 
 data class MangaDexHeroStats(val rating: Double?, val follows: Long?)
@@ -583,14 +597,25 @@ private fun RecommendationCard(
 ) {
     val navigator = LocalNavigator.currentOrThrow
     val activity = LocalContext.current
+    val scope = androidx.compose.runtime.rememberCoroutineScope()
+    var opening by remember(item) { mutableStateOf(false) }
+    var heroId by remember(item) { mutableStateOf<Long?>(null) }
     Column(
-        (if (width != null) Modifier.width(width) else Modifier).clickable {
-            if (item.localMangaId != null) {
-                navigator.push(MangaScreen(item.localMangaId, true))
-            } else if (item.searchQuery != null) {
-                navigator.push(BrowseSourceScreen(context.source.id, item.searchQuery))
-            } else if (item.openUrl != null) {
-                activity.startActivity(WebViewActivity.newIntent(activity, item.openUrl, context.source.id, item.title))
+        (if (width != null) Modifier.width(width) else Modifier).clickable(enabled = !opening) {
+            opening = true
+            scope.launch {
+                val localId = MangaDexDetailsStore.localMangaId(item, context)
+                when {
+                    localId != null -> {
+                        heroId = localId
+                        androidx.compose.runtime.withFrameNanos { }
+                        androidx.compose.runtime.withFrameNanos { }
+                        navigator.push(MangaScreen(localId, true))
+                    }
+                    item.searchQuery != null -> navigator.push(BrowseSourceScreen(context.source.id, item.searchQuery))
+                    item.openUrl != null -> activity.startActivity(WebViewActivity.newIntent(activity, item.openUrl, context.source.id, item.title))
+                }
+                opening = false
             }
         },
         verticalArrangement = Arrangement.spacedBy(6.dp),
@@ -601,6 +626,7 @@ private fun RecommendationCard(
                 contentDescription = item.title,
                 modifier = Modifier.fillMaxWidth(),
                 arrivals = arrivals,
+                heroMangaId = heroId,
             )
             Box(Modifier.align(Alignment.TopEnd).padding(6.dp)) {
                 ShellBadge(item.badge)

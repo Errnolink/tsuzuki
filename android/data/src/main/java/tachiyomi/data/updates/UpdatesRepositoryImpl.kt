@@ -53,7 +53,11 @@ class UpdatesRepositoryImpl(
         after: Long,
         limit: Long,
     ): Flow<List<UpdatesWithRelations>> {
-        return databaseHandler.subscribeToList {
+        // Debounced like the library flow: the process-lifetime widget subscription
+        // re-runs the full updatesView query on every mangas/chapters/history notify,
+        // and bursts of notifies would otherwise execute it once per notify
+        // (~0.5-1 s of device DB/CPU each). First emission stays immediate.
+        return databaseHandler.subscribeToList(debounceMillis = 300) {
             updatesViewQueries.getUpdatesByReadStatus(
                 read = read,
                 after = after,

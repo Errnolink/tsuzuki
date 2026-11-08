@@ -84,7 +84,7 @@ import tachiyomi.i18n.MR
 import tachiyomi.presentation.core.i18n.stringResource
 
 @Composable
-fun BrowseHomeScreen(tab: Tab, discoverOnly: Boolean) {
+fun BrowseHomeScreen(tab: Tab) {
     val navigator = LocalNavigator.currentOrThrow
     val screenModel = tab.rememberScreenModel { BrowseHomeScreenModel() }
     val state by screenModel.state.collectAsState()
@@ -206,11 +206,21 @@ fun BrowseHomeScreen(tab: Tab, discoverOnly: Boolean) {
             }
         } else if (!state.isLoadingPopular && !state.isLoadingRecent && state.popularManga.isEmpty() && state.recentManga.isEmpty() && !isMangaDex) {
             item(key = "browse-empty") {
-                EmptyState(
-                    title = "No titles available",
-                    description = "This source did not return any titles.",
-                    icon = { Icon(TsuzukiIcons.Search, null, Modifier.size(36.dp), tint = TsuzukiTheme.colors.secondary) },
-                )
+                if (selectedSource == null) {
+                    EmptyState(
+                        title = "No sources to browse",
+                        description = "Add a source, or trust one you already installed, to see titles here.",
+                        icon = { Icon(TsuzukiIcons.Search, null, Modifier.size(36.dp), tint = TsuzukiTheme.colors.secondary) },
+                        action = { PillButton("Add sources", { navigator.push(AddSourcesScreen()) }) },
+                    )
+                } else {
+                    EmptyState(
+                        title = "No titles available",
+                        description = "${selectedSource.name} did not return any titles.",
+                        icon = { Icon(TsuzukiIcons.Search, null, Modifier.size(36.dp), tint = TsuzukiTheme.colors.secondary) },
+                        action = { PillButton("Retry", { screenModel.retryShelves() }) },
+                    )
+                }
             }
         }
 
@@ -254,7 +264,7 @@ fun BrowseHomeScreen(tab: Tab, discoverOnly: Boolean) {
             }
         }
 
-        if (!discoverOnly && state.allSources.isNotEmpty()) {
+        if (state.allSources.isNotEmpty()) {
             item(key = "sources-card-header") {
                 BrowseSectionHeader(title = "Sources")
             }

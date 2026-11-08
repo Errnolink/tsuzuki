@@ -235,6 +235,7 @@ public class StorageBehaviourTests : IDisposable
         Assert.Equal(chapters[1].ChapterId, entry.ChapterId);
         Assert.Equal(0, entry.LastPageRead);
         Assert.Equal(2, entry.ChapterNumber);
+        Assert.Equal(2499283573021220255, entry.Source);
 
         await _store.SetChapterProgressAsync(chapters[1].ChapterId, 4, read: false);
         entry = Assert.Single(await _store.GetContinueReadingAsync(10));
@@ -267,6 +268,48 @@ public class StorageBehaviourTests : IDisposable
         Assert.Equal(chapters[1].ChapterId, updates[0].ChapterId);
         Assert.Equal("2", updates[0].ChapterName);
         Assert.Equal(4, updates.Single(u => u.ChapterId == chapters[1].ChapterId).LastPageRead);
+    }
+
+    [Fact]
+    public async Task HistoryAndUpdatesCarryTheSourceOfTheirTitle()
+    {
+        const long otherSource = 4242;
+        var mangaDex = await _store.UpsertFromSourceAsync(2499283573021220255, new SManga("/manga/abc", "Dex"));
+        var other = await _store.UpsertFromSourceAsync(otherSource, new SManga("/series/xyz", "Other"));
+        foreach (var id in new[] { mangaDex, other })
+        {
+            await _store.SetFavoriteAsync(id, true);
+            await _store.SyncChaptersFromSourceAsync(id, new[] { new SChapter("/chapter/1", "1") { ChapterNumber = 1, DateUpload = 1000 } });
+            await _store.SetChapterProgressAsync(Assert.Single(await _store.GetChaptersAsync(id)).ChapterId, 2, read: false);
+        }
+
+        var history = await _store.GetHistoryAsync(10);
+        Assert.Equal(2499283573021220255, history.Single(h => h.MangaId == mangaDex).Source);
+        Assert.Equal(otherSource, history.Single(h => h.MangaId == other).Source);
+
+        var updates = await _store.GetUpdatesAsync(10);
+        Assert.Equal(2499283573021220255, updates.Single(u => u.MangaId == mangaDex).Source);
+        Assert.Equal(otherSource, updates.Single(u => u.MangaId == other).Source);
+    }
+
+    [Fact]
+    public async Task HistoryCarriesThePageCountOfTheChapter()
+    {
+        var mangaId = await _store.UpsertFromSourceAsync(2499283573021220255, new SManga("/manga/abc", "Title"));
+        await _store.SetFavoriteAsync(mangaId, true);
+        await _store.SyncChaptersFromSourceAsync(mangaId, new[]
+        {
+            new SChapter("/chapter/1", "1") { ChapterNumber = 1, DateUpload = 1000, PageCount = 31 },
+            new SChapter("/chapter/2", "2") { ChapterNumber = 2, DateUpload = 2000 },
+        });
+        foreach (var chapter in await _store.GetChaptersAsync(mangaId))
+        {
+            await _store.SetChapterProgressAsync(chapter.ChapterId, 6, read: false);
+        }
+
+        var history = await _store.GetHistoryAsync(10);
+        Assert.Equal(31, history.Single(h => h.ChapterName == "1").PageCount);
+        Assert.Null(history.Single(h => h.ChapterName == "2").PageCount);
     }
 
     [Fact]

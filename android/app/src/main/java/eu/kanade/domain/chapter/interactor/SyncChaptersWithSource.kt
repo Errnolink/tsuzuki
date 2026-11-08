@@ -77,9 +77,8 @@ class SyncChaptersWithSource(
         val newChapters = mutableListOf<Chapter>()
         val updatedChapters = mutableListOf<Chapter>()
         val removedChapters = dbChapters.filterNot { dbChapter ->
-            sourceChapters.any { sourceChapter ->
-                dbChapter.url == sourceChapter.url
-            }
+            dev.errnolink.tsuzuki.mangadex.backup.NekoBackupMapper.UNRESOLVED_SOURCE in dbChapter.memo ||
+                sourceChapters.any { sourceChapter -> dbChapter.url == sourceChapter.url }
         }
 
         // Used to not set upload date of older chapters

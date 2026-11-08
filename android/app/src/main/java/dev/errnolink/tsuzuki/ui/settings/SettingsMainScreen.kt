@@ -186,6 +186,7 @@ internal val iaSections: List<SettingsSectionSpec> = listOf(
         screen = TsuzukiSettingsSecurityScreen,
         icon = { TsuzukiIcons.EyeOff },
         subtitle = { stringResource(MR.strings.tsuzuki_settings_sub_security) },
+        titleOverride = TsuzukiSettingsSecurityScreen.displayName,
     ),
     SettingsSectionSpec(
         titleRes = MR.strings.pref_category_advanced,

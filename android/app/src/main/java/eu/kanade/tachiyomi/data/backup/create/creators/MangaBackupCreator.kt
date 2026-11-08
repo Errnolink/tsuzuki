@@ -34,11 +34,12 @@ class MangaBackupCreator(
 ) {
 
     suspend operator fun invoke(mangas: List<Manga>, options: BackupOptions): List<BackupManga> {
-        if (mangas.isEmpty()) return emptyList()
-        if (mangas.size == 1) {
-            return listOf(backupManga(mangas.first(), options))
+        val unique = mangas.distinctBy { it.id }
+        if (unique.isEmpty()) return emptyList()
+        if (unique.size == 1) {
+            return listOf(backupManga(unique.first(), options))
         }
-        return backupMangasBatched(mangas, options)
+        return backupMangasBatched(unique, options)
     }
 
     private suspend fun backupMangasBatched(mangas: List<Manga>, options: BackupOptions): List<BackupManga> {

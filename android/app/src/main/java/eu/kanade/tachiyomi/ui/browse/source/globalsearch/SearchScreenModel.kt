@@ -180,28 +180,36 @@ abstract class SearchScreenModel(
                     if (state.value.items[source] !is SearchItemResult.Loading) {
                         return@async
                     }
-
-                    try {
-                        val page = withContext(coroutineDispatcher) {
-                            source.getSearchManga(1, query.sanitize(), source.getFilterList())
-                        }
-
-                        val titles = page.mangas
-                            .map { it.toDomainManga(source.id) }
-                            .distinctBy { it.url }
-                            .let { networkToLocalManga(it) }
-
-                        if (isActive) {
-                            updateItem(source, SearchItemResult.Success(titles))
-                        }
-                    } catch (e: Exception) {
-                        if (isActive) {
-                            updateItem(source, SearchItemResult.Error(e))
-                        }
-                    }
+                    fetch(source, query)
                 }
             }
                 .awaitAll()
+        }
+    }
+
+    fun retry(source: Source) {
+        val query = lastQuery ?: return
+        updateItem(source, SearchItemResult.Loading)
+        ioCoroutineScope.launch { fetch(source, query) }
+    }
+
+    private suspend fun fetch(source: Source, query: String) {
+        try {
+            val page = withContext(coroutineDispatcher) {
+                source.getSearchManga(1, query.sanitize(), source.getFilterList())
+            }
+
+            val titles = page.mangas
+                .map { it.toDomainManga(source.id) }
+                .distinctBy { it.url }
+                .let { networkToLocalManga(it) }
+
+            if (kotlinx.coroutines.currentCoroutineContext().isActive) {
+                updateItem(source, SearchItemResult.Success(titles))
+            }
+        } catch (e: Exception) {
+            if (e is kotlinx.coroutines.CancellationException) throw e
+            updateItem(source, SearchItemResult.Error(e))
         }
     }
 

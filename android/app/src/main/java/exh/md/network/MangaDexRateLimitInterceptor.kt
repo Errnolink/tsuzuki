@@ -2,7 +2,6 @@
 package exh.md.network
 
 import exh.md.utils.MdApi
-import exh.md.utils.MdConstants
 import java.io.IOException
 import java.util.PriorityQueue
 import java.util.concurrent.TimeUnit
@@ -23,6 +22,7 @@ class PriorityRateLimitInterceptor(
     period: Long,
     unit: TimeUnit,
     private val prioritySelector: (HttpUrl) -> Int,
+    private val limits: (HttpUrl) -> Boolean = { true },
 ) : Interceptor {
 
     private val lock = Object()
@@ -41,6 +41,7 @@ class PriorityRateLimitInterceptor(
 
     override fun intercept(chain: Interceptor.Chain): Response {
         val url = chain.request().url
+        if (!limits(url)) return chain.proceed(chain.request())
         val priority = prioritySelector(url)
 
         val ticket: Ticket
@@ -104,7 +105,10 @@ object MangaDexRateLimit {
         period = 1,
         unit = TimeUnit.SECONDS,
         prioritySelector = ::mangaDexRequestPriority,
+        limits = ::isMangaDexApi,
     )
+
+    fun isMangaDexApi(url: HttpUrl): Boolean = url.host == "api.mangadex.org" || url.host == "auth.mangadex.org"
 
     fun mangaDexRequestPriority(url: HttpUrl): Int {
         val string = url.toString()
@@ -120,11 +124,9 @@ object MangaDexRateLimit {
             isReaderChapter ||
                 isHomePageOrSearch ||
                 url.pathSegments.contains("chapter") ||
+                url.pathSegments.contains("at-home") ||
                 url.pathSegments.contains("user") ||
-                url.pathSegments.contains("list") ||
-                url.pathSegments.contains("mangadex-seasonal") -> 10
-
-            url.host == MdConstants.cdnUrl.removePrefix("https://") -> 5
+                url.pathSegments.contains("list") -> 10
 
             else -> 1
         }

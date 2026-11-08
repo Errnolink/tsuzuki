@@ -132,6 +132,23 @@ class FetchIntervalTest {
         fetchInterval.calculateInterval(chapters, testZoneId) shouldBe 2
     }
 
+    @Test
+    fun `a series that stopped updating months ago is predicted in the future, not the past`() = kotlinx.coroutines.runBlocking {
+        val now = testTime.plusDays(200)
+        val dailyChapters = (1..20).map { chapterWithTime(chapter, it.days) }
+        val getChapters = mockk<tachiyomi.domain.chapter.interactor.GetChaptersByMangaId>()
+        io.mockk.coEvery { getChapters.await(any(), any()) } returns dailyChapters
+        val stale = tachiyomi.domain.manga.model.Manga.create().copy(
+            id = 1,
+            lastUpdate = testTime.plusDays(100).toEpochSecond() * 1000,
+            nextUpdate = 0,
+        )
+
+        val update = FetchInterval(getChapters).toMangaUpdate(stale, now, FetchInterval(getChapters).getWindow(now))
+
+        (update.nextUpdate!! >= now.toLocalDate().atStartOfDay(now.zone).toEpochSecond() * 1000) shouldBe true
+    }
+
     private fun chapterWithTime(chapter: Chapter, duration: Duration): Chapter {
         val newTime = testTime.plus(duration.toJavaDuration()).toEpochSecond() * 1000
         return chapter.copy(dateFetch = newTime, dateUpload = newTime)

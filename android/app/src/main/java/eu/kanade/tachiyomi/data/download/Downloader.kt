@@ -526,7 +526,7 @@ class Downloader(
         page.status = Page.State.DownloadImage
         page.progress = 0
         return flow {
-            val response = source.getImage(page, dataSaver)
+            val response = dev.errnolink.tsuzuki.network.HostGate.pages.pass(page.imageUrl) { source.getImage(page, dataSaver) }
             val file = tmpDir.createFile("$filename.tmp")!!
             try {
                 response.body.source().saveTo(file.openOutputStream())

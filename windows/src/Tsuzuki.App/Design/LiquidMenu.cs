@@ -79,7 +79,7 @@ public sealed class LiquidMenu
                 MinHeight = 0,
                 Padding = new Thickness(12, 0, 16, 0),
                 HorizontalAlignment = HorizontalAlignment.Stretch,
-                CornerRadius = new CornerRadius(10),
+                CornerRadius = (CornerRadius)Application.Current.Resources["TzControlRadius"],
                 Foreground = Design.Theme.Brush(item.Dangerous ? "TzDanger" : "TzText"),
             };
             StackPanel content = new() { Orientation = Orientation.Horizontal, Spacing = 12 };
@@ -100,7 +100,7 @@ public sealed class LiquidMenu
     {
         Border menu = new()
         {
-            CornerRadius = new CornerRadius(16),
+            CornerRadius = (CornerRadius)Application.Current.Resources["TzCardRadius"],
             BorderBrush = Design.Theme.Brush("TzStrokeStrong"),
             BorderThickness = new Thickness(1),
             Background = MakeGlass(),
@@ -150,7 +150,7 @@ public sealed class LiquidMenu
             translationSpring.DampingRatio = 0.72f;
             translationSpring.Period = TimeSpan.FromMilliseconds(48);
             visual.StartAnimation("Translation", translationSpring);
-            geometry.StartAnimation("CornerRadius", Motion.Vector2(c, radius, new Vector2(16), Grow, Curve.EmphasizedDecelerate));
+            geometry.StartAnimation("CornerRadius", Motion.Vector2(c, radius, new Vector2((float)menu.CornerRadius.TopLeft), Grow, Curve.EmphasizedDecelerate));
             var content = Motion.VisualOf(menu.Child);
             content.CenterPoint = new((float)target.Width / 2, (float)target.Height / 2, 0);
             content.StartAnimation("Opacity", Motion.Scalar(c, 0.15f, 1, Grow, Curve.StandardDecelerate));

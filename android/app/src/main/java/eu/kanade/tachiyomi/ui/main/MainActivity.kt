@@ -223,21 +223,23 @@ class MainActivity : BaseActivity() {
                         .collectLatest { incognito = it }
                 }
 
+                val bannerOnHome = navigator.lastItem == HomeScreen
                 androidx.compose.runtime.CompositionLocalProvider(
                     dev.errnolink.tsuzuki.ui.shell.LocalAppStateBottomPadding provides
-                        if (downloadOnly || incognito || indexing || restoring || syncing || updating) 40.dp else 0.dp,
+                        if (downloadOnly || incognito || (bannerOnHome && (indexing || restoring || syncing || updating))) 40.dp else 0.dp,
                 ) {
                 Box(
                     Modifier.fillMaxSize().background(dev.errnolink.tsuzuki.designsystem.TsuzukiTheme.colors.background),
                 ) {
                     TsuzukiScreenTransition(navigator = navigator, modifier = Modifier.fillMaxSize())
+                    val onHome = bannerOnHome
                     AppStateBanners(
                         downloadedOnlyMode = downloadOnly,
                         incognitoMode = incognito,
-                        indexing = indexing,
-                        restoring = restoring,
-                        syncing = syncing,
-                        updating = updating,
+                        indexing = indexing && onHome,
+                        restoring = restoring && onHome,
+                        syncing = syncing && onHome,
+                        updating = updating && onHome,
                         progress = updatingProgress.takeIf { updating }
                             ?: syncingProgress.takeIf { syncing }
                             ?: restoringProgress.takeIf { restoring },

@@ -368,8 +368,13 @@ internal static class SyncRows
                 case WireFormat.WireType.Fixed32:
                     WriteFixed32(sink, input.ReadFixed32());
                     break;
+                case WireFormat.WireType.StartGroup:
+                    var start = (int)input.Position;
+                    input.SkipLastField();
+                    sink.Write(segment.Array!, start, (int)input.Position - start);
+                    break;
                 default:
-                    throw new InvalidDataException("groups are not valid in a proto3 backup");
+                    throw new InvalidDataException("unexpected end-group tag in backup");
             }
         }
         return fields.OrderBy(f => f.Key).Select(f => (f.Key, f.Value.ToArray())).ToList();

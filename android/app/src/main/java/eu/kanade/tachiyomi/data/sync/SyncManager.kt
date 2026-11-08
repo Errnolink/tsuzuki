@@ -219,14 +219,12 @@ class SyncManager(
         val result = syncService.doSync(syncData)
 
         // KMK -->
-        if (result.changed) {
-            applyRemoteBackup(syncService, result, categorySnapshot, backup)
-        }
+        val applyFailed = result.changed && applyRemoteBackup(syncService, result, categorySnapshot, backup)
         if (syncService is SyncYomiSyncService && syncPreferences.currentSyncIdentity() != identity) {
             logcat(LogPriority.WARN) { "Hub pairing changed during sync; result not acknowledged" }
             return
         }
-        acknowledgeResult(result, backup, tombstonesSent)
+        acknowledgeResult(result, backup, tombstonesSent, applyFailed)
         (syncService as? SyncYomiSyncService)?.reportSyncSuccess()
         // KMK <--
         syncPreferences.lastSyncTimestamp().set(Date().time)
@@ -269,7 +267,7 @@ class SyncManager(
         result: SyncResult,
         categorySnapshot: List<BackupCategory>,
         uploaded: Backup,
-    ) {
+    ): Boolean {
         try {
             // KMK -->
             // A capped delta omits the category list when the store is quiet; an empty
@@ -293,10 +291,7 @@ class SyncManager(
             if (restoreErrors.isNotEmpty()) {
                 logcat(LogPriority.WARN) { "Sync restore finished with ${restoreErrors.size} per-entry errors" }
             }
-
-            handler.await {
-                mergedQueries.bindUnresolved()
-            }
+            return restoreErrors.isNotEmpty() && result.protocolV2
         } catch (e: Exception) {
             if (e is CancellationException) throw e
             if (result.protocolV2) {
@@ -315,13 +310,13 @@ class SyncManager(
      * full pre-trim backup this sync uploaded from; its per-manga versions and
      * chapter counts become the R3 pushed-state guard for the next delta.
      */
-    private fun acknowledgeResult(result: SyncResult, snapshot: Backup, tombstonesSent: Set<String>) {
+    private fun acknowledgeResult(result: SyncResult, snapshot: Backup, tombstonesSent: Set<String>, applyFailed: Boolean) {
         val ack = result.acknowledgement ?: return
         syncPreferences.syncCursor().set(ack.cursor)
         if (ack.fullUpload) {
             syncPreferences.lastFullSync().set(System.currentTimeMillis())
         }
-        syncPreferences.fullSyncRequested().set(ack.fullRequested)
+        syncPreferences.fullSyncRequested().set(ack.fullRequested || applyFailed)
         if (ack.snapshotStartedAt > 0) {
             val nowSec = System.currentTimeMillis() / 1000
             val watermark = if (ack.snapshotStartedAt > nowSec) nowSec else ack.snapshotStartedAt
@@ -335,7 +330,8 @@ class SyncManager(
                 chapterCount = manga.chapters.size,
             )
         }
-        syncPreferences.pushedManga().set(encodePushedManga(pushed))
+        val previous = if (ack.fullUpload) emptyMap() else decodePushedManga(syncPreferences.pushedManga().get())
+        syncPreferences.pushedManga().set(encodePushedManga(previous + pushed))
         syncPreferences.categoryState.acknowledge(tombstonesSent)
     }
     // KMK <--

@@ -148,7 +148,7 @@ fun Screen.rememberUpdatesFeedContent(
                         onUpdateSelected = screenModel::toggleSelection,
                         onClickCover = { navigator?.push(MangaScreen(it.update.mangaId)) },
                         onClickUpdate = {
-                            context.startActivity(ReaderActivity.newIntent(context, it.update.mangaId, it.update.chapterId))
+                            dev.errnolink.tsuzuki.reader.ReaderTransition.open(context, ReaderActivity.newIntent(context, it.update.mangaId, it.update.chapterId))
                         },
                         onDownloadChapter = screenModel::downloadChapters,
                         updateSwipeStartAction = screenModel.chapterSwipeStartAction,

@@ -68,7 +68,7 @@ public static partial class Program
         {
             try
             {
-                main.RedirectActivationToAsync(activation).AsTask().Wait();
+                main.RedirectActivationToAsync(activation).AsTask().Wait(TimeSpan.FromSeconds(10));
             }
             catch (Exception)
             {
@@ -78,7 +78,7 @@ public static partial class Program
                 SetEvent(handle);
             }
         });
-        _ = CoWaitForMultipleObjects(0, 0xFFFFFFFF, 1, [handle], out _);
+        _ = CoWaitForMultipleObjects(0, 12000, 1, [handle], out _);
         var hwnd = PublishedWindowHandle(main.ProcessId);
         if (hwnd == IntPtr.Zero)
         {
@@ -133,5 +133,5 @@ public static partial class Program
         GetWindowThreadProcessId(hwnd, out var owner) != 0 && owner == processId;
 
     private static string InstanceKey() =>
-        DevHarness.Current?.Instance is { } name ? $"tsuzuki-{name}" : "tsuzuki-main";
+        DevHarness.Current?.Instance is { } name ? $"tsuzuki-{name}" : Tsuzuki.Core.AppIdentity.InstanceKey;
 }

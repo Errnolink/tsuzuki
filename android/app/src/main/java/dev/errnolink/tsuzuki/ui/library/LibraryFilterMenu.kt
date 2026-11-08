@@ -88,6 +88,7 @@ fun LibraryFilterMenu(
 
     val preferences = remember { Injekt.get<LibraryPreferences>() }
     val basePreferences = remember { Injekt.get<BasePreferences>() }
+    val tsuzukiPreferences = remember { Injekt.get<dev.errnolink.tsuzuki.preference.TsuzukiPreferences>() }
     val trackers = remember { Injekt.get<TrackerManager>().loggedInTrackers() }
     val setSortModeForCategory = remember { Injekt.get<SetSortModeForCategory>() }
     val setDisplayMode = remember { Injekt.get<SetDisplayMode>() }
@@ -124,6 +125,7 @@ fun LibraryFilterMenu(
     val useLangIcon by preferences.useLangIcon().collectAsState()
     val sourceBadge by preferences.sourceBadge().collectAsState()
     val continueReadingButton by preferences.showContinueReadingButton().collectAsState()
+    val progressRing by tsuzukiPreferences.libraryProgressRing().collectAsState()
     val categoryTabs by preferences.categoryTabs().collectAsState()
     val showHiddenCategories by preferences.showHiddenCategories().collectAsState()
     val categoryNumberOfItems by preferences.categoryNumberOfItems().collectAsState()
@@ -156,6 +158,7 @@ fun LibraryFilterMenu(
         useLangIcon = useLangIcon,
         sourceBadge = sourceBadge,
         continueReadingButton = continueReadingButton,
+        progressRing = progressRing,
         categoryTabs = categoryTabs,
         showHiddenCategories = showHiddenCategories,
         categoryNumberOfItems = categoryNumberOfItems,
@@ -445,6 +448,14 @@ fun LibraryFilterMenu(
                         checked = continueReadingButton,
                         onChecked = { preferences.showContinueReadingButton().set(it) },
                     )
+                    if (continueReadingButton) {
+                        PullDownDivider()
+                        PullDownToggleItem(
+                            label = "Progress ring",
+                            checked = progressRing,
+                            onChecked = { tsuzukiPreferences.libraryProgressRing().set(it) },
+                        )
+                    }
                     PullDownSectionDivider()
                     PullDownToggleItem(
                         label = "Category tabs",
@@ -495,6 +506,7 @@ fun LibraryFilterMenu(
                     haptics?.toggleOff()
                     resetLibraryOptions(
                         preferences = preferences,
+                        tsuzukiPreferences = tsuzukiPreferences,
                         trackers = trackers,
                         scanlatorOption = scanlatorOption,
                         scope = scope,
@@ -592,6 +604,7 @@ private fun SubmenuHeading(text: String) {
 
 private fun resetLibraryOptions(
     preferences: LibraryPreferences,
+    tsuzukiPreferences: dev.errnolink.tsuzuki.preference.TsuzukiPreferences,
     trackers: List<Tracker>,
     scanlatorOption: ScanlatorFilterOption,
     scope: CoroutineScope,
@@ -627,6 +640,7 @@ private fun resetLibraryOptions(
     preferences.useLangIcon().set(true)
     preferences.sourceBadge().set(true)
     preferences.showContinueReadingButton().set(false)
+    tsuzukiPreferences.libraryProgressRing().set(true)
     preferences.categoryTabs().set(true)
     preferences.showHiddenCategories().set(false)
     preferences.categoryNumberOfItems().set(false)

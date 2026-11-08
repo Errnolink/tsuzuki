@@ -1,5 +1,6 @@
 package dev.errnolink.tsuzuki.ui.updates
 import eu.kanade.presentation.updates.UpdatesUiModel
+import dev.errnolink.tsuzuki.reader.readerOrigin
 
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.FiniteAnimationSpec
@@ -246,6 +247,7 @@ private fun UpdatesUiItem(
         Row(
             Modifier.fillMaxWidth()
                 .padding(horizontal = 20.dp)
+                .readerOrigin()
                 .clip(shape)
                 .background(if (selected) colors.selectedFill else colors.grouped)
                 .combinedClickable(

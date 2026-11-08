@@ -26,12 +26,16 @@ public sealed class LibraryRefresher(ILibraryStore store, ISourceRegistry source
             var any = false;
             foreach (var child in manga.MergedRefs)
             {
-                var childId = await store.FindMangaIdAsync(child.Source, child.Url, ct).ConfigureAwait(false);
-                if (childId is null || sources.Get(child.Source) is null)
+                if (!sources.IsReadable(child.Source))
                 {
                     continue;
                 }
-                var result = await RefreshSingleAsync(childId.Value, child.Source, child.Url, includeDetails && child.IsInfoManga, ct).ConfigureAwait(false);
+                var childId = await store.FindMangaIdAsync(child.Source, child.Url, ct).ConfigureAwait(false);
+                if (childId is null || await store.GetMangaAsync(childId.Value, ct).ConfigureAwait(false) is not { } childManga)
+                {
+                    continue;
+                }
+                var result = await RefreshSingleAsync(childManga, includeDetails && child.IsInfoManga, ct).ConfigureAwait(false);
                 if (result is not null)
                 {
                     any = true;
@@ -42,23 +46,27 @@ public sealed class LibraryRefresher(ILibraryStore store, ISourceRegistry source
             }
             return any ? new ChapterSyncResult(added, updated, removed) : null;
         }
-        return await RefreshSingleAsync(manga.MangaId, manga.Source, manga.Url, includeDetails, ct).ConfigureAwait(false);
+        return await RefreshSingleAsync(manga, includeDetails, ct).ConfigureAwait(false);
     }
 
-    private async Task<ChapterSyncResult?> RefreshSingleAsync(long mangaId, long sourceId, string url, bool includeDetails, CancellationToken ct)
+    private async Task<ChapterSyncResult?> RefreshSingleAsync(MangaDetails manga, bool includeDetails, CancellationToken ct)
     {
-        var source = sources.Get(sourceId);
+        var source = sources.Get(manga.Source);
         if (source is null)
         {
             return null;
         }
         if (includeDetails)
         {
-            var details = await source.GetMangaDetailsAsync(url, ct).ConfigureAwait(false);
-            await store.UpsertFromSourceAsync(sourceId, details with { Url = url }, ct).ConfigureAwait(false);
+            var details = await source.GetMangaDetailsAsync(manga.Url, ct).ConfigureAwait(false);
+            await store.UpsertFromSourceAsync(manga.Source, details with { Url = manga.Url }, ct).ConfigureAwait(false);
         }
-        var chapters = await source.GetChapterListAsync(url, ct).ConfigureAwait(false);
-        return await store.SyncChaptersFromSourceAsync(mangaId, chapters, ct).ConfigureAwait(false);
+        var chapters = await source.GetChapterListAsync(manga.Url, ct).ConfigureAwait(false);
+        if (chapters.Count == 0 && (await store.GetChaptersAsync(manga.MangaId, ct).ConfigureAwait(false)).Count > 0)
+        {
+            throw new InvalidOperationException($"{source.Name} returned no chapters for {manga.Title}; keeping the chapters already in the library.");
+        }
+        return await store.SyncChaptersFromSourceAsync(manga.MangaId, ChapterRecognition.PrepareForSync(manga.Title, chapters), ct).ConfigureAwait(false);
     }
 
     public async Task<long> AddToLibraryAsync(long sourceId, SManga manga, CancellationToken ct = default)
@@ -94,22 +102,25 @@ public sealed class LibraryRefresher(ILibraryStore store, ISourceRegistry source
             var done = 0;
             var added = 0;
             var failed = 0;
-            await Parallel.ForEachAsync(targets, new ParallelOptions { MaxDegreeOfParallelism = 3, CancellationToken = ct }, async (entry, token) =>
+            using (store.BeginBatch())
             {
-                try
+                await Parallel.ForEachAsync(targets, new ParallelOptions { MaxDegreeOfParallelism = 2, CancellationToken = ct }, async (entry, token) =>
                 {
-                    var result = await RefreshAsync(entry.MangaId, includeDetails: false, token).ConfigureAwait(false);
-                    if (result is not null)
+                    try
                     {
-                        Interlocked.Add(ref added, result.Added);
+                        var result = await RefreshAsync(entry.MangaId, includeDetails: false, token).ConfigureAwait(false);
+                        if (result is not null)
+                        {
+                            Interlocked.Add(ref added, result.Added);
+                        }
                     }
-                }
-                catch (Exception e) when (e is HttpRequestException or TaskCanceledException or IOException or InvalidOperationException)
-                {
-                    Interlocked.Increment(ref failed);
-                }
-                progress?.Report((Interlocked.Increment(ref done), targets.Count));
-            }).ConfigureAwait(false);
+                    catch (Exception) when (!token.IsCancellationRequested)
+                    {
+                        Interlocked.Increment(ref failed);
+                    }
+                    progress?.Report((Interlocked.Increment(ref done), targets.Count));
+                }).ConfigureAwait(false);
+            }
             return new UpdateRunResult(targets.Count, added, failed);
         }
         finally

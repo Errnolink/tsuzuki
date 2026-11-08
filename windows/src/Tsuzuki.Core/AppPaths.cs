@@ -3,7 +3,10 @@ namespace Tsuzuki.Core;
 public sealed class AppPaths(string root)
 {
     public static AppPaths Default { get; } = new(Path.Combine(
-        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Tsuzuki Reader"));
+        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), AppIdentity.DataFolder));
+
+    public static AppPaths Stable { get; } = new(Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), AppIdentity.StableDataFolder));
 
     public string Root { get; } = root;
     public string Database => Path.Combine(Root, "library.db");

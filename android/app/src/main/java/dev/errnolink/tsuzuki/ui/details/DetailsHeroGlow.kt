@@ -70,13 +70,20 @@ class DetailsGlow internal constructor() {
     internal var settled = false
 }
 
-private class GlowEntry(val bitmap: ImageBitmap, val accent: Color?)
+private class GlowEntry(val bitmap: ImageBitmap, val accent: Color?, val card: Color?)
 
 private val glowCache = android.util.LruCache<Long, GlowEntry>(48)
 
 private fun computeGlow(source: Bitmap): GlowEntry {
     val readable = if (source.config == Bitmap.Config.HARDWARE) source.copy(Bitmap.Config.ARGB_8888, false) else source
-    return GlowEntry(processGlowSource(readable).asImageBitmap(), dominantAccent(readable))
+    return GlowEntry(processGlowSource(readable).asImageBitmap(), dominantAccent(readable), DetailsCardColor.fromBitmap(readable))
+}
+
+private fun adoptCard(mangaId: Long, entry: GlowEntry) {
+    val card = entry.card ?: return
+    if (dev.errnolink.tsuzuki.ui.shell.MangaHero.cardColor(mangaId) == null) {
+        dev.errnolink.tsuzuki.ui.shell.MangaHero.reportCardColor(mangaId, card)
+    }
 }
 
 @Composable
@@ -87,6 +94,7 @@ fun rememberDetailsGlow(manga: Manga, coverReady: Boolean): DetailsGlow {
                 fresh.bitmap.value = entry.bitmap
                 fresh.accent.value = entry.accent
                 fresh.settled = true
+                adoptCard(manga.id, entry)
             }
         }
     }
@@ -104,6 +112,7 @@ fun rememberDetailsGlow(manga: Manga, coverReady: Boolean): DetailsGlow {
             glow.settled = true
             glow.accent.value = entry.accent
             glow.bitmap.value = entry.bitmap
+            adoptCard(manga.id, entry)
         }
     }
     LaunchedEffect(coverKey, coverReady) {
@@ -128,6 +137,7 @@ fun rememberDetailsGlow(manga: Manga, coverReady: Boolean): DetailsGlow {
             glowCache.put(manga.id, entry)
             glow.accent.value = entry.accent
             glow.bitmap.value = entry.bitmap
+            adoptCard(manga.id, entry)
         }
     }
     LaunchedEffect(glow.bitmap.value != null, reduced) {
@@ -152,8 +162,9 @@ fun Modifier.detailsHeroGlow(
     topInset: Dp,
     isDark: Boolean,
     backgroundColor: Color,
+    strength: Float = 1f,
 ): Modifier = drawWithCache {
-    val baseAlpha = if (isDark) GlowAlphaDark else GlowAlphaLight
+    val baseAlpha = (if (isDark) GlowAlphaDark else GlowAlphaLight) * strength
     val topPx = topInset.roundToPx()
     val glowTop = -topPx.toFloat()
     val glowHeight = topPx.toFloat() + size.height + GlowTail.roundToPx()

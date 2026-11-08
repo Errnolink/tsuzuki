@@ -1,5 +1,6 @@
 package dev.errnolink.tsuzuki.ui.details
 
+import dev.errnolink.tsuzuki.reader.readerOrigin
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.snap
 import androidx.compose.foundation.background
@@ -27,6 +28,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.TransformOrigin
@@ -79,7 +81,7 @@ fun DetailsActionRow(
     glass: GlassContext?,
     continueLabel: String,
     continueEnabled: Boolean,
-    actionColor: Color,
+    actionColor: () -> Color,
     onContinueClick: () -> Unit,
     inLibrary: Boolean,
     onLibraryClick: () -> Unit,
@@ -179,17 +181,18 @@ private fun LabeledAction(label: String, modifier: Modifier = Modifier, circle: 
 private fun ContinueCapsule(
     label: String,
     enabled: Boolean,
-    color: Color,
+    color: () -> Color,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val fill = if (enabled) color else TsuzukiTheme.colors.selectedFill
+    val disabledFill = TsuzukiTheme.colors.selectedFill
     val labelColor = if (enabled) Color.White else TsuzukiTheme.colors.secondary
     Box(
         modifier
+            .readerOrigin()
             .height(CapsuleHeight)
             .clip(RoundedCornerShape(CapsuleHeight / 2))
-            .background(fill)
+            .drawBehind { drawRect(if (enabled) color() else disabledFill) }
             .clickable(enabled = enabled, role = Role.Button, onClick = onClick)
             .semantics { contentDescription = label }
             .padding(horizontal = ContinuePad),
@@ -228,7 +231,7 @@ private fun GrowPulseCircle(
     val motion = TsuzukiTheme.motion
     val pulse by animateFloatAsState(
         if (pulsing) 1.14f else 1f,
-        if (motion.standardTokens) androidx.compose.animation.core.tween(dev.errnolink.tsuzuki.designsystem.M3Motion.Short3, easing = dev.errnolink.tsuzuki.designsystem.M3Motion.Standard) else motion.tabSpring(),
+        androidx.compose.animation.core.tween(dev.errnolink.tsuzuki.designsystem.M3Motion.Short3, easing = dev.errnolink.tsuzuki.designsystem.M3Motion.Standard),
         label = "Row pulse",
     )
     LaunchedEffect(pulsing) {

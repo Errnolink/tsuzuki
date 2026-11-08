@@ -91,13 +91,13 @@ public static class Onboarding
         var button = new Button
         {
             Style = Res<Style>("TzRowButton"),
-            CornerRadius = new CornerRadius(16),
+            CornerRadius = Res<CornerRadius>("TzCardRadius"),
             Background = Design.Theme.Brush("TzCard"),
             BorderBrush = Design.Theme.Brush("TzStrokeStrong"),
             BorderThickness = new Thickness(1),
             Content = grid,
         };
-        button.Click += async (_, _) => await action();
+        button.Click += (_, _) => _ = Log.Guard("onboarding", action);
         return button;
     }
 }

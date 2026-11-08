@@ -104,7 +104,7 @@ data object UpdatesTab : Tab {
             onUpdateSelected = screenModel::toggleSelection,
             onOpenChapter = {
                 val intent = ReaderActivity.newIntent(context, it.update.mangaId, it.update.chapterId)
-                context.startActivity(intent)
+                dev.errnolink.tsuzuki.reader.ReaderTransition.open(context, intent)
             },
             onCalendarClicked = { navigator.push(UpcomingScreen()) },
             onFilterClicked = screenModel::showFilterDialog,

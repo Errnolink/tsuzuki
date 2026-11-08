@@ -1,6 +1,9 @@
 package dev.errnolink.tsuzuki.ui.shell
 
+import dev.errnolink.tsuzuki.reader.readerOrigin
 import android.util.LruCache
+import logcat.LogPriority
+import tachiyomi.core.common.util.system.logcat
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.snap
@@ -263,6 +266,7 @@ fun ShellContinueButton(progress: Float?, modifier: Modifier = Modifier, onClick
     val colors = TsuzukiTheme.colors
     Box(
         modifier
+            .readerOrigin()
             .size(46.dp)
             .clip(CircleShape)
             .clickable(role = androidx.compose.ui.semantics.Role.Button, onClickLabel = "Continue reading", onClick = onClick),
@@ -400,7 +404,10 @@ fun ShellCover(cover: MangaCover, title: String, modifier: Modifier = Modifier, 
                     loaded = true
                     heroImage = it.result.image.toBitmap().asImageBitmap()
                 },
-                onError = { failed = true },
+                onError = {
+                    failed = true
+                    logcat(LogPriority.WARN, it.result.throwable) { "Cover failed for manga ${cover.mangaId} source ${cover.sourceId}: ${cover.url}" }
+                },
             )
         }
         if (failed) {
@@ -500,6 +507,7 @@ fun ShellRefresh(
     refreshing: Boolean,
     enabled: Boolean = true,
     onRefresh: () -> Unit,
+    pullLabel: String = "Pull to update",
     content: @Composable () -> Unit,
 ) {
     val threshold = with(LocalDensity.current) { 88.dp.toPx() }
@@ -546,10 +554,7 @@ fun ShellRefresh(
                     .background(TsuzukiTheme.colors.elevated)
                     .padding(10.dp),
             ) {
-                ProgressRing(
-                    if (refreshing) 0f else pulled / threshold,
-                    if (refreshing) "Updating library" else "Pull to update",
-                )
+                ProgressRing(pulled / threshold, pullLabel)
             }
         }
     }

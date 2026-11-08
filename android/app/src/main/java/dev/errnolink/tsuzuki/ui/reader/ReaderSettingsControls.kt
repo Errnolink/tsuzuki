@@ -47,21 +47,25 @@ internal fun ReaderChoice(label: String, options: List<String>, selected: Int, o
         } else {
             Box {
                 GroupedRow(label, value = options.getOrNull(selected), chevron = true, onClick = { expanded = true }, divider = false)
-                GlassMenu(
-                    expanded,
-                    label,
-                    options.mapIndexed { index, option ->
-                        ContextMenuAction(
-                            option,
-                            icon = {
-                                if (index == selected) Icon(Icons.Outlined.Check, null, tint = TsuzukiTheme.colors.text)
-                                else Spacer(Modifier.size(24.dp))
+                Box(Modifier.matchParentSize(), contentAlignment = androidx.compose.ui.Alignment.CenterEnd) {
+                    Box(Modifier.padding(end = 16.dp).size(24.dp)) {
+                        GlassMenu(
+                            expanded,
+                            label,
+                            options.mapIndexed { index, option ->
+                                ContextMenuAction(
+                                    option,
+                                    icon = {
+                                        if (index == selected) Icon(Icons.Outlined.Check, null, tint = TsuzukiTheme.colors.text)
+                                        else Spacer(Modifier.size(24.dp))
+                                    },
+                                    onClick = { onSelect(index) },
+                                )
                             },
-                            onClick = { onSelect(index) },
+                            onDismissRequest = { expanded = false },
                         )
-                    },
-                    onDismissRequest = { expanded = false },
-                )
+                    }
+                }
             }
         }
     }

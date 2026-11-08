@@ -18,8 +18,8 @@ class NavigationTabsTest {
     private fun tabs(vararg expected: Tab) = expected.toList()
 
     @Test
-    fun `MangaDex mode shows Library Feed Browse`() {
-        assertEquals(tabs(LibraryTab, FeedTab, BrowseTab), navigationTabs(NavigationStyle.MangaDex))
+    fun `Simple mode shows Library Feed Browse`() {
+        assertEquals(tabs(LibraryTab, FeedTab, BrowseTab), navigationTabs(NavigationStyle.Simple))
     }
 
     @Test
@@ -31,16 +31,16 @@ class NavigationTabsTest {
     }
 
     @Test
-    fun `updates notification opens Feed tab Updates segment in MangaDex mode`() {
-        val style = NavigationStyle.MangaDex
+    fun `updates notification opens Feed tab Updates segment in Simple mode`() {
+        val style = NavigationStyle.Simple
         val requested: HomeScreen.Tab = HomeScreen.Tab.Updates
         assertEquals(FeedTab, openTabBottomTab(requested, style))
         assertEquals(FeedTab.SEGMENT_UPDATES, openTabFeedSegment(requested, style))
     }
 
     @Test
-    fun `history request opens Feed tab History segment in MangaDex mode`() {
-        val style = NavigationStyle.MangaDex
+    fun `history request opens Feed tab History segment in Simple mode`() {
+        val style = NavigationStyle.Simple
         val requested: HomeScreen.Tab = HomeScreen.Tab.History
         assertEquals(FeedTab, openTabBottomTab(requested, style))
         assertEquals(FeedTab.SEGMENT_HISTORY, openTabFeedSegment(requested, style))
@@ -56,8 +56,8 @@ class NavigationTabsTest {
     }
 
     @Test
-    fun `downloads and update error routes keep the current tab in MangaDex mode`() {
-        val style = NavigationStyle.MangaDex
+    fun `downloads and update error routes keep the current tab in Simple mode`() {
+        val style = NavigationStyle.Simple
         assertNull(openTabBottomTab(HomeScreen.Tab.More(toDownloads = true), style))
         assertNull(openTabBottomTab(HomeScreen.Tab.More(toDownloads = false, toLibraryUpdateErrors = true), style))
         assertEquals(MoreTab, openTabBottomTab(HomeScreen.Tab.More(toDownloads = true), NavigationStyle.Classic))

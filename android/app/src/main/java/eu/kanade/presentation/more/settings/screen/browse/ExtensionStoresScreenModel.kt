@@ -138,7 +138,7 @@ class ExtensionStoresScreenModel(
         // KMK <--
         screenModelScope.launchIO {
             removeExtensionStore(indexUrl)
-            extensionManager.findAvailableExtensions()
+            extensionManager.findAvailableExtensions(force = true)
         }
     }
 
@@ -163,7 +163,7 @@ class ExtensionStoresScreenModel(
 
     fun refreshExtensionList() {
         screenModelScope.launchIO {
-            extensionManager.findAvailableExtensions()
+            extensionManager.findAvailableExtensions(force = true)
         }
     }
     // KMK <--

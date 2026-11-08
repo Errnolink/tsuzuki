@@ -13,7 +13,17 @@ public sealed class NonPumpingSyncContext : SynchronizationContext
         SetWaitNotificationRequired();
     }
 
-    public override void Post(SendOrPostCallback d, object? state) => queue.TryEnqueue(() => d(state));
+    public override void Post(SendOrPostCallback d, object? state) => queue.TryEnqueue(() =>
+    {
+        try
+        {
+            d(state);
+        }
+        catch (Exception e)
+        {
+            Log.Error("post", e);
+        }
+    });
 
     public override void Send(SendOrPostCallback d, object? state)
     {

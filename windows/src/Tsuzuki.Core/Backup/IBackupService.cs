@@ -19,7 +19,7 @@ public interface IBackupTarget
 
 public interface IBackupService
 {
-    IReadOnlyList<IBackupTarget> DiscoverTargets();
+    Task<IReadOnlyList<IBackupTarget>> DiscoverTargetsAsync();
     Task<BackupResult> CreateAsync(IBackupTarget target, CancellationToken ct = default);
     Task<RestoreResult> RestoreAsync(Stream tachibk, CancellationToken ct = default);
 }

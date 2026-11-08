@@ -134,3 +134,12 @@ fun resolveRightArrow(isRtl: Boolean, enabledPrevious: Boolean, enabledNext: Boo
 fun resolveEffectiveBarStyle(barStyle: ReaderBarStyle, navBarType: NavBarType): ReaderBarStyle {
     return if (navBarType == NavBarType.Bottom) barStyle else ReaderBarStyle.Classic
 }
+
+fun pagesLeftInChapter(currentPage: Int, totalPages: Int): String? {
+    if (totalPages <= 0 || currentPage < 1 || currentPage > totalPages) return null
+    return when (val left = totalPages - currentPage) {
+        0 -> "Last page in chapter"
+        1 -> "1 page left in chapter"
+        else -> "$left pages left in chapter"
+    }
+}

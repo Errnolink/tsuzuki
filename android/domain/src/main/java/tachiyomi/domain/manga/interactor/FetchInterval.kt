@@ -101,11 +101,10 @@ class FetchInterval(
             .toLocalDate()
             .atStartOfDay()
         val timeSinceLatest = ChronoUnit.DAYS.between(latestDate, dateTime).toInt()
-        val cycle = timeSinceLatest.floorDiv(
-            interval.absoluteValue.takeIf { interval < 0 }
-                ?: increaseInterval(interval, timeSinceLatest, increaseWhenOver = 10),
-        )
-        return latestDate.plusDays((cycle + 1) * interval.absoluteValue.toLong()).toEpochSecond(dateTime.offset) * 1000
+        val effective = interval.absoluteValue.takeIf { interval < 0 }
+            ?: increaseInterval(interval, timeSinceLatest, increaseWhenOver = 10)
+        val cycle = timeSinceLatest.floorDiv(effective)
+        return latestDate.plusDays((cycle + 1) * effective.toLong()).toEpochSecond(dateTime.offset) * 1000
     }
 
     private fun increaseInterval(delta: Int, timeSinceLatest: Int, increaseWhenOver: Int): Int {

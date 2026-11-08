@@ -43,6 +43,10 @@ internal sealed class RenderCache
 
     public void Invalidate()
     {
-        lock (_gate) _epoch++;
+        lock (_gate)
+        {
+            _epoch++;
+            _entry = null;
+        }
     }
 }

@@ -6,6 +6,7 @@ import androidx.compose.animation.core.FiniteAnimationSpec
 import androidx.compose.animation.core.tween
 import androidx.compose.runtime.Immutable
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.Font
 import androidx.compose.ui.text.font.FontFamily
@@ -48,6 +49,74 @@ internal fun tsuzukiColors(dark: Boolean, accent: Color? = null) = if (dark) {
         accent = accent ?: Color(0xFF205DC2), onAccent = Color.White,
         destructive = Color(0xFFBC2925), success = Color(0xFF1E6B39), isDark = false,
     )
+}
+
+fun tsuzukiCardColors(card: Color): TsuzukiColors {
+    val dark = tsuzukiColors(true)
+    fun mix(amount: Float) = androidx.compose.ui.graphics.lerp(card, Color.White, amount)
+    val max = maxOf(card.red, card.green, card.blue)
+    val min = minOf(card.red, card.green, card.blue)
+    val delta = max - min
+    val hueDegrees = when {
+        delta == 0f -> 0f
+        max == card.red -> 60f * (((card.green - card.blue) / delta).mod(6f))
+        max == card.green -> 60f * ((card.blue - card.red) / delta + 2f)
+        else -> 60f * ((card.red - card.green) / delta + 4f)
+    }
+    val hue = Color.hsv(hueDegrees.coerceIn(0f, 359.99f), if (max == 0f) 0f else delta / max, 1f)
+    return TsuzukiColors(
+        background = card,
+        grouped = mix(0.07f),
+        elevated = mix(0.13f),
+        text = dark.text,
+        secondary = mix(0.86f),
+        separator = mix(0.2f),
+        selectedFill = readableUnder(mix(0.1f), dark.text),
+        tabTint = dark.tabTint,
+        glassTint = mix(0.1f),
+        accent = androidx.compose.ui.graphics.lerp(hue, Color.White, 0.86f),
+        onAccent = card,
+        destructive = dark.destructive,
+        success = dark.success,
+        isDark = true,
+    )
+}
+
+private fun readableUnder(fill: Color, text: Color, minContrast: Float = 4.5f): Color {
+    val textLum = text.luminance()
+    var candidate = fill
+    repeat(24) {
+        if ((textLum + 0.05f) / (candidate.luminance() + 0.05f) >= minContrast) return candidate
+        candidate = Color(candidate.red * 0.94f, candidate.green * 0.94f, candidate.blue * 0.94f, candidate.alpha)
+    }
+    return candidate
+}
+
+fun lerpColors(from: TsuzukiColors, to: TsuzukiColors, fraction: Float): TsuzukiColors {
+    val f = fraction.coerceIn(0f, 1f)
+    if (f <= 0f) return from
+    if (f >= 1f) return to
+    fun l(a: Color, b: Color) = androidx.compose.ui.graphics.lerp(a, b, f)
+    return TsuzukiColors(
+        background = l(from.background, to.background),
+        grouped = l(from.grouped, to.grouped),
+        elevated = l(from.elevated, to.elevated),
+        text = l(from.text, to.text),
+        secondary = l(from.secondary, to.secondary),
+        separator = l(from.separator, to.separator),
+        selectedFill = l(from.selectedFill, to.selectedFill),
+        tabTint = l(from.tabTint, to.tabTint),
+        glassTint = l(from.glassTint, to.glassTint),
+        accent = l(from.accent, to.accent),
+        onAccent = l(from.onAccent, to.onAccent),
+        destructive = l(from.destructive, to.destructive),
+        success = l(from.success, to.success),
+        isDark = if (f < 0.5f) from.isDark else to.isDark,
+    )
+}
+
+object BrandColors {
+    val mangaDex = Color(0xFFFF6740)
 }
 
 private val Inter = FontFamily(
@@ -105,7 +174,7 @@ object TsuzukiCorners {
 }
 
 @Immutable
-data class TsuzukiMotion(val reduced: Boolean = false, val standardTokens: Boolean = false) {
+data class TsuzukiMotion(val reduced: Boolean = false) {
     val pressScale = 0.97f
     val pressMillis = 80
     val coverPressScale = 0.985f
@@ -125,8 +194,7 @@ data class TsuzukiMotion(val reduced: Boolean = false, val standardTokens: Boole
     fun <T> tabSpring(): SpringSpec<T> = physicalSpring(tabStiffness, tabDamping)
     fun <T> sheetSpring(): SpringSpec<T> = physicalSpring(sheetStiffness, sheetDamping)
 
-    fun chromeFade(): FiniteAnimationSpec<Float> =
-        if (standardTokens) tween(M3Motion.Short3, easing = M3Motion.Standard) else tween(chromeFadeMillis)
+    fun chromeFade(): FiniteAnimationSpec<Float> = tween(M3Motion.Short3, easing = M3Motion.Standard)
 
     private fun <T> physicalSpring(stiffness: Float, damping: Float, mass: Float = 1f): SpringSpec<T> =
         spring(stiffness = stiffness / mass, dampingRatio = damping / (2f * sqrt(stiffness * mass)))

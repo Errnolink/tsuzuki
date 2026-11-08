@@ -1,7 +1,7 @@
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
+using Microsoft.UI.Xaml.Input;
 using Microsoft.UI.Xaml.Media;
-using Microsoft.UI.Xaml.Media.Imaging;
 using Tsuzuki.App.Design;
 using Tsuzuki.Core.Library;
 
@@ -12,6 +12,7 @@ public sealed partial class StripPageView : Grid
     private readonly StackPanel slices = new();
     private readonly Border placeholder = new() { Background = new SolidColorBrush(Windows.UI.Color.FromArgb(18, 255, 255, 255)) };
     private readonly TextBlock placeholderText = new() { Foreground = new SolidColorBrush(Windows.UI.Color.FromArgb(120, 255, 255, 255)), FontSize = 13, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center };
+    private TappedEventHandler? retryHandler;
 
     public StripPageView()
     {
@@ -25,6 +26,7 @@ public sealed partial class StripPageView : Grid
 
     public void Prepare(int page, double width, double aspect)
     {
+        DropRetry();
         Page = page;
         Aspect = aspect;
         Width = width;
@@ -34,20 +36,30 @@ public sealed partial class StripPageView : Grid
         placeholderText.Text = (page + 1).ToString();
     }
 
-    public void SetPage(DecodedPage page, IReadOnlyList<SoftwareBitmapSource> sources)
+    public void Clear()
     {
+        DropRetry();
+        Page = -1;
+        slices.Children.Clear();
+        placeholder.Visibility = Visibility.Visible;
+        placeholderText.Text = string.Empty;
+    }
+
+    public void SetPage(DecodedPage page)
+    {
+        DropRetry();
         Aspect = page.Aspect;
         Height = Width * page.Aspect;
         slices.Children.Clear();
         var total = page.Slices.Sum(s => s.Height);
-        for (var i = 0; i < sources.Count; i++)
+        foreach (var slice in page.Slices)
         {
             slices.Children.Add(new Image
             {
-                Source = sources[i],
+                Source = slice.Source,
                 Stretch = Stretch.Fill,
                 Width = Width,
-                Height = Height * page.Slices[i].Height / Math.Max(1, total),
+                Height = Height * slice.Height / Math.Max(1, total),
             });
         }
         placeholder.Visibility = Visibility.Collapsed;
@@ -55,20 +67,31 @@ public sealed partial class StripPageView : Grid
 
     public void ShowError(Action retry)
     {
+        DropRetry();
         placeholderText.Text = "Couldn't load page " + (Page + 1) + ". Click to retry.";
         placeholder.Visibility = Visibility.Visible;
-        void Handler(object s, Microsoft.UI.Xaml.Input.TappedRoutedEventArgs e)
+        retryHandler = (_, e) =>
         {
-            placeholder.Tapped -= Handler;
+            DropRetry();
             e.Handled = true;
             placeholderText.Text = (Page + 1).ToString();
             retry();
+        };
+        placeholder.Tapped += retryHandler;
+    }
+
+    private void DropRetry()
+    {
+        if (retryHandler is not null)
+        {
+            placeholder.Tapped -= retryHandler;
+            retryHandler = null;
         }
-        placeholder.Tapped += Handler;
     }
 
     public void ShowFooter(ChapterRow? next, Action goNext)
     {
+        DropRetry();
         slices.Children.Clear();
         placeholder.Visibility = Visibility.Collapsed;
         Height = 260;
@@ -123,7 +146,11 @@ public sealed partial class StripFactory(ReaderPage reader) : IElementFactory
     {
         if (args.Element is StripPageView view)
         {
-            realized.Remove(view.Page);
+            if (realized.TryGetValue(view.Page, out var owner) && owner == view)
+            {
+                realized.Remove(view.Page);
+            }
+            view.Clear();
             pool.Push(view);
         }
     }

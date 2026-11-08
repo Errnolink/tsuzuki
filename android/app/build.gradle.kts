@@ -32,8 +32,8 @@ android {
     defaultConfig {
         applicationId = "dev.errnolink.tsuzuki"
 
-        versionCode = 33
-        versionName = "0.1.0"
+        versionCode = 34
+        versionName = "0.2.0"
 
         buildConfigField("String", "COMMIT_COUNT", "\"${getCommitCount()}\"")
         buildConfigField("String", "COMMIT_SHA", "\"${getGitSha()}\"")
@@ -98,6 +98,7 @@ android {
             initWith(release)
 
             applicationIdSuffix = ".beta"
+            isProfileable = true
 
             versionNameSuffix = debug.versionNameSuffix
             signingConfig = debug.signingConfig

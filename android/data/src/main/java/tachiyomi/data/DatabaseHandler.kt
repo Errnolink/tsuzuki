@@ -54,4 +54,6 @@ interface DatabaseHandler {
         countQuery: Database.() -> Query<Long>,
         queryProvider: Database.(Long, Long) -> Query<T>,
     ): PagingSource<Long, T>
+
+    suspend fun <T> holdingSubscriptions(block: suspend () -> T): T
 }

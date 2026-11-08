@@ -23,6 +23,7 @@ public static class Icons
     public const string Plus = "\ue13d";
     public const string Layers = "\ue529";
     public const string Refresh = "\ue145";
+    public const string SyncOff = "\ue498";
     public const string Maximize = "\ue112";
     public const string Minimize = "\ue11a";
     public const string Fullscreen = "\ue534";

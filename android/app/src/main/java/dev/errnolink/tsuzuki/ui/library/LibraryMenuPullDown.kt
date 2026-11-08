@@ -1,15 +1,17 @@
 package dev.errnolink.tsuzuki.ui.library
 
 import androidx.compose.runtime.Composable
-import dev.errnolink.tsuzuki.designsystem.Bell
+import dev.errnolink.tsuzuki.designsystem.BookOpen
 import dev.errnolink.tsuzuki.designsystem.ChartLine
 import dev.errnolink.tsuzuki.designsystem.Download
 import dev.errnolink.tsuzuki.designsystem.EyeOff
 import dev.errnolink.tsuzuki.designsystem.Info
+import dev.errnolink.tsuzuki.designsystem.Layers
 import dev.errnolink.tsuzuki.designsystem.PullDownDivider
 import dev.errnolink.tsuzuki.designsystem.PullDownMenu
 import dev.errnolink.tsuzuki.designsystem.PullDownMenuItem
 import dev.errnolink.tsuzuki.designsystem.SettingsLucide
+import dev.errnolink.tsuzuki.designsystem.TriangleAlert
 import dev.errnolink.tsuzuki.designsystem.TsuzukiIcons
 
 @Composable
@@ -42,6 +44,7 @@ fun LibraryMenuPullDown(
         )
         PullDownMenuItem(
             text = "Downloaded only",
+            icon = TsuzukiIcons.Download,
             selected = downloadedOnly,
             onClick = {
                 onToggleDownloadedOnly()
@@ -50,7 +53,7 @@ fun LibraryMenuPullDown(
         PullDownDivider()
         PullDownMenuItem(
             text = "Download queue",
-            icon = TsuzukiIcons.Download,
+            icon = TsuzukiIcons.Layers,
             onClick = {
                 onDismissRequest()
                 onOpenDownloadQueue()
@@ -58,7 +61,7 @@ fun LibraryMenuPullDown(
         )
         PullDownMenuItem(
             text = "Library update errors",
-            icon = TsuzukiIcons.Bell,
+            icon = TsuzukiIcons.TriangleAlert,
             onClick = {
                 onDismissRequest()
                 onOpenLibraryUpdateErrors()
@@ -93,6 +96,7 @@ fun LibraryMenuPullDown(
         )
         PullDownMenuItem(
             text = "Help",
+            icon = TsuzukiIcons.BookOpen,
             onClick = {
                 onDismissRequest()
                 onOpenHelp()

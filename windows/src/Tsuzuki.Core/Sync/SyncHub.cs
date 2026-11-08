@@ -47,8 +47,15 @@ public sealed class SyncHub : ISyncHub, IDisposable
     private TaskCompletionSource _seqSignal = new(TaskCreationOptions.RunContinuationsAsynchronously);
     private const int MaxVersionWaitSeconds = 30;
     private static readonly TimeSpan VersionRecheck = TimeSpan.FromSeconds(1);
+    private static readonly TimeSpan StopGrace = TimeSpan.FromSeconds(2);
+    private readonly object _keyGate = new();
+    private string? _apiKey;
+    private string? _pcName;
     private readonly object _debounceGate = new();
     private Timer? _progressDebounceTimer;
+    private static readonly TimeSpan WarmDelay = TimeSpan.FromSeconds(30);
+    private Timer? _warmTimer;
+    private int _warmStarted;
 
     private void SignalSeq()
     {
@@ -112,27 +119,35 @@ public sealed class SyncHub : ISyncHub, IDisposable
 
     public event EventHandler? StatusChanged;
 
-    public async Task StartAsync(CancellationToken ct = default)
+    public event EventHandler? AuthRejected;
+
+    public Task StartAsync(CancellationToken ct = default) => Task.Run(() => StartCoreAsync(ct), ct);
+
+    private async Task StartCoreAsync(CancellationToken ct)
     {
         if (_app != null) return;
+        EnsureApiKey();
+        PcName();
         Exception? failure = null;
         for (var offset = 0; offset <= 20; offset++)
         {
             var port = PreferredPort + offset;
+            WebApplication? app = null;
             try
             {
-                var app = BuildApp(port);
+                app = BuildApp(port);
                 await app.StartAsync(ct).ConfigureAwait(false);
                 var boundPort = ActualPort(app, port);
                 _app = app;
                 _status = new HubStatus(true, boundPort, LanAddresses(boundPort), null);
                 StatusChanged?.Invoke(this, EventArgs.Empty);
-                _ = new SyncEngine(_db, _store).BeginWarmSnapshot();
+                ScheduleWarmSnapshot();
                 return;
             }
             catch (Exception ex) when (ex is AddressInUseException or IOException or SocketException)
             {
                 failure = ex;
+                if (app != null) await app.DisposeAsync().ConfigureAwait(false);
             }
         }
         _status = new HubStatus(false, 0, Array.Empty<string>(), failure?.Message ?? "no free port");
@@ -140,12 +155,31 @@ public sealed class SyncHub : ISyncHub, IDisposable
         throw new InvalidOperationException("could not bind the sync hub", failure);
     }
 
+    private void ScheduleWarmSnapshot()
+    {
+        Volatile.Write(ref _warmStarted, 0);
+        var timer = new Timer(_ => BeginWarmSnapshot(), null, Timeout.InfiniteTimeSpan, Timeout.InfiniteTimeSpan);
+        Interlocked.Exchange(ref _warmTimer, timer)?.Dispose();
+        timer.Change(WarmDelay, Timeout.InfiniteTimeSpan);
+    }
+
+    private void BeginWarmSnapshot()
+    {
+        if (Interlocked.Exchange(ref _warmStarted, 1) != 0) return;
+        Interlocked.Exchange(ref _warmTimer, null)?.Dispose();
+        _ = new SyncEngine(_db, _store).BeginWarmSnapshot();
+    }
+
     public async Task StopAsync()
     {
         if (_app == null) return;
         var app = _app;
         _app = null;
-        await app.StopAsync().ConfigureAwait(false);
+        Interlocked.Exchange(ref _warmTimer, null)?.Dispose();
+        using (var stop = new CancellationTokenSource(StopGrace))
+        {
+            await app.StopAsync(stop.Token).ConfigureAwait(false);
+        }
         await app.DisposeAsync().ConfigureAwait(false);
         _status = new HubStatus(false, 0, Array.Empty<string>(), null);
         StatusChanged?.Invoke(this, EventArgs.Empty);
@@ -167,6 +201,7 @@ public sealed class SyncHub : ISyncHub, IDisposable
     {
         var key = NewApiKey();
         await _db.SetMetaAsync("api_key", key).ConfigureAwait(false);
+        lock (_keyGate) _apiKey = key;
         return GetPairing();
     }
 
@@ -180,22 +215,36 @@ public sealed class SyncHub : ISyncHub, IDisposable
 
     internal string PcName()
     {
-        using var db = _db.Open();
-        var stored = _db.GetMeta(db, "pc_name");
-        if (stored.Length > 0) return stored;
-        var machine = Environment.MachineName;
-        _db.SetMeta(db, "pc_name", machine);
-        return machine;
+        lock (_keyGate)
+        {
+            if (_pcName != null) return _pcName;
+            using var db = _db.Open();
+            var stored = _db.GetMeta(db, "pc_name");
+            if (stored.Length == 0)
+            {
+                stored = Environment.MachineName;
+                _db.SetMeta(db, "pc_name", stored);
+            }
+            _pcName = stored;
+            return stored;
+        }
     }
 
     internal string EnsureApiKey()
     {
-        using var db = _db.Open();
-        var existing = _db.GetMeta(db, "api_key");
-        if (existing.Length > 0) return existing;
-        var key = NewApiKey();
-        _db.SetMeta(db, "api_key", key);
-        return key;
+        lock (_keyGate)
+        {
+            if (_apiKey != null) return _apiKey;
+            using var db = _db.Open();
+            var existing = _db.GetMeta(db, "api_key");
+            if (existing.Length == 0)
+            {
+                existing = NewApiKey();
+                _db.SetMeta(db, "api_key", existing);
+            }
+            _apiKey = existing;
+            return existing;
+        }
     }
 
     private static string NewApiKey()
@@ -223,9 +272,13 @@ public sealed class SyncHub : ISyncHub, IDisposable
 
     private WebApplication BuildApp(int port)
     {
-        var builder = WebApplication.CreateBuilder(new WebApplicationOptions { Args = Array.Empty<string>() });
+        var builder = WebApplication.CreateSlimBuilder(new WebApplicationOptions { Args = Array.Empty<string>() });
         builder.Logging.ClearProviders();
-        builder.WebHost.ConfigureKestrel(options => options.Listen(IPAddress.Any, port));
+        builder.WebHost.ConfigureKestrel(options =>
+        {
+            options.Limits.MaxRequestBodySize = _maxBodyBytes + 1;
+            options.Listen(IPAddress.Any, port);
+        });
 
         var app = builder.Build();
         app.Use(async (ctx, next) => await InvokeAuth(ctx, next).ConfigureAwait(false));
@@ -237,6 +290,7 @@ public sealed class SyncHub : ISyncHub, IDisposable
     {
         app.MapGet("/api/sync/v2/capabilities", async ctx =>
         {
+            BeginWarmSnapshot();
             var seq = await _db.ReadAsync(db => _db.GetSeq(db)).ConfigureAwait(false);
             ctx.Response.Headers[HeaderSyncCaps] = CapChapterDelta + "," + CapVersionWait;
             await ctx.Response.WriteAsJsonAsync(new
@@ -254,14 +308,15 @@ public sealed class SyncHub : ISyncHub, IDisposable
             var since = long.TryParse(ctx.Request.Query["since"], out var s) ? s : (long?)null;
             var waitSeconds = int.TryParse(ctx.Request.Query["wait"], out var w) ? Math.Clamp(w, 0, MaxVersionWaitSeconds) : 0;
             var deadline = DateTime.UtcNow.AddSeconds(waitSeconds);
+            using var abort = CancellationTokenSource.CreateLinkedTokenSource(ctx.RequestAborted, app.Lifetime.ApplicationStopping);
             long seq;
             while (true)
             {
                 var signal = _seqSignal.Task;
                 seq = await _db.ReadAsync(db => _db.GetSeq(db)).ConfigureAwait(false);
                 var remaining = deadline - DateTime.UtcNow;
-                if (since is null || (seq > since && !ProgressPending) || remaining <= TimeSpan.Zero || ctx.RequestAborted.IsCancellationRequested) break;
-                await Task.WhenAny(signal, Task.Delay(remaining < VersionRecheck ? remaining : VersionRecheck, ctx.RequestAborted)).ConfigureAwait(false);
+                if (since is null || (seq > since && !ProgressPending) || remaining <= TimeSpan.Zero || abort.IsCancellationRequested) break;
+                await Task.WhenAny(signal, Task.Delay(remaining < VersionRecheck ? remaining : VersionRecheck, abort.Token)).ConfigureAwait(false);
             }
             ctx.Response.ContentType = "application/json";
             await ctx.Response.WriteAsync("{\"seq\":" + seq.ToString() + "}").ConfigureAwait(false);
@@ -308,8 +363,17 @@ public sealed class SyncHub : ISyncHub, IDisposable
                 .Split(',')
                 .Any(cap => cap.Trim().Equals(CapChapterDelta, StringComparison.OrdinalIgnoreCase));
             var engine = new SyncEngine(_db, _store);
-            var result = await engine.Merge(deviceId, deviceName, incoming, cursor,
-                string.Equals(Header(ctx, HeaderFull), "true", StringComparison.OrdinalIgnoreCase), deleted, body.Buffer.AsMemory(0, body.Length), chapterDelta).ConfigureAwait(false);
+            EngineResult result;
+            try
+            {
+                result = await engine.Merge(deviceId, deviceName, incoming, cursor,
+                    string.Equals(Header(ctx, HeaderFull), "true", StringComparison.OrdinalIgnoreCase), deleted, body.Buffer.AsMemory(0, body.Length), chapterDelta).ConfigureAwait(false);
+            }
+            catch (InvalidDataException)
+            {
+                await BadRequest(ctx, "body is not a valid backup").ConfigureAwait(false);
+                return;
+            }
 
             var data = result.Wire ?? result.Backup.ToByteArray();
             ctx.Response.Headers[HeaderCursor] = result.Cursor.ToString();
@@ -392,6 +456,7 @@ public sealed class SyncHub : ISyncHub, IDisposable
                 return;
             }
             RecordFailure(remote);
+            AuthRejected?.Invoke(this, EventArgs.Empty);
             ctx.Response.StatusCode = 401;
             ctx.Response.ContentType = "text/plain";
             await ctx.Response.WriteAsync("Unauthorized").ConfigureAwait(false);
@@ -491,18 +556,8 @@ public sealed class SyncHub : ISyncHub, IDisposable
         return ((output.GetBuffer(), (int)output.Length), false);
     }
 
-    private static BackupMessage DecodeBackup(byte[] buffer, int length)
-    {
-        if (length >= 2 && buffer[0] == 0x1f && buffer[1] == 0x8b)
-        {
-            using var gzip = new System.IO.Compression.GZipStream(new MemoryStream(buffer, 0, length, false), System.IO.Compression.CompressionMode.Decompress);
-            using var output = new MemoryStream();
-            gzip.CopyTo(output);
-            buffer = output.ToArray();
-            length = buffer.Length;
-        }
-        return length == 0 ? new BackupMessage() : BackupMessage.Parser.ParseFrom(new ReadOnlySpan<byte>(buffer, 0, length));
-    }
+    private static BackupMessage DecodeBackup(byte[] buffer, int length) =>
+        length == 0 ? new BackupMessage() : BackupMessage.Parser.ParseFrom(new ReadOnlySpan<byte>(buffer, 0, length));
 
     private static async Task WriteBackup(HttpContext ctx, byte[] data, byte[]? gzData = null)
     {

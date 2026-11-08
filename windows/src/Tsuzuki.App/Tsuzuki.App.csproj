@@ -19,6 +19,7 @@
   </PropertyGroup>
   <ItemGroup>
     <Content Include="Assets\**" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="..\..\extension-host\tsuzuki-extension-host.jar" Link="extension-host\tsuzuki-extension-host.jar" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="Microsoft.WindowsAppSDK" />
@@ -28,6 +29,7 @@
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\Tsuzuki.Core\Tsuzuki.Core.csproj" />
+    <ProjectReference Include="..\Tsuzuki.Presentation\Tsuzuki.Presentation.csproj" />
   </ItemGroup>
   <Target Name="CopyAppPriOnPublish" AfterTargets="Publish">
     <Copy SourceFiles="$(OutDir)Tsuzuki.pri" DestinationFolder="$(PublishDir)" Condition="Exists('$(OutDir)Tsuzuki.pri')" />

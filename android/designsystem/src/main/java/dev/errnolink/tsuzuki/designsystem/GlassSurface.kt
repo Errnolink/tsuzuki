@@ -18,7 +18,6 @@ import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawWithCache
 import androidx.compose.ui.graphics.Color
@@ -49,8 +48,8 @@ import dev.chrisbanes.haze.HazeInputScale
 val LocalInsideGlass = staticCompositionLocalOf { false }
 val LocalNavigationMotion = compositionLocalOf { false }
 
-private const val CollapseFraction = 2f
-private const val RestoreFraction = 6f
+private val CollapseDistance = 56.dp
+private val RestoreDistance = 12.dp
 
 @Stable
 class GlassContext internal constructor(
@@ -145,17 +144,8 @@ fun rememberGlassContext(enableHeroLens: Boolean = false): GlassContext {
     val haze = rememberHazeState(blurEnabled = enabled)
     val backdrop = if (enabled && enableHeroLens && Build.VERSION.SDK_INT >= 33) rememberLayerBackdrop() else null
     val density = LocalDensity.current
-    val windowHeightPx = LocalWindowInfo.current.containerSize.height.toFloat()
-    val collapseThresholdPx = if (windowHeightPx > 0f) {
-        windowHeightPx / CollapseFraction
-    } else {
-        with(density) { 370.dp.toPx() }
-    }
-    val restoreThresholdPx = if (windowHeightPx > 0f) {
-        windowHeightPx / RestoreFraction
-    } else {
-        with(density) { 220.dp.toPx() }
-    }
+    val collapseThresholdPx = with(density) { CollapseDistance.toPx() }
+    val restoreThresholdPx = with(density) { RestoreDistance.toPx() }
     return remember(haze, backdrop, enabled, collapseThresholdPx, restoreThresholdPx) {
         GlassContext(haze, backdrop, enabled, collapseThresholdPx, restoreThresholdPx)
     }

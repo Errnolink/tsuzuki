@@ -217,4 +217,13 @@ class ReaderBarLogicTest {
         assertEquals(ReaderBarStyle.Classic, resolveEffectiveBarStyle(ReaderBarStyle.Capsule, NavBarType.VerticalRight))
         assertEquals(ReaderBarStyle.Classic, resolveEffectiveBarStyle(ReaderBarStyle.Classic, NavBarType.VerticalRight))
     }
+
+    @org.junit.jupiter.api.Test
+    fun `chrome counts the pages left in the current chapter`() {
+        org.junit.jupiter.api.Assertions.assertEquals("27 pages left in chapter", pagesLeftInChapter(3, 30))
+        org.junit.jupiter.api.Assertions.assertEquals("1 page left in chapter", pagesLeftInChapter(29, 30))
+        org.junit.jupiter.api.Assertions.assertEquals("Last page in chapter", pagesLeftInChapter(30, 30))
+        org.junit.jupiter.api.Assertions.assertEquals(null, pagesLeftInChapter(-1, 30))
+        org.junit.jupiter.api.Assertions.assertEquals(null, pagesLeftInChapter(1, 0))
+    }
 }

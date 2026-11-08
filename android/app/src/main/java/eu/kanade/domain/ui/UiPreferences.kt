@@ -22,7 +22,7 @@ class UiPreferences(
 
     fun tabletUiMode() = preferenceStore.getEnum("tablet_ui_mode", TabletUiMode.AUTOMATIC)
 
-    fun navigationStyle() = preferenceStore.getEnum("pref_navigation_style", NavigationStyle.MangaDex)
+    fun navigationStyle() = preferenceStore.getEnum("pref_navigation_style", NavigationStyle.Simple)
 
     fun imagesInDescription() = preferenceStore.getBoolean("pref_render_images_description", true)
 

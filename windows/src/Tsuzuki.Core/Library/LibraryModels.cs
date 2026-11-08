@@ -28,7 +28,8 @@ public sealed record ContinueEntry(
     int LastPageRead,
     int? PageCount,
     long LastReadAt,
-    string? LastDevice);
+    string? LastDevice,
+    long Source);
 
 public sealed record MergedRef(long Source, string Url, bool IsInfoManga, int Priority);
 
@@ -46,7 +47,13 @@ public sealed record MangaDetails(
     bool Favorite,
     long DateAdded,
     IReadOnlyList<long> CategoryUids,
-    IReadOnlyList<MergedRef> MergedRefs);
+    IReadOnlyList<MergedRef> MergedRefs,
+    long LastRefreshed)
+{
+    public static readonly TimeSpan RefreshLifetime = TimeSpan.FromHours(6);
+
+    public bool RefreshDue(DateTimeOffset now) => now.ToUnixTimeMilliseconds() - LastRefreshed > (long)RefreshLifetime.TotalMilliseconds;
+}
 
 public sealed record ChapterRow(
     long ChapterId,
@@ -74,7 +81,9 @@ public sealed record HistoryEntry(
     string ChapterName,
     double ChapterNumber,
     int LastPageRead,
-    long LastReadAt);
+    long LastReadAt,
+    long Source,
+    int? PageCount);
 
 public sealed record UpdateEntry(
     long MangaId,
@@ -87,7 +96,8 @@ public sealed record UpdateEntry(
     long DateFetch,
     long DateUpload,
     bool Read,
-    int LastPageRead);
+    int LastPageRead,
+    long Source);
 
 public sealed record ChapterSyncResult(int Added, int Updated, int Removed);
 

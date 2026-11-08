@@ -150,6 +150,7 @@ class AppModule(val app: Application) : InjektModule {
 
         addSingletonFactory { ChapterCache(app, get(), get()) }
         addSingletonFactory { CoverCache(app) }
+        addSingletonFactory { dev.errnolink.tsuzuki.data.listing.ListingCache(java.io.File(app.cacheDir, "listings")) }
 
         addSingletonFactory { NetworkHelper(app, get(), get()) }
         addSingletonFactory { JavaScriptEngine(app) }

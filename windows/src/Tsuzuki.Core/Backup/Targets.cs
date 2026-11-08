@@ -8,30 +8,16 @@ public sealed class LocalFolderTarget(string path) : IBackupTarget
     public string DisplayName => "This PC";
     public string Location => path;
 
-    public async Task<string> WriteAsync(string fileName, Stream data, CancellationToken ct = default)
-    {
-        Directory.CreateDirectory(path);
-        var full = System.IO.Path.Combine(path, fileName);
-        await using var output = File.Create(full);
-        await data.CopyToAsync(output, ct).ConfigureAwait(false);
-        return full;
-    }
+    public Task<string> WriteAsync(string fileName, Stream data, CancellationToken ct = default) =>
+        BackupFiles.WriteAsync(path, fileName, data, ct);
 
     public Task<IReadOnlyList<BackupFileInfo>> ListAsync(CancellationToken ct = default) =>
-        Task.FromResult(Enumerate().ToList() as IReadOnlyList<BackupFileInfo>);
+        Task.Run(() => Enumerate().ToList() as IReadOnlyList<BackupFileInfo>, ct);
 
     public Task<Stream> OpenReadAsync(string fileName, CancellationToken ct = default) =>
         Task.FromResult<Stream>(File.OpenRead(System.IO.Path.Combine(path, fileName)));
 
-    public Task PruneAsync(int keep, CancellationToken ct = default)
-    {
-        var files = Enumerate().OrderByDescending(f => f.CreatedAt).ToList();
-        foreach (var file in files.Skip(keep))
-        {
-            File.Delete(System.IO.Path.Combine(path, file.Name));
-        }
-        return Task.CompletedTask;
-    }
+    public Task PruneAsync(int keep, CancellationToken ct = default) => Task.Run(() => BackupFiles.Prune(path, keep, ct), ct);
 
     private IEnumerable<BackupFileInfo> Enumerate()
     {
@@ -55,7 +41,7 @@ public sealed class DriveForDesktopTarget : IBackupTarget
     private DriveForDesktopTarget(string myDriveRoot)
     {
         _myDriveRoot = myDriveRoot;
-        Location = System.IO.Path.Combine(myDriveRoot, "Tsuzuki", "Backups");
+        Location = System.IO.Path.Combine(myDriveRoot, AppIdentity.DriveFolder, "Backups");
     }
 
     public string Id => "drive";
@@ -127,30 +113,16 @@ public sealed class DriveForDesktopTarget : IBackupTarget
         return found;
     }
 
-    public async Task<string> WriteAsync(string fileName, Stream data, CancellationToken ct = default)
-    {
-        Directory.CreateDirectory(Location);
-        var full = System.IO.Path.Combine(Location, fileName);
-        await using var output = File.Create(full);
-        await data.CopyToAsync(output, ct).ConfigureAwait(false);
-        return full;
-    }
+    public Task<string> WriteAsync(string fileName, Stream data, CancellationToken ct = default) =>
+        BackupFiles.WriteAsync(Location, fileName, data, ct);
 
     public Task<IReadOnlyList<BackupFileInfo>> ListAsync(CancellationToken ct = default) =>
-        Task.FromResult(Enumerate().ToList() as IReadOnlyList<BackupFileInfo>);
+        Task.Run(() => Enumerate().ToList() as IReadOnlyList<BackupFileInfo>, ct);
 
     public Task<Stream> OpenReadAsync(string fileName, CancellationToken ct = default) =>
         Task.FromResult<Stream>(File.OpenRead(System.IO.Path.Combine(Location, fileName)));
 
-    public Task PruneAsync(int keep, CancellationToken ct = default)
-    {
-        var files = Enumerate().OrderByDescending(f => f.CreatedAt).ToList();
-        foreach (var file in files.Skip(keep))
-        {
-            File.Delete(System.IO.Path.Combine(Location, file.Name));
-        }
-        return Task.CompletedTask;
-    }
+    public Task PruneAsync(int keep, CancellationToken ct = default) => Task.Run(() => BackupFiles.Prune(Location, keep, ct), ct);
 
     private IEnumerable<BackupFileInfo> Enumerate()
     {
@@ -159,6 +131,57 @@ public sealed class DriveForDesktopTarget : IBackupTarget
         {
             var info = new FileInfo(file);
             yield return new BackupFileInfo(info.Name, info.Length, info.LastWriteTime);
+        }
+    }
+}
+
+internal static class BackupFiles
+{
+    public const string Prefix = "tsuzuki-pc_";
+    public const string Extension = ".tachibk";
+
+    public static async Task<string> WriteAsync(string folder, string fileName, Stream data, CancellationToken ct)
+    {
+        Directory.CreateDirectory(folder);
+        var full = System.IO.Path.Combine(folder, fileName);
+        var temp = full + ".tmp";
+        try
+        {
+            await using (var output = File.Create(temp))
+            {
+                await data.CopyToAsync(output, ct).ConfigureAwait(false);
+            }
+            File.Move(temp, full, overwrite: true);
+        }
+        catch
+        {
+            try
+            {
+                File.Delete(temp);
+            }
+            catch (IOException)
+            {
+            }
+            catch (UnauthorizedAccessException)
+            {
+            }
+            throw;
+        }
+        return full;
+    }
+
+    public static void Prune(string folder, int keep, CancellationToken ct)
+    {
+        if (!Directory.Exists(folder)) return;
+        var own = Directory.EnumerateFiles(folder, Prefix + "*" + Extension)
+            .Select(f => new FileInfo(f))
+            .Where(f => f.Name.StartsWith(Prefix, StringComparison.OrdinalIgnoreCase) && f.Name.EndsWith(Extension, StringComparison.OrdinalIgnoreCase))
+            .OrderByDescending(f => f.LastWriteTimeUtc)
+            .ToList();
+        foreach (var file in own.Skip(keep))
+        {
+            ct.ThrowIfCancellationRequested();
+            file.Delete();
         }
     }
 }

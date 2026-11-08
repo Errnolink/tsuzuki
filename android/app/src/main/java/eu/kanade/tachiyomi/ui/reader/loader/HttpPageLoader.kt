@@ -1,5 +1,7 @@
 package eu.kanade.tachiyomi.ui.reader.loader
 
+import dev.errnolink.tsuzuki.network.HostGate
+import dev.errnolink.tsuzuki.reader.PagePreloadPolicy
 import eu.kanade.domain.source.service.SourcePreferences
 import eu.kanade.tachiyomi.data.cache.ChapterCache
 import eu.kanade.tachiyomi.data.database.models.toDomainChapter
@@ -17,7 +19,9 @@ import kotlinx.coroutines.DelicateCoroutinesApi
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.filter
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.runInterruptible
 import kotlinx.coroutines.suspendCancellableCoroutine
@@ -29,7 +33,6 @@ import java.util.concurrent.PriorityBlockingQueue
 import kotlin.concurrent.atomics.AtomicInt
 import kotlin.concurrent.atomics.ExperimentalAtomicApi
 import kotlin.concurrent.atomics.incrementAndFetch
-import kotlin.math.min
 
 /**
  * Loader used to load chapters from an online source.
@@ -53,6 +56,8 @@ internal class HttpPageLoader(
     private val queue = PriorityBlockingQueue<PriorityPage>()
 
     private val preloadSize = /* SY --> */ readerPreferences.preloadSize().get() // SY <--
+
+    val previewPages = MutableStateFlow<Int?>(null)
 
     // SY -->
     private val dataSaver = DataSaver(source, sourcePreferences)
@@ -111,6 +116,7 @@ internal class HttpPageLoader(
      * Loads a page through the queue. Handles re-enqueueing pages if they were evicted from the cache.
      */
     override suspend fun loadPage(page: ReaderPage) = withIOContext {
+        previewPages.first { PagePreloadPolicy.mayLoad(page.index, it) }
         val imageUrl = page.imageUrl
 
         // Check if the image has been deleted
@@ -186,8 +192,8 @@ internal class HttpPageLoader(
         val pages = currentPage.chapter.pages ?: return emptyList()
         if (pageIndex == pages.lastIndex) return emptyList()
 
-        return pages
-            .subList(pageIndex + 1, min(pageIndex + 1 + amount, pages.size))
+        return PagePreloadPolicy.lookahead(pageIndex, amount, pages.size, previewPages.value)
+            .map { pages[it] }
             .mapNotNull {
                 if (it.status == Page.State.Queue) {
                     PriorityPage(it, 0).apply { queue.offer(this) }
@@ -213,7 +219,7 @@ internal class HttpPageLoader(
 
             if (!chapterCache.isImageInCache(imageUrl)) {
                 page.status = Page.State.DownloadImage
-                val imageResponse = source.getImage(page, dataSaver)
+                val imageResponse = HostGate.pages.pass(imageUrl) { source.getImage(page, dataSaver) }
                 chapterCache.putImageToCache(imageUrl, imageResponse)
             }
 

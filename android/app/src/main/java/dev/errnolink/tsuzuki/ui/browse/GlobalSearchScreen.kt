@@ -81,6 +81,7 @@ fun GlobalSearchScreen(
     onToggleResults: () -> Unit,
     getManga: @Composable (Manga) -> State<Manga>,
     onClickSource: (Source) -> Unit,
+    onRetrySource: (Source) -> Unit,
     onClickItem: (Manga) -> Unit,
     onLongClickItem: (Manga) -> Unit,
     bulkFavoriteScreenModel: BulkFavoriteScreenModel,
@@ -207,6 +208,7 @@ fun GlobalSearchScreen(
             libraryFilter = libraryFilter,
             getManga = getManga,
             onClickSource = onClickSource,
+            onRetrySource = onRetrySource,
             onClickItem = onClickItem,
             onLongClickItem = onLongClickItem,
             selection = bulkFavoriteState.selection,
@@ -222,6 +224,7 @@ internal fun GlobalSearchContent(
     libraryFilter: GlobalLibraryFilter,
     getManga: @Composable (Manga) -> State<Manga>,
     onClickSource: (Source) -> Unit,
+    onRetrySource: (Source) -> Unit,
     onClickItem: (Manga) -> Unit,
     onLongClickItem: (Manga) -> Unit,
     selection: List<Manga>,
@@ -340,21 +343,25 @@ internal fun GlobalSearchContent(
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .clickable { onClickSource(source) }
                                 .padding(horizontal = 20.dp, vertical = 10.dp),
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.spacedBy(8.dp),
                         ) {
                             SourceIcon(source = tachiyomi.domain.source.model.Source(source.id, source.lang, source.name, supportsLatest = false, isStub = false), modifier = Modifier.size(18.dp))
-                            TsuzukiText(
-                                sourceName,
-                                style = TsuzukiTheme.typography.subhead.copy(fontWeight = FontWeight.SemiBold),
-                            )
-                            TsuzukiText(
-                                "error",
-                                style = TsuzukiTheme.typography.footnote,
-                                color = colors.destructive,
-                            )
+                            Column(Modifier.weight(1f).clickable { onClickSource(source) }) {
+                                TsuzukiText(
+                                    sourceName,
+                                    style = TsuzukiTheme.typography.subhead.copy(fontWeight = FontWeight.SemiBold),
+                                )
+                                TsuzukiText(
+                                    result.throwable.message?.takeIf { it.isNotBlank() } ?: "Search failed",
+                                    style = TsuzukiTheme.typography.footnote,
+                                    color = colors.secondary,
+                                    maxLines = 1,
+                                    overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                                )
+                            }
+                            dev.errnolink.tsuzuki.designsystem.PillButton("Retry", { onRetrySource(source) })
                         }
                     }
                 }

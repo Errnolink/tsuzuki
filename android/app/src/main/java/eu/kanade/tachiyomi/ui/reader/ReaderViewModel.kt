@@ -34,6 +34,8 @@ import eu.kanade.tachiyomi.source.online.all.MergedSource
 import eu.kanade.tachiyomi.ui.reader.chapter.ReaderChapterItem
 import eu.kanade.tachiyomi.ui.reader.loader.ChapterLoader
 import eu.kanade.tachiyomi.ui.reader.loader.DownloadPageLoader
+import eu.kanade.tachiyomi.ui.reader.loader.HttpPageLoader
+import dev.errnolink.tsuzuki.reader.PagePreloadPolicy
 import eu.kanade.tachiyomi.ui.reader.model.InsertPage
 import eu.kanade.tachiyomi.ui.reader.model.ReaderChapter
 import eu.kanade.tachiyomi.ui.reader.model.ReaderPage
@@ -675,6 +677,7 @@ class ReaderViewModel @JvmOverloads constructor(
         try {
             logcat { "Preloading ${chapter.chapter.url}" }
             loader.loadChapter(chapter)
+            (chapter.pageLoader as? HttpPageLoader)?.previewPages?.value = PagePreloadPolicy.NEXT_CHAPTER_PAGES
         } catch (e: Throwable) {
             if (e is CancellationException) {
                 throw e
@@ -706,6 +709,7 @@ class ReaderViewModel @JvmOverloads constructor(
         // SY <--
 
         val selectedChapter = page.chapter
+        (selectedChapter.pageLoader as? HttpPageLoader)?.previewPages?.value = null
         val pages = selectedChapter.pages ?: return
 
         // Save last page read and mark as read if needed

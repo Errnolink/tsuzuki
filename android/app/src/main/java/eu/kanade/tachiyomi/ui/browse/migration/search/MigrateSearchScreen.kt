@@ -47,6 +47,7 @@ class MigrateSearchScreen(private val mangaId: Long) : Screen() {
             onChangeSearchFilter = screenModel::setSourceFilter,
             onToggleResults = screenModel::toggleFilterResults,
             onClickSource = { navigator.push(MigrateSourceSearchScreen(state.from!!, it.id, state.searchQuery)) },
+            onRetrySource = screenModel::retry,
             onClickItem = {
                 // KMK -->
                 if (bulkFavoriteState.selectionMode) {

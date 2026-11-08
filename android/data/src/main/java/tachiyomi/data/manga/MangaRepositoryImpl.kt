@@ -53,6 +53,11 @@ class MangaRepositoryImpl(
         return handler.awaitList { mangasQueries.getFavorites(MangaMapper::mapManga) }
     }
 
+    override fun getFavoritesAsFlow(): Flow<List<Manga>> {
+        return handler.subscribeToList(debounceMillis = 300) { mangasQueries.getFavorites(MangaMapper::mapManga) }
+            .distinctUntilChanged()
+    }
+
     override suspend fun getReadMangaNotInLibrary(): List<Manga> {
         return handler.awaitList { mangasQueries.getReadMangaNotInLibrary(MangaMapper::mapManga) }
     }
@@ -129,6 +134,17 @@ class MangaRepositoryImpl(
         updateInfo: Boolean,
         // KMK <--
     ): List<Manga> {
+        if (!updateInfo) {
+            val existing = manga.map { getMangaByUrlAndSourceId(it.url, it.source) }
+            val missing = manga.filterIndexed { index, _ -> existing[index] == null }
+            if (missing.isEmpty()) return existing.map { it!! }
+            val inserted = insertNetworkMangaRows(missing, updateInfo).iterator()
+            return existing.map { it ?: inserted.next() }
+        }
+        return insertNetworkMangaRows(manga, updateInfo)
+    }
+
+    private suspend fun insertNetworkMangaRows(manga: List<Manga>, updateInfo: Boolean): List<Manga> {
         return handler.await(inTransaction = true) {
             manga.map {
                 mangasQueries.insertNetworkManga(

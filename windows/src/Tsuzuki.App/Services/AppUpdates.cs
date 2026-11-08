@@ -64,7 +64,7 @@ public static class AppUpdates
         }
         try
         {
-            manager ??= new UpdateManager(new WindowsUpdateSource());
+            manager ??= new UpdateManager(new WindowsUpdateSource(), new UpdateOptions { ExplicitChannel = Tsuzuki.Core.AppIdentity.UpdateChannel });
             if (!manager.IsInstalled)
             {
                 return UpdateCheck.NotInstalled;
@@ -92,8 +92,10 @@ public static class AppUpdates
 
     private static void Offer(SemanticVersion version)
     {
-        Toasts.Show("Update ready", $"Tsuzuki {version} is downloaded. Restart to apply it.", Icons.Download,
-            "Restart", () => _ = RestartAsync(), seconds: 30);
+        AppInfoBars.Show("update", Microsoft.UI.Xaml.Controls.InfoBarSeverity.Informational,
+            $"Tsuzuki {version} available",
+            "It's downloaded. Restart when you're ready; your library and reading place are kept.",
+            "Restart to update", () => _ = Log.Guard("update-restart", RestartAsync));
     }
 
     private static async Task RestartAsync()
@@ -108,6 +110,15 @@ public static class AppUpdates
             return;
         }
         await AppHost.PrepareExitAsync();
-        updates.ApplyUpdatesAndRestart(asset);
+        try
+        {
+            updates.ApplyUpdatesAndRestart(asset);
+        }
+        catch (Exception e)
+        {
+            Log.Error("update apply", e);
+            await Dialogs.ConfirmAsync("The update couldn't be installed", "Tsuzuki will close now. Open it again to keep reading; the update will be offered again.", "Close Tsuzuki");
+            Microsoft.UI.Xaml.Application.Current.Exit();
+        }
     }
 }

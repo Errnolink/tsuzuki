@@ -138,6 +138,11 @@ class LibraryUpdateJob(private val context: Context, workerParams: WorkerParamet
 
     private var mangaToUpdate: List<LibraryManga> = mutableListOf()
 
+    private val smartUpdate by lazy { dev.errnolink.tsuzuki.data.SmartUpdate.of(context) }
+    private val smartRun by lazy {
+        tags.contains(WORK_NAME_AUTO) && Injekt.get<dev.errnolink.tsuzuki.preference.TsuzukiPreferences>().smartUpdate().get()
+    }
+
     override suspend fun doWork(): Result {
         if (tags.contains(WORK_NAME_AUTO)) {
             if (Build.VERSION.SDK_INT < Build.VERSION_CODES.P) {
@@ -362,6 +367,10 @@ class LibraryUpdateJob(private val context: Context, workerParams: WorkerParamet
                     it.manga.title
                 },
             )
+        if (smartRun) {
+            val now = System.currentTimeMillis()
+            mangaToUpdate = mangaToUpdate.filter { smartUpdate.isDue(it.manga.id, it.manga.nextUpdate, now) }
+        }
 
         notifier.showQueueSizeWarningNotificationIfNeeded(mangaToUpdate)
 
@@ -387,7 +396,7 @@ class LibraryUpdateJob(private val context: Context, workerParams: WorkerParamet
      * @return an observable delivering the progress of each update.
      */
     private suspend fun updateChapterList() {
-        val semaphore = Semaphore(5)
+        val semaphore = Semaphore(2)
         val progressCount = AtomicInt(0)
         val currentlyUpdatingManga = CopyOnWriteArrayList<Manga>()
         val newUpdates = CopyOnWriteArrayList<Pair<Manga, Array<Chapter>>>()
@@ -445,6 +454,7 @@ class LibraryUpdateJob(private val context: Context, workerParams: WorkerParamet
                                     manga,
                                 ) {
                                     try {
+                                        if (smartRun) smartUpdate.markChecked(manga.id)
                                         val newChapters = updateManga(manga, fetchWindow)
                                             .sortedByDescending { it.sourceOrder }
 
@@ -749,7 +759,8 @@ class LibraryUpdateJob(private val context: Context, workerParams: WorkerParamet
             prefInterval: Int? = null,
         ) {
             val preferences = Injekt.get<LibraryPreferences>()
-            val interval = prefInterval ?: preferences.autoUpdateInterval().get()
+            val smart = Injekt.get<dev.errnolink.tsuzuki.preference.TsuzukiPreferences>().smartUpdate().get()
+            val interval = if (smart) dev.errnolink.tsuzuki.data.SmartUpdate.RUN_EVERY_HOURS else prefInterval ?: preferences.autoUpdateInterval().get()
             if (interval > 0) {
                 val restrictions = preferences.autoUpdateDeviceRestrictions().get()
                 val networkType = if (DEVICE_NETWORK_NOT_METERED in restrictions) {

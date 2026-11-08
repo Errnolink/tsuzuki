@@ -182,6 +182,30 @@ public class SyncEdgesTests : IDisposable
     }
 
     [Fact]
+    public async Task GroupEncodedUnknownTopLevelFieldSurvivesTheHubByteForByte()
+    {
+        var backup = TestLib.Backup(TestLib.Manga(MdSource, "/manga/abc", "Manga", version: 1, modified: 10));
+        using var group = new MemoryStream();
+        WriteVarint(group, (811u << 3) | 3);
+        WriteVarint(group, (1u << 3) | 0);
+        WriteVarint(group, 42);
+        WriteVarint(group, (2u << 3) | 2);
+        WriteVarint(group, 4);
+        group.Write(Encoding.UTF8.GetBytes("note"));
+        WriteVarint(group, (811u << 3) | 4);
+        var bytes = AppendField(backup.ToByteArray(), 610, "komikku-feeds").Concat(group.ToArray()).ToArray();
+
+        var upload = await _client.SendAsync(Merge(bytes, "A", 0));
+        Assert.Equal(HttpStatusCode.OK, upload.StatusCode);
+
+        var full = await _client.SendAsync(Merge(new BackupMessage(), "B", 0));
+        var rendered = Parse(full);
+        var raw = SyncRows.ExtractUnknownFields(rendered.ToByteArray());
+        Assert.Equal(group.ToArray(), raw.Single(f => f.FieldNumber == 811).WireBytes);
+        Assert.Equal("komikku-feeds", ReadUnknownField(rendered, 610));
+    }
+
+    [Fact]
     public async Task NoChangeDeltaFromSecondDeviceReceivesNothingWithCursorAndUnchanged()
     {
         await _client.SendAsync(Merge(TestLib.Backup(

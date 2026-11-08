@@ -5,7 +5,6 @@ import cafe.adriel.voyager.core.model.StateScreenModel
 import java.time.ZonedDateTime
 import cafe.adriel.voyager.core.model.screenModelScope
 import eu.kanade.domain.chapter.interactor.SetReadStatus
-import eu.kanade.domain.manga.interactor.UpdateManga
 import eu.kanade.domain.track.service.TrackPreferences
 import eu.kanade.domain.source.service.SourcePreferences
 import eu.kanade.tachiyomi.data.download.DownloadManager
@@ -35,6 +34,9 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import logcat.LogPriority
 import tachiyomi.core.common.preference.Preference
 import tachiyomi.core.common.preference.PreferenceStore
@@ -79,13 +81,13 @@ data class UnifiedFeedState(
     val isLoading: Boolean = true,
     val isRefreshing: Boolean = false,
     val upNext: ImmutableList<UpNextCard> = persistentListOf(),
+    val upNextLoaded: Boolean = false,
     val dayGroups: Map<LocalDate, List<FeedTitleGroup>> = emptyMap(),
     val totalUnreadCount: Int = 0,
     val selectedChip: FeedChip = FeedChip.ALL,
     val isMangaDexLoggedIn: Boolean = false,
     val mangaDexUsername: String? = null,
     val mangaDexLastChecked: Instant? = null,
-    val expandedGroups: Set<String> = emptySet(),
     val followsError: Boolean = false,
 )
 
@@ -109,7 +111,6 @@ class UnifiedFeedScreenModel : StateScreenModel<UnifiedFeedState>(UnifiedFeedSta
     private val getManga: GetManga by injectLazy()
     private val getChapter: GetChapter by injectLazy()
     private val setReadStatus: SetReadStatus by injectLazy()
-    private val updateManga: UpdateManga by injectLazy()
     private val refreshManga: UpdateMangaFromRemote by injectLazy()
     private val importManga: NetworkToLocalManga by injectLazy()
     private val sources: SourceManager by injectLazy()
@@ -148,38 +149,37 @@ class UnifiedFeedScreenModel : StateScreenModel<UnifiedFeedState>(UnifiedFeedSta
                 }
                 .collectLatest { histories ->
                     try {
-                        val cards = buildList {
-                            for (entry in histories) {
-                                val next = getNextChapters.await(entry.mangaId, entry.chapterId, onlyUnread = false)
-                                val target = next.firstOrNull() ?: continue
-                                val isCurrent = target.id == entry.chapterId && !entry.read
-                                val lastPage = if (isCurrent) entry.lastPageRead else 0L
-                                val totalPages = target.lastPageRead.takeIf { it > 0 }?.toInt()
-                                val fraction = if (isCurrent && totalPages != null && totalPages > 0) {
-                                    ((lastPage + 1).toFloat() / totalPages).coerceIn(0f, 1f)
-                                } else null
-
-                                add(
+                        val cards = coroutineScope {
+                            histories.map { entry ->
+                                async {
+                                    val next = getNextChapters.await(entry.mangaId, entry.chapterId, onlyUnread = false)
+                                    val target = next.firstOrNull() ?: return@async null
+                                    val isCurrent = target.id == entry.chapterId && !entry.read
+                                    val lastPage = if (isCurrent) entry.lastPageRead else 0L
+                                    val totalPages = target.lastPageRead.takeIf { it > 0 }?.toInt()
+                                    val fraction = if (isCurrent && totalPages != null && totalPages > 0) {
+                                        ((lastPage + 1).toFloat() / totalPages).coerceIn(0f, 1f)
+                                    } else null
                                     UpNextCard(
                                         mangaId = entry.mangaId,
                                         chapterId = target.id,
                                         mangaTitle = entry.title,
-                                        chapterName = if (target.chapterNumber >= 0) "Ch. ${target.chapterNumber.toString().removeSuffix(".0")}" else target.name,
+                                        chapterName = if (target.chapterNumber >= 0) "Ch. ${eu.kanade.presentation.util.formatChapterNumber(target.chapterNumber)}" else target.name,
                                         lastPageRead = lastPage,
                                         pageTotal = totalPages,
                                         progressFraction = fraction,
                                         coverData = entry.coverData,
                                         isResume = isCurrent,
-                                    ),
-                                )
-                            }
+                                    )
+                                }
+                            }.awaitAll().filterNotNull()
                         }
-                        mutableState.update { it.copy(upNext = cards.toImmutableList()) }
+                        mutableState.update { it.copy(upNext = cards.toImmutableList(), upNextLoaded = true) }
                     } catch (e: CancellationException) {
                         throw e
                     } catch (e: Exception) {
                         logcat(LogPriority.ERROR, e) { "Feed up-next mapping failed" }
-                        mutableState.update { it.copy(upNext = persistentListOf()) }
+                        mutableState.update { it.copy(upNext = persistentListOf(), upNextLoaded = true) }
                     }
                 }
         }
@@ -194,9 +194,7 @@ class UnifiedFeedScreenModel : StateScreenModel<UnifiedFeedState>(UnifiedFeedSta
                 bookmarked = null,
                 hideExcludedScanlators = false,
             ).distinctUntilChanged()
-            val favoritesFlow = mangaRepository.getLibraryMangaAsFlow()
-                .map { library -> library.map { it.manga }.distinctBy { it.id } }
-                .distinctUntilChanged()
+            val favoritesFlow = mangaRepository.getFavoritesAsFlow()
             combine(updatesFlow, followsSource, favoritesFlow) { updates, follows, favorites ->
                 FeedSources(updates, follows, favorites)
             }
@@ -324,17 +322,6 @@ class UnifiedFeedScreenModel : StateScreenModel<UnifiedFeedState>(UnifiedFeedSta
         latestSources?.let { rebuildFeed(it) }
     }
 
-    fun toggleExpand(groupKey: String) {
-        mutableState.update { state ->
-            val next = if (state.expandedGroups.contains(groupKey)) {
-                state.expandedGroups - groupKey
-            } else {
-                state.expandedGroups + groupKey
-            }
-            state.copy(expandedGroups = next)
-        }
-    }
-
     fun refreshAll() {
         mutableState.update { it.copy(isRefreshing = true) }
         LibraryUpdateJob.startNow(Injekt.get())
@@ -347,15 +334,6 @@ class UnifiedFeedScreenModel : StateScreenModel<UnifiedFeedState>(UnifiedFeedSta
             if (chapterIds.isNotEmpty()) {
                 val domainChapters = chapterIds.mapNotNull { getChapter.await(it) }
                 setReadStatus.await(read = true, chapters = domainChapters.toTypedArray())
-            }
-        }
-    }
-
-    fun markChapterAsRead(chapterItem: FeedChapterItem) {
-        val cid = chapterItem.chapterId ?: return
-        screenModelScope.launchIO {
-            getChapter.await(cid)?.let { chapter ->
-                setReadStatus.await(read = true, chapters = arrayOf(chapter))
             }
         }
     }
@@ -386,10 +364,6 @@ class UnifiedFeedScreenModel : StateScreenModel<UnifiedFeedState>(UnifiedFeedSta
         }
     }
 
-    fun openOldestUnread(group: FeedTitleGroup) {
-        group.oldestUnreadChapter?.let { openChapter(group, it) }
-    }
-
     fun openChapter(group: FeedTitleGroup, target: FeedChapterItem) {
         if (target.chapterId != null && target.mangaId > 0) {
             navChannel.trySend(FeedNavigation.Chapter(target.mangaId, target.chapterId))
@@ -409,20 +383,6 @@ class UnifiedFeedScreenModel : StateScreenModel<UnifiedFeedState>(UnifiedFeedSta
                     navChannel.send(FeedNavigation.Title(title.id))
                 }
             }
-        }
-    }
-
-    fun addFollowToLibrary(group: FeedTitleGroup) {
-        val mdId = group.mangaDexId ?: return
-        screenModelScope.launchIO {
-            val current = mangaDexSource ?: return@launchIO
-            val mdEntry = followsSource.value.firstOrNull { it.manga.id == mdId } ?: return@launchIO
-            val title = importManga(
-                MdUtil.createMangaEntry(mdEntry.manga, MangaDexFeatures(current).language).toDomainManga(current.id),
-                updateInfo = false,
-            )
-            updateManga.awaitUpdateFavorite(title.id, true)
-            refreshAll()
         }
     }
 

@@ -17,9 +17,12 @@ public sealed partial class CoverImage : Grid
     private static readonly object CacheGate = new();
     private static readonly LinkedList<(string Key, SoftwareBitmap Bitmap, long Bytes)> Cache = new();
     private static readonly Dictionary<string, LinkedListNode<(string Key, SoftwareBitmap Bitmap, long Bytes)>> CacheIndex = [];
-    private static readonly ConcurrentDictionary<string, Task<SoftwareBitmap?>> Decoding = new();
-    private static readonly SemaphoreSlim DecodeSlots = new(3);
+    private static readonly ConcurrentDictionary<string, Lazy<Task<SoftwareBitmap?>>> Decoding = new();
+    private static readonly NewestFirstGate DecodeSlots = new(Math.Clamp(Environment.ProcessorCount / 2, 3, 6));
     private static long cachedBytes;
+    private static readonly ConcurrentDictionary<string, double> Ratios = new();
+
+    public static double? RatioOf(string? url) => url is not null && Ratios.TryGetValue(url, out var ratio) ? ratio : null;
 
     public static readonly DependencyProperty UrlProperty = DependencyProperty.Register(
         nameof(Url), typeof(string), typeof(CoverImage), new PropertyMetadata(null, (d, _) => ((CoverImage)d).Load()));
@@ -27,6 +30,7 @@ public sealed partial class CoverImage : Grid
     private readonly Image image = new() { Stretch = Stretch.UniformToFill, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center };
     private readonly Border placeholder = new();
     private int version;
+    private CancellationTokenSource? loadCts;
     private string? shownUrl;
     private bool borrowed;
 
@@ -35,7 +39,11 @@ public sealed partial class CoverImage : Grid
         placeholder.Background = Design.Theme.Brush("TzSkeleton");
         Children.Add(placeholder);
         Children.Add(image);
-        Unloaded += (_, _) => version++;
+        Unloaded += (_, _) =>
+        {
+            version++;
+            CancelLoad();
+        };
         Loaded += (_, _) =>
         {
             if (image.Source is null)
@@ -53,6 +61,8 @@ public sealed partial class CoverImage : Grid
 
     public int DecodeWidth { get; set; } = 240;
 
+    public long SourceId { get; set; }
+
     public Stretch Stretch
     {
         get => image.Stretch;
@@ -63,9 +73,12 @@ public sealed partial class CoverImage : Grid
 
     public bool HasSource => image.Source is not null;
 
+    public SoftwareBitmap? Bitmap { get; private set; }
+
     public void SetSource(ImageSource? source, string? url = null)
     {
         version++;
+        CancelLoad();
         if (source is not null)
         {
             ReleaseSource();
@@ -95,7 +108,7 @@ public sealed partial class CoverImage : Grid
     {
         if (!borrowed)
         {
-            (image.Source as IDisposable)?.Dispose();
+            Native.Release(image.Source);
         }
         borrowed = false;
     }
@@ -108,10 +121,39 @@ public sealed partial class CoverImage : Grid
 
     public event EventHandler? ImageLoaded;
 
+    private void CancelLoad()
+    {
+        loadCts?.Cancel();
+        loadCts?.Dispose();
+        loadCts = null;
+    }
+
+    private bool OnScreen()
+    {
+        DependencyObject? node = this;
+        while (node is not null)
+        {
+            if (node is UIElement { Visibility: Visibility.Collapsed })
+            {
+                return false;
+            }
+            node = VisualTreeHelper.GetParent(node);
+        }
+        return true;
+    }
+
+    private int PixelWidth()
+    {
+        var logical = ActualWidth > 0 ? Math.Min(ActualWidth, DecodeWidth) : DecodeWidth;
+        var scale = XamlRoot?.RasterizationScale ?? 1.0;
+        var pixels = (int)Math.Ceiling(logical * scale);
+        return pixels <= 32 ? Math.Max(1, pixels) : (pixels + 31) / 32 * 32;
+    }
 
     private async void Load()
     {
         var my = ++version;
+        CancelLoad();
         var url = Url;
         if (url is not null && url == shownUrl && image.Source is not null)
         {
@@ -129,22 +171,29 @@ public sealed partial class CoverImage : Grid
             placeholder.Opacity = 1;
             return;
         }
+        var cts = loadCts = new CancellationTokenSource();
+        var ct = cts.Token;
         try
         {
-            var bitmap = await DecodedAsync(Services.Engine.Covers, url, DecodeWidth);
+            var bitmap = await DecodedAsync(Services.Engine.Covers, url, SourceId, PixelWidth(), OnScreen(), ct);
             if (my != version || bitmap is null)
             {
                 return;
+            }
+            if (bitmap.PixelWidth > 0 && bitmap.PixelHeight > 0)
+            {
+                Ratios[url] = (double)bitmap.PixelWidth / bitmap.PixelHeight;
             }
             var source = new SoftwareBitmapSource();
             await source.SetBitmapAsync(bitmap);
             if (my != version)
             {
-                source.Dispose();
+                Native.Release(source);
                 return;
             }
             ReleaseSource();
             image.Source = source;
+            Bitmap = bitmap;
             ImageLoaded?.Invoke(this, EventArgs.Empty);
             if (!hadSource)
             {
@@ -165,9 +214,53 @@ public sealed partial class CoverImage : Grid
         }
     }
 
-    private static async Task<SoftwareBitmap?> DecodedAsync(IImageCache cache, string url, int width)
+    private static async Task<SoftwareBitmap?> DecodedAsync(IImageCache cache, string url, long sourceId, int width, bool urgent, CancellationToken ct)
     {
         var key = url + "|" + width;
+        if (Cached(key) is { } hit)
+        {
+            return hit;
+        }
+        if (!Uri.TryCreate(url, UriKind.Absolute, out var uri))
+        {
+            return null;
+        }
+        var path = Thumbnails.Existing(key) ?? await cache.GetFileAsync(ImageRequest.Cover(sourceId, uri), ImagePriority.Visible, ct);
+        while (true)
+        {
+            ct.ThrowIfCancellationRequested();
+            if (Cached(key) is { } ready)
+            {
+                return ready;
+            }
+            var created = false;
+            var lazy = Decoding.GetOrAdd(key, _ =>
+            {
+                created = true;
+                return new Lazy<Task<SoftwareBitmap?>>(() => DecodeAsync(path, width, key, urgent, ct));
+            });
+            if (!created && urgent)
+            {
+                DecodeSlots.Promote(key);
+            }
+            try
+            {
+                return await lazy.Value.WaitAsync(ct);
+            }
+            catch (OperationCanceledException) when (!ct.IsCancellationRequested)
+            {
+                Decoding.TryRemove(new KeyValuePair<string, Lazy<Task<SoftwareBitmap?>>>(key, lazy));
+            }
+            catch (Exception e) when (e is not OperationCanceledException)
+            {
+                cache.Invalidate(ImageRequest.Cover(sourceId, uri));
+                throw;
+            }
+        }
+    }
+
+    private static SoftwareBitmap? Cached(string key)
+    {
         lock (CacheGate)
         {
             if (CacheIndex.TryGetValue(key, out var node))
@@ -177,48 +270,18 @@ public sealed partial class CoverImage : Grid
                 return node.Value.Bitmap;
             }
         }
-        return await Decoding.GetOrAdd(key, _ => Task.Run(() => DecodeAsync(cache, url, width, key)));
+        return null;
     }
 
-    private static async Task<SoftwareBitmap?> DecodeAsync(IImageCache cache, string url, int width, string key)
+    private static async Task<SoftwareBitmap?> DecodeAsync(string path, int width, string key, bool urgent, CancellationToken ct)
     {
         try
         {
-            if (!Uri.TryCreate(url, UriKind.Absolute, out var uri))
-            {
-                return null;
-            }
-            await DecodeSlots.WaitAsync();
+            await DecodeSlots.WaitAsync(key, urgent, ct).ConfigureAwait(false);
             try
             {
-                var path = await cache.GetFileAsync(uri, ImagePriority.Visible);
-                var bitmap = await Task.Run(async () =>
-                {
-                    using var stream = File.OpenRead(path).AsRandomAccessStream();
-                    var decoder = await BitmapDecoder.CreateAsync(stream);
-                    var sourceWidth = decoder.OrientedPixelWidth;
-                    var sourceHeight = decoder.OrientedPixelHeight;
-                    var scale = Math.Min(1.0, (double)width / sourceWidth);
-                    var targetWidth = Math.Max(1, (int)Math.Round(sourceWidth * scale));
-                    var targetHeight = Math.Max(1, (int)Math.Round(sourceHeight * scale));
-                    var pixels = await decoder.GetPixelDataAsync(
-                        BitmapPixelFormat.Bgra8,
-                        BitmapAlphaMode.Premultiplied,
-                        new BitmapTransform
-                        {
-                            ScaledWidth = (uint)targetWidth,
-                            ScaledHeight = (uint)targetHeight,
-                            InterpolationMode = BitmapInterpolationMode.Fant,
-                        },
-                        ExifOrientationMode.RespectExifOrientation,
-                        ColorManagementMode.ColorManageToSRgb);
-                    return SoftwareBitmap.CreateCopyFromBuffer(
-                        pixels.DetachPixelData().AsBuffer(),
-                        BitmapPixelFormat.Bgra8,
-                        targetWidth,
-                        targetHeight,
-                        BitmapAlphaMode.Premultiplied);
-                });
+                ct.ThrowIfCancellationRequested();
+                var bitmap = await Task.Run(() => Thumbnails.LoadAsync(path, width, key));
                 Remember(key, bitmap);
                 return bitmap;
             }

@@ -32,6 +32,7 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import mihon.domain.manga.model.toDomainManga
+import dev.errnolink.tsuzuki.data.listing.ListingCache
 import tachiyomi.core.common.util.lang.launchIO
 import tachiyomi.core.common.util.lang.withIOContext
 import tachiyomi.domain.manga.interactor.GetManga
@@ -74,6 +75,7 @@ class BrowseHomeScreenModel(
     private val networkToLocalManga: NetworkToLocalManga = Injekt.get(),
     private val getExtensions: GetExtensionsByType = Injekt.get(),
     private val extensionManager: ExtensionManager = Injekt.get(),
+    private val listingCache: ListingCache = Injekt.get(),
 ) : StateScreenModel<BrowseHomeState>(BrowseHomeState()) {
 
     init {
@@ -142,6 +144,7 @@ class BrowseHomeScreenModel(
 
     fun retryShelves() {
         val sourceId = state.value.selectedSourceId ?: return
+        listingCache.forget(sourceId)
         screenModelScope.launch {
             loadSourceShelves(sourceId)
         }
@@ -199,7 +202,9 @@ class BrowseHomeScreenModel(
                             .data.map { exh.md.utils.MdUtil.createMangaEntry(it, features.language) }
                     }.getOrDefault(emptyList())
                 } else {
-                    runCatching { source.getPopularManga(1).mangas }.getOrDefault(emptyList())
+                    runCatching {
+                        listingCache.page(ListingCache.Key(sourceId, ListingCache.Kind.Popular, 1)) { source.getPopularManga(1) }.mangas
+                    }.getOrDefault(emptyList())
                 }
                 val domainManga = popPage.map { it.toDomainManga(mangaDex?.id ?: sourceId) }.distinctBy { it.url }
                 val localManga = networkToLocalManga(domainManga, updateInfo = false)
@@ -213,7 +218,9 @@ class BrowseHomeScreenModel(
         launch(Dispatchers.IO) {
             try {
                 val latestPage = if (source.supportsLatest) {
-                    runCatching { source.getLatestUpdates(1).mangas }.getOrDefault(emptyList())
+                    runCatching {
+                        listingCache.page(ListingCache.Key(sourceId, ListingCache.Kind.Latest, 1)) { source.getLatestUpdates(1) }.mangas
+                    }.getOrDefault(emptyList())
                 } else {
                     emptyList()
                 }

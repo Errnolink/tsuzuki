@@ -101,6 +101,28 @@ public class HttpSyncTests : IDisposable
     }
 
     [Fact]
+    public async Task StoppingTheHubDoesNotWaitForAPhoneLongPoll()
+    {
+        var since = await _library.Db.ReadAsync(db => _library.Db.GetSeq(db));
+        using var request = new HttpRequestMessage(HttpMethod.Get, $"/api/sync/v2/version?since={since}&wait=25");
+        request.Headers.TryAddWithoutValidation("X-API-Token", _key);
+        var polling = _client.SendAsync(request);
+        await Task.Delay(500);
+
+        var clock = System.Diagnostics.Stopwatch.StartNew();
+        await _hub.StopAsync();
+
+        Assert.True(clock.Elapsed < TimeSpan.FromSeconds(3), $"stop took {clock.Elapsed.TotalSeconds:F1} s");
+        try
+        {
+            (await polling).Dispose();
+        }
+        catch (HttpRequestException)
+        {
+        }
+    }
+
+    [Fact]
     public async Task PageTurnsWakeWaitingPhonesOnceAfterReadingPauses()
     {
         var mangaId = await _library.Store.UpsertFromSourceAsync(MdSource, new SManga("/manga/abc", "Title"));
@@ -158,6 +180,23 @@ public class HttpSyncTests : IDisposable
         using var response = await _client.SendAsync(request);
         Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
         Assert.Contains("text/plain", response.Content.Headers.ContentType?.ToString() ?? "");
+    }
+
+    [Fact]
+    public async Task WrongKeyRaisesAuthRejectedAndCorrectKeyDoesNot()
+    {
+        var rejections = 0;
+        _hub.AuthRejected += (_, _) => Interlocked.Increment(ref rejections);
+        using (var good = Merge(new BackupMessage(), "A", 0))
+        using (var accepted = await _client.SendAsync(good))
+        {
+            Assert.NotEqual(HttpStatusCode.Unauthorized, accepted.StatusCode);
+        }
+        Assert.Equal(0, rejections);
+        using var bad = Merge(new BackupMessage(), "A", 0, token: "WRONGKEY");
+        using var rejected = await _client.SendAsync(bad);
+        Assert.Equal(HttpStatusCode.Unauthorized, rejected.StatusCode);
+        Assert.Equal(1, rejections);
     }
 
     [Fact]

@@ -269,8 +269,8 @@ internal sealed class ItemStore
 
     public List<SyncItem> AllItems(SqliteConnection db)
     {
-        var items = MangaItems(db, db.Query("SELECT * FROM manga"));
-        items.AddRange(ChapterItems(db, "1 = 1"));
+        var items = MangaItems(db, db.Query("SELECT * FROM manga m WHERE " + SyncedManga));
+        items.AddRange(ChapterItems(db, SyncedManga));
         items.AddRange(LoadAllCategories(db));
         items.AddRange(db.Query("SELECT * FROM section")
             .Select(row => SectionItem(row, KindFromName(row.Text("kind")))));
@@ -303,7 +303,7 @@ internal sealed class ItemStore
             list.Add(chapter);
         });
 
-        var mangaRows = db.Query("SELECT * FROM manga");
+        var mangaRows = db.Query("SELECT * FROM manga m WHERE " + SyncedManga);
         var refsByManga = CategoryRefsByManga(db, mangaRows.Select(r => r.Long("id")).ToList());
         var nameKeys = NameKeyedCategories(db);
         var sourceIds = new HashSet<long>();
@@ -346,8 +346,11 @@ internal sealed class ItemStore
     private const string ChapterItemSelect =
         "SELECT ch.url, ch.version, ch.last_modified_at, ch.seq, ch.origin, ch.payload, m.source AS m_source, m.url AS m_url FROM chapter ch JOIN manga m ON m.id = ch.manga_id";
 
+    private const string SyncedManga =
+        "(m.favorite = 1 OR m.version > 0 OR m.origin IS NOT NULL OR EXISTS(SELECT 1 FROM merged_ref r WHERE r.child_source = m.source AND r.child_url = m.url))";
+
     private const string ChapterPayloadSelect =
-        "SELECT ch.payload, m.source AS m_source, m.url AS m_url FROM chapter ch JOIN manga m ON m.id = ch.manga_id";
+        "SELECT ch.payload, m.source AS m_source, m.url AS m_url FROM chapter ch CROSS JOIN manga m ON m.id = ch.manga_id WHERE " + SyncedManga;
 
     /// <summary>Applies merge writes and tombstones. Caller bumps and stores the seq.</summary>
     public ApplyOutcome Apply(SqliteConnection db, MergeOutcome outcome, long newSeq, string origin, string deviceName)
@@ -513,10 +516,40 @@ internal sealed class ItemStore
             WHERE p.favorite = 1
             """).Select(r => r.Long("id")).ToHashSet();
 
+    private static bool KeepTrackingProgress(SqliteConnection db, long source, string url, BackupManga incoming)
+    {
+        if (incoming.Tracking.Count == 0) return false;
+        var stored = db.Query("SELECT payload FROM manga WHERE source = $s AND url = $u", ("$s", source), ("$u", url)).FirstOrDefault();
+        if (stored == null) return false;
+        var existing = BackupManga.Parser.ParseFrom(stored.Blob("payload")).Tracking.ToDictionary(t => t.SyncId);
+        var changed = false;
+        foreach (var track in incoming.Tracking)
+        {
+            if (!existing.TryGetValue(track.SyncId, out var before)) continue;
+            if (before.LastChapterRead > track.LastChapterRead)
+            {
+                track.LastChapterRead = before.LastChapterRead;
+                changed = true;
+            }
+            if (before.StartedReadingDate > 0 && (track.StartedReadingDate == 0 || before.StartedReadingDate < track.StartedReadingDate))
+            {
+                track.StartedReadingDate = before.StartedReadingDate;
+                changed = true;
+            }
+            if (before.FinishedReadingDate > track.FinishedReadingDate)
+            {
+                track.FinishedReadingDate = before.FinishedReadingDate;
+                changed = true;
+            }
+        }
+        return changed;
+    }
+
     public long? WriteManga(SqliteConnection db, SyncItem item, BackupManga manga, long seq, string? origin)
     {
         if (SyncRows.MangaKeyParts(item.Key) is not { } keyParts) return null;
         var favourite = !manga.HasFavorite || manga.Favorite;
+        var payloadBytes = KeepTrackingProgress(db, keyParts.Source, keyParts.Url, manga) ? manga.ToByteArray() : item.Payload;
         db.ExecuteNonQuery("""
             INSERT INTO manga(source, url, title, author, artist, description, genres, status, thumbnail_url,
                 favorite, date_added, version, last_modified_at, seq, origin, payload, last_chapter_refresh)
@@ -535,7 +568,7 @@ internal sealed class ItemStore
             ("$thumb", manga.HasThumbnailUrl ? manga.ThumbnailUrl : null),
             ("$favorite", favourite),
             ("$date_added", manga.DateAdded), ("$version", manga.Version), ("$modified", manga.LastModifiedAt),
-            ("$seq", seq), ("$origin", origin), ("$payload", item.Payload));
+            ("$seq", seq), ("$origin", origin), ("$payload", payloadBytes));
         var id = db.Scalar<long>("SELECT id FROM manga WHERE source = $source AND url = $url",
             ("$source", keyParts.Source), ("$url", keyParts.Url));
 
@@ -577,7 +610,13 @@ internal sealed class ItemStore
             """,
             ("$uid", uid), ("$name", category.Name), ("$sort", category.Order), ("$flags", category.Flags),
             ("$version", category.Version), ("$modified", category.LastModifiedAt),
-            ("$seq", seq), ("$origin", origin), ("$payload", item.Payload));
+            ("$seq", seq), ("$origin", origin), ("$payload", uid != 0 && category.Uid == 0 ? WithUid(category, uid) : item.Payload));
+    }
+
+    private static byte[] WithUid(BackupCategory category, long uid)
+    {
+        category.Uid = uid;
+        return category.ToByteArray();
     }
 
     private long CategoryUidForNameKey(SqliteConnection db, string name)

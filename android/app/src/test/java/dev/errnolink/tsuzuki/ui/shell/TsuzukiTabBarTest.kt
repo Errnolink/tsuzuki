@@ -401,20 +401,31 @@ class TsuzukiTabBarTest {
     }
 
     @Test
-    fun `morph never lays expanded content narrower than its natural width`() {
-        val padLeft = 8f
-        val padRight = 8f
-        val expandedWidth = 1000f
-        val collapsedWidth = 180f
-        val collapsedIconCenterX = 40f
-        val iconLiftY = 6f
+    fun `minimizing shrinks the pill into a circle holding only the selected icon`() {
+        val padLeft = 4f
+        val padRight = 4f
+        val expandedWidth = 900f
+        val circle = 144f
+        val iconLiftY = 10f
         val tabCount = 3
 
-        fun iconCapsuleX(geometry: TabBarMorphGeometry, selectedIndex: Int, isRtl: Boolean): Float {
-            val inner = geometry.contentBoxWidthPx - padLeft - padRight
+        fun geometry(progress: Float, selectedIndex: Int, isRtl: Boolean) = tabBarMorphGeometry(
+            progress = progress,
+            expandedWidthPx = expandedWidth,
+            collapsedWidthPx = circle,
+            contentPaddingLeftPx = padLeft,
+            contentPaddingRightPx = padRight,
+            tabCount = tabCount,
+            selectedIndex = selectedIndex,
+            isRtl = isRtl,
+            collapsedIconCenterXPx = circle / 2f,
+            iconLiftYPx = iconLiftY,
+        )
+
+        fun slotLeft(g: TabBarMorphGeometry, tab: Int, isRtl: Boolean): Float {
+            val inner = g.contentBoxWidthPx - padLeft - padRight
             val slot = inner / tabCount
-            val centerInBox = padLeft + if (isRtl) inner - (selectedIndex + 0.5f) * slot else (selectedIndex + 0.5f) * slot
-            return geometry.contentBoxOffset.x + centerInBox
+            return g.contentBoxOffset.x + padLeft + if (isRtl) inner - (tab + 1) * slot else tab * slot
         }
 
         for (selectedIndex in 0 until tabCount) {
@@ -422,64 +433,83 @@ class TsuzukiTabBarTest {
                 var previousCapsule = Float.MAX_VALUE
                 var progress = 0f
                 while (progress <= 1.0001f) {
-                    val geometry = tabBarMorphGeometry(
-                        progress = progress,
-                        expandedWidthPx = expandedWidth,
-                        collapsedWidthPx = collapsedWidth,
-                        contentPaddingLeftPx = padLeft,
-                        contentPaddingRightPx = padRight,
-                        tabCount = tabCount,
-                        selectedIndex = selectedIndex,
-                        isRtl = isRtl,
-                        collapsedIconCenterXPx = collapsedIconCenterX,
-                        iconLiftYPx = iconLiftY,
-                    )
+                    val g = geometry(progress, selectedIndex, isRtl)
+                    val slot = g.tabStepPx
+                    assertEquals(expandedWidth, g.contentBoxWidthPx, 0.001f)
+                    assertTrue(g.capsuleWidthPx <= previousCapsule + 0.001f, "pill grew while minimizing at $progress")
+                    previousCapsule = g.capsuleWidthPx
 
-                    assertEquals(expandedWidth, geometry.contentBoxWidthPx, 0.001f)
-                    assertTrue(
-                        geometry.capsuleWidthPx in collapsedWidth..expandedWidth + 0.001f,
-                        "capsule ${geometry.capsuleWidthPx} at $progress",
-                    )
-                    assertTrue(geometry.capsuleWidthPx <= previousCapsule + 0.001f)
-                    previousCapsule = geometry.capsuleWidthPx
+                    val iconX = slotLeft(g, selectedIndex, isRtl) + slot / 2f
+                    assertTrue(iconX >= 0f && iconX <= g.capsuleWidthPx + 0.001f, "selected icon left the pill at $progress: $iconX")
 
-                    val iconX = iconCapsuleX(geometry, selectedIndex, isRtl)
-                    assertTrue(iconX >= 0f, "icon left of capsule at $progress: $iconX")
-                    assertTrue(iconX <= geometry.capsuleWidthPx, "icon right of capsule at $progress: $iconX")
-
-                    if (progress <= 0.001f) {
-                        assertEquals(0f, geometry.contentBoxOffset.x, 0.001f)
-                        assertEquals(0f, geometry.contentBoxOffset.y, 0.001f)
-                        assertEquals(1f, geometry.tabsAlpha)
-                        assertEquals(0f, geometry.collapsedAlpha)
+                    for (tab in 0 until tabCount) {
+                        if (tab == selectedIndex) continue
+                        val alpha = g.tabAlphas[tab]
+                        if (alpha <= 0.02f) continue
+                        val left = slotLeft(g, tab, isRtl) + slot * 0.15f
+                        val right = slotLeft(g, tab, isRtl) + slot * 0.85f
+                        assertTrue(
+                            left >= 0f && right <= g.capsuleWidthPx,
+                            "tab $tab cut by the pill edge while visible (alpha $alpha) at $progress",
+                        )
                     }
-                    if (progress >= 0.999f) {
-                        val iconRest = padLeft + if (isRtl) {
-                            (expandedWidth - padLeft - padRight) * (1f - (selectedIndex + 0.5f) / tabCount)
-                        } else {
-                            (expandedWidth - padLeft - padRight) * ((selectedIndex + 0.5f) / tabCount)
-                        }
-                        assertEquals(collapsedIconCenterX, iconX, 0.001f)
-                        assertEquals(collapsedIconCenterX - iconRest, geometry.contentBoxOffset.x, 0.001f)
-                        assertEquals(iconLiftY, geometry.contentBoxOffset.y, 0.001f)
-                        assertEquals(0f, geometry.tabsAlpha)
-                        assertEquals(1f, geometry.collapsedAlpha, 1e-3f)
-                    }
-                    if (progress > 0.001f && progress < 0.4f + 1e-6f) {
-                        assertEquals(1f, geometry.tabsAlpha, 1e-3f, "tabs fading before 40% at $progress")
-                    }
-                    if (progress >= 0.6f && progress < 0.999f) {
-                        assertEquals(0f, geometry.tabsAlpha, "tabs visible past 60% at $progress")
-                        assertTrue(geometry.collapsedAlpha > 0f, "chrome not started past 60% at $progress")
-                        assertEquals(0f, geometry.expandedAlpha, "indicator visible past 60% at $progress")
-                    }
-                    if (progress > 0.45f && progress < 0.55f) {
-                        assertTrue(geometry.tabsAlpha in 0.01f..0.99f, "no fade ramp at $progress")
-                        assertEquals(0f, geometry.collapsedAlpha, "early chrome at $progress")
-                    }
-                    progress += 0.05f
+                    progress += 0.02f
                 }
+                val start = geometry(0f, selectedIndex, isRtl)
+                assertEquals(expandedWidth, start.capsuleWidthPx, 0.001f)
+                assertTrue(start.tabAlphas.all { it == 1f }, "tabs hidden in the full pill")
+                assertEquals(1f, start.labelAlpha)
+                val end = geometry(1f, selectedIndex, isRtl)
+                assertEquals(circle, end.capsuleWidthPx, 0.001f, "minimized pill is not a circle")
+                assertEquals(circle / 2f, slotLeft(end, selectedIndex, isRtl) + end.tabStepPx / 2f, 0.001f)
+                assertEquals(iconLiftY, end.contentBoxOffset.y, 0.001f)
+                assertEquals(0f, end.labelAlpha, "label still shown in the circle")
+                end.tabAlphas.forEachIndexed { tab, alpha -> if (tab != selectedIndex) assertEquals(0f, alpha, "tab $tab left in the circle") }
             }
         }
+    }
+
+    @Test
+    fun `tabs leave right to left while minimizing and return left to right`() {
+        fun alphas(progress: Float) = tabBarMorphGeometry(
+            progress = progress,
+            expandedWidthPx = 900f,
+            collapsedWidthPx = 144f,
+            contentPaddingLeftPx = 4f,
+            contentPaddingRightPx = 4f,
+            tabCount = 3,
+            selectedIndex = 0,
+            isRtl = false,
+            collapsedIconCenterXPx = 72f,
+            iconLiftYPx = 10f,
+        ).tabAlphas
+        var sawOrder = false
+        var progress = 0f
+        while (progress <= 1f) {
+            val a = alphas(progress)
+            assertTrue(a[2] <= a[1] + 1e-4f, "rightmost tab outlived the middle one at $progress: $a")
+            if (a[2] < 0.05f && a[1] > 0.5f) sawOrder = true
+            progress += 0.02f
+        }
+        assertTrue(sawOrder, "no moment where the right tab is gone while the middle one still shows")
+    }
+
+    @Test
+    fun `a badge on another tab shows as a dot only once minimized`() {
+        fun dot(progress: Float) = tabBarMorphGeometry(
+            progress = progress,
+            expandedWidthPx = 900f,
+            collapsedWidthPx = 144f,
+            contentPaddingLeftPx = 4f,
+            contentPaddingRightPx = 4f,
+            tabCount = 3,
+            selectedIndex = 0,
+            isRtl = false,
+            collapsedIconCenterXPx = 72f,
+            iconLiftYPx = 10f,
+        ).badgeDotAlpha
+        assertEquals(0f, dot(0f))
+        assertEquals(0f, dot(0.3f))
+        assertEquals(1f, dot(1f))
     }
 }

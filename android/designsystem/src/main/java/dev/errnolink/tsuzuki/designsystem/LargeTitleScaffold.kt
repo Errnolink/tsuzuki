@@ -41,14 +41,19 @@ import kotlin.math.max
 
 @Composable
 fun largeTitlesEnabled(): Boolean =
-    LocalLargeTitles.current && LocalDensity.current.fontScale < 1.5f
+    LocalDensity.current.fontScale < 1.5f
+
+fun headerScrolledAway(headerTop: Int?, headerBottom: Int, firstVisibleIndex: Int, headerIndex: Int): Boolean =
+    if (headerTop == null) firstVisibleIndex > headerIndex else headerTop + headerBottom <= 0
 
 @Composable
 fun rememberLargeTitleCollapse(state: LazyListState, enabled: Boolean): State<Float> {
     val motion = TsuzukiTheme.motion
     val collapsed = remember(state, enabled) {
         derivedStateOf {
-            !enabled || state.firstVisibleItemIndex > 0 || state.firstVisibleItemScrollOffset > 48
+            if (!enabled) return@derivedStateOf true
+            val title = state.layoutInfo.visibleItemsInfo.firstOrNull { it.key == LargeTitleKey }
+            headerScrolledAway(title?.offset, title?.size ?: 0, state.firstVisibleItemIndex, 0)
         }
     }
     return animateFloatAsState(
@@ -57,6 +62,8 @@ fun rememberLargeTitleCollapse(state: LazyListState, enabled: Boolean): State<Fl
         label = "large-title-collapse",
     )
 }
+
+private const val LargeTitleKey = "tsuzuki-large-title"
 
 private val LargeTitleBlur = 10.dp
 
@@ -98,7 +105,7 @@ fun LargeTitleScaffold(
             ),
         ) {
             if (largeTitles) {
-                item(key = "tsuzuki-large-title") {
+                item(key = LargeTitleKey) {
                     val fade = M3Motion.fadeThroughOut(collapseProgress)
                     Box(
                         Modifier

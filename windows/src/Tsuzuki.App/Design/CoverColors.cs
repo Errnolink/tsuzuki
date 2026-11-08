@@ -1,4 +1,6 @@
+using System.Runtime.InteropServices.WindowsRuntime;
 using Tsuzuki.Core.Images;
+using Tsuzuki.Presentation;
 using Windows.Graphics.Imaging;
 using Windows.UI;
 
@@ -6,9 +8,9 @@ namespace Tsuzuki.App.Design;
 
 public static class CoverColors
 {
-    private static readonly Dictionary<string, Color?> Cache = [];
+    private static readonly Dictionary<string, CoverTint?> Cache = [];
 
-    public static async Task<Color?> AccentAsync(string? url)
+    public static async Task<CoverTint?> TintAsync(string? url, long sourceId)
     {
         if (url is null || Services.Engine is null || !Uri.TryCreate(url, UriKind.Absolute, out var uri))
         {
@@ -20,7 +22,7 @@ public static class CoverColors
         }
         try
         {
-            var path = await Services.Engine.Covers.GetFileAsync(uri, ImagePriority.Visible);
+            var path = await Services.Engine.Covers.GetFileAsync(ImageRequest.Cover(sourceId, uri), ImagePriority.Visible);
             var pixels = await Task.Run(async () =>
             {
                 using var file = File.OpenRead(path);
@@ -30,9 +32,9 @@ public static class CoverColors
                     ExifOrientationMode.IgnoreExifOrientation, ColorManagementMode.DoNotColorManage);
                 return data.DetachPixelData();
             });
-            var color = Pick(pixels);
-            Cache[url] = color;
-            return color;
+            var tint = CoverPalette.Tint(pixels);
+            Cache[url] = tint;
+            return tint;
         }
         catch (Exception)
         {
@@ -41,98 +43,43 @@ public static class CoverColors
         }
     }
 
-    private static Color? Pick(byte[] bgra)
+    public static CoverTint? Known(string? url) => url is not null && Cache.TryGetValue(url, out var tint) ? tint : null;
+
+    public static CoverTint? TintOf(SoftwareBitmap? bitmap, string? url)
     {
-        var weights = new double[36];
-        var sums = new (double H, double S, double V, int N)[36];
-        for (var i = 0; i + 3 < bgra.Length; i += 4)
+        if (url is null || bitmap is null || bitmap.PixelWidth <= 0 || bitmap.PixelHeight <= 0)
         {
-            var (h, s, v) = ToHsv(bgra[i + 2], bgra[i + 1], bgra[i]);
-            if (s < 0.18 || v < 0.18 || v > 0.98)
-            {
-                continue;
-            }
-            var bucket = (int)(h / 10) % 36;
-            weights[bucket] += s * v;
-            sums[bucket] = (sums[bucket].H + h, sums[bucket].S + s, sums[bucket].V + v, sums[bucket].N + 1);
+            return Known(url);
         }
-        var best = -1;
-        for (var b = 0; b < 36; b++)
+        if (Cache.TryGetValue(url, out var known))
         {
-            if (best < 0 || weights[b] > weights[best])
-            {
-                best = b;
-            }
+            return known;
         }
-        if (best < 0 || sums[best].N < 6)
+        try
+        {
+            var width = bitmap.PixelWidth;
+            var height = bitmap.PixelHeight;
+            var bytes = new byte[width * height * 4];
+            bitmap.CopyToBuffer(bytes.AsBuffer());
+            var step = Math.Max(1, (int)Math.Sqrt(width * height / 900.0));
+            var sample = new List<byte>(4 * (width / step + 1) * (height / step + 1));
+            for (var y = 0; y < height; y += step)
+            {
+                for (var x = 0; x < width; x += step)
+                {
+                    var i = (y * width + x) * 4;
+                    sample.AddRange(bytes.AsSpan(i, 4));
+                }
+            }
+            var tint = CoverPalette.Tint([.. sample]);
+            Cache[url] = tint;
+            return tint;
+        }
+        catch (Exception)
         {
             return null;
         }
-        var n = sums[best].N;
-        var hue = sums[best].H / n;
-        var sat = Math.Clamp(sums[best].S / n, 0.55, 0.90);
-        var val = Math.Clamp(sums[best].V / n, 0.50, 0.62);
-        return FromHsv(hue, sat, val);
     }
 
-    private static (double H, double S, double V) ToHsv(byte r8, byte g8, byte b8)
-    {
-        double r = r8 / 255.0, g = g8 / 255.0, b = b8 / 255.0;
-        var max = Math.Max(r, Math.Max(g, b));
-        var min = Math.Min(r, Math.Min(g, b));
-        var d = max - min;
-        double h = 0;
-        if (d > 0)
-        {
-            if (max == r) h = 60 * (((g - b) / d) % 6);
-            else if (max == g) h = 60 * (((b - r) / d) + 2);
-            else h = 60 * (((r - g) / d) + 4);
-        }
-        if (h < 0) h += 360;
-        return (h, max == 0 ? 0 : d / max, max);
-    }
-
-    public static Color FromHsv(double h, double s, double v)
-    {
-        var c = v * s;
-        var x = c * (1 - Math.Abs((h / 60) % 2 - 1));
-        var m = v - c;
-        var (r, g, b) = h switch
-        {
-            < 60 => (c, x, 0.0),
-            < 120 => (x, c, 0.0),
-            < 180 => (0.0, c, x),
-            < 240 => (0.0, x, c),
-            < 300 => (x, 0.0, c),
-            _ => (c, 0.0, x),
-        };
-        return Color.FromArgb(255, (byte)((r + m) * 255), (byte)((g + m) * 255), (byte)((b + m) * 255));
-    }
-
-    public static Color EnsureReadable(Color accent)
-    {
-        var (hue, sat, value) = ToHsv(accent.R, accent.G, accent.B);
-        while (value > 0.04 && Contrast(Microsoft.UI.Colors.White, FromHsv(hue, sat, value)) < 4.6)
-        {
-            value -= 0.02;
-        }
-        return FromHsv(hue, sat, value);
-    }
-
-    public static double Contrast(Color a, Color b)
-    {
-        var la = Luminance(a);
-        var lb = Luminance(b);
-        return (Math.Max(la, lb) + 0.05) / (Math.Min(la, lb) + 0.05);
-    }
-
-    private static double Luminance(Color c)
-    {
-        double channel(byte v8)
-        {
-            var v = v8 / 255.0;
-            return v <= 0.04045 ? v / 12.92 : Math.Pow((v + 0.055) / 1.055, 2.4);
-        }
-        return 0.2126 * channel(c.R) + 0.7152 * channel(c.G) + 0.0722 * channel(c.B);
-    }
+    public static Color ToColor(this Rgb rgb, byte alpha = 255) => Color.FromArgb(alpha, rgb.R, rgb.G, rgb.B);
 }

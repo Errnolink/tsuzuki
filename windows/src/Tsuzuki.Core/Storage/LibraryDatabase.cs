@@ -43,14 +43,18 @@ public sealed class LibraryDatabase : IDisposable
                 "UPDATE chapter SET last_read_at = last_modified_at * 1000 WHERE read = 1 AND last_read_at = 0 AND last_modified_at > 0");
             db.ExecuteNonQuery("INSERT INTO meta(key, value) VALUES ('read_stamp_repair','1')");
         }
+        if (db.Scalar<string?>("SELECT value FROM meta WHERE key = 'planner_stats'") is null)
+        {
+            db.ExecuteNonQuery("PRAGMA optimize = 0x10002");
+            db.ExecuteNonQuery("INSERT INTO meta(key, value) VALUES ('planner_stats','1')");
+        }
     }
 
     public SqliteConnection Open()
     {
         var db = new SqliteConnection(_connectionString);
         db.Open();
-        db.ExecuteNonQuery("PRAGMA foreign_keys = ON");
-        db.ExecuteNonQuery("PRAGMA mmap_size = 268435456");
+        db.ExecuteNonQuery("PRAGMA foreign_keys = ON; PRAGMA synchronous = NORMAL; PRAGMA mmap_size = 268435456; PRAGMA temp_store = MEMORY");
         return db;
     }
 
@@ -65,27 +69,36 @@ public sealed class LibraryDatabase : IDisposable
 
     public async Task<T> WriteAsync<T>(Func<SqliteConnection, T> fn, Action<T>? afterCommit = null)
     {
+        T result;
         await _writeGate.WaitAsync().ConfigureAwait(false);
         try
         {
-            using var db = Open();
-            using var tx = db.BeginTransaction();
-            var result = fn(db);
-            tx.Commit();
-            afterCommit?.Invoke(result);
-            return result;
+            result = await Task.Run(() =>
+            {
+                var epoch = RenderCache.Epoch;
+                using var db = Open();
+                using var tx = db.BeginTransaction();
+                var value = fn(db);
+                tx.Commit();
+                if (RenderCache.Epoch != epoch) RenderCache.Invalidate();
+                return value;
+            }).ConfigureAwait(false);
         }
         finally
         {
             _writeGate.Release();
         }
+        afterCommit?.Invoke(result);
+        return result;
     }
+
     public async Task FlushAsync()
     {
         await _writeGate.WaitAsync().ConfigureAwait(false);
         try
         {
             using var db = Open();
+            db.ExecuteNonQuery("PRAGMA optimize");
             db.ExecuteNonQuery("PRAGMA wal_checkpoint(TRUNCATE)");
         }
         catch
@@ -176,6 +189,7 @@ public sealed class LibraryDatabase : IDisposable
         CREATE INDEX IF NOT EXISTS idx_chapter_fetch ON chapter(date_fetch DESC, date_upload DESC, id);
         CREATE INDEX IF NOT EXISTS idx_chapter_stats ON chapter(manga_id, last_read_at, chapter_number, read);
         CREATE INDEX IF NOT EXISTS idx_chapter_history ON chapter(last_read_at) WHERE last_read_at > 0;
+        CREATE INDEX IF NOT EXISTS idx_manga_favorite ON manga(favorite);
         CREATE TABLE IF NOT EXISTS category(
             id INTEGER PRIMARY KEY,
             uid INTEGER NOT NULL UNIQUE,
@@ -203,6 +217,7 @@ public sealed class LibraryDatabase : IDisposable
             priority INTEGER NOT NULL DEFAULT 0,
             PRIMARY KEY(parent_id, child_source, child_url)
         );
+        CREATE INDEX IF NOT EXISTS idx_merged_child ON merged_ref(child_source, child_url);
         CREATE TABLE IF NOT EXISTS section(
             kind TEXT NOT NULL,
             key TEXT NOT NULL,

@@ -47,12 +47,16 @@ import androidx.compose.ui.unit.dp
 import dev.errnolink.tsuzuki.designsystem.TsuzukiCorners
 import dev.errnolink.tsuzuki.designsystem.TsuzukiSpacing
 import dev.errnolink.tsuzuki.designsystem.TsuzukiTheme
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.input.pointer.pointerInput
 import kotlin.math.PI
 import kotlin.math.cos
+import tachiyomi.presentation.core.util.collectAsState
+import uy.kohesive.injekt.api.get
 
-internal val DetailSkeletonCoverWidth: Dp = 114.dp
-internal const val DetailSkeletonCoverAspectRatio: Float = 2f / 3f
-internal val DetailSkeletonCoverHeight: Dp = 171.dp
 internal const val DetailSkeletonChapterRowCount: Int = 8
 
 /** One full base-to-light-to-base pulse cycle. */
@@ -140,37 +144,78 @@ fun ShimmerBox(
 }
 
 @Composable
+fun MangaDetailSkeleton(mangaId: Long, coverModifier: Modifier = Modifier) {
+    val preferences = remember { uy.kohesive.injekt.Injekt.get<dev.errnolink.tsuzuki.preference.TsuzukiPreferences>() }
+    val header by preferences.detailsHeader().collectAsState()
+    val ratio = remember(mangaId) { detailsCoverRatio(knownCoverRatio(mangaId)) }
+    DetailsCardTheme(mangaId) {
+        DetailSkeleton(
+            centered = header == dev.errnolink.tsuzuki.preference.DetailsHeader.CENTERED,
+            coverRatio = ratio,
+            coverModifier = coverModifier,
+            coverImage = remember(mangaId) { dev.errnolink.tsuzuki.ui.shell.MangaHero.source(mangaId)?.image },
+        )
+    }
+}
+
+@Composable
 fun DetailSkeleton(
+    centered: Boolean,
+    coverRatio: Float,
     modifier: Modifier = Modifier,
     coverModifier: Modifier = Modifier,
+    coverImage: androidx.compose.ui.graphics.ImageBitmap? = null,
 ) {
-    val topPadding = WindowInsets.statusBars.asPaddingValues().calculateTopPadding() + 56.dp
+    val topPadding = WindowInsets.statusBars.asPaddingValues().calculateTopPadding() + dev.errnolink.tsuzuki.designsystem.TsuzukiTopBar.bodyHeightDp.dp
     val lineShape = RoundedCornerShape(4.dp)
+    var taps by remember { androidx.compose.runtime.mutableIntStateOf(0) }
+    var hintVisible by remember { mutableStateOf(false) }
+    androidx.compose.runtime.LaunchedEffect(taps) {
+        if (taps > 0) {
+            hintVisible = true
+            kotlinx.coroutines.delay(LoadingHintMillis)
+            hintVisible = false
+        }
+    }
 
+    Box(
+        modifier
+            .fillMaxSize()
+            .pointerInput(Unit) { detectTapGestures { taps++ } },
+    ) {
     LazyColumn(
         flingBehavior = dev.errnolink.tsuzuki.designsystem.tsuzukiFlingBehavior(),
-        modifier = modifier
+        modifier = Modifier
             .fillMaxSize()
             .background(TsuzukiTheme.colors.background),
         contentPadding = PaddingValues(top = topPadding, bottom = TsuzukiSpacing.touchTarget),
     ) {
         item(key = "skeleton:hero") {
+            if (centered) {
+                Column(
+                    modifier = Modifier.fillMaxWidth().padding(start = 20.dp, end = 20.dp, top = 12.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(TsuzukiTheme.spacing.medium),
+                ) {
+                    DetailsCoverSlot(centered = true, ratio = coverRatio) { slot ->
+                        SkeletonCover(coverImage, coverModifier.then(slot))
+                    }
+                    ShimmerBox(modifier = Modifier.fillMaxWidth(0.7f).height(24.dp), shape = lineShape)
+                    ShimmerBox(modifier = Modifier.fillMaxWidth(0.4f).height(16.dp), shape = lineShape)
+                    ShimmerBox(modifier = Modifier.fillMaxWidth().height(52.dp), shape = RoundedCornerShape(26.dp))
+                }
+                return@item
+            }
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(
-                        start = TsuzukiSpacing.gutter,
-                        end = TsuzukiSpacing.gutter,
-                        top = TsuzukiSpacing.small,
-                    ),
-                horizontalArrangement = Arrangement.spacedBy(TsuzukiSpacing.row),
+                    .padding(start = 20.dp, end = 20.dp, top = 8.dp),
+                horizontalArrangement = Arrangement.spacedBy(16.dp),
+                verticalAlignment = Alignment.CenterVertically,
             ) {
-                ShimmerBox(
-                    modifier = coverModifier
-                        .width(DetailSkeletonCoverWidth)
-                        .height(DetailSkeletonCoverHeight),
-                    shape = RoundedCornerShape(TsuzukiCorners.cover),
-                )
+                DetailsCoverSlot(centered = false, ratio = coverRatio) { slot ->
+                    SkeletonCover(coverImage, coverModifier.then(slot))
+                }
                 Column(
                     modifier = Modifier.weight(1f),
                     verticalArrangement = Arrangement.spacedBy(10.dp),
@@ -301,7 +346,32 @@ fun DetailSkeleton(
             DetailChapterRowSkeleton(index)
         }
     }
+    androidx.compose.animation.AnimatedVisibility(
+        visible = hintVisible,
+        modifier = Modifier.align(Alignment.BottomCenter).navigationBarsPadding().padding(bottom = 24.dp),
+        enter = androidx.compose.animation.fadeIn(androidx.compose.animation.core.tween(dev.errnolink.tsuzuki.designsystem.M3Motion.Short3)) +
+            androidx.compose.animation.scaleIn(androidx.compose.animation.core.tween(dev.errnolink.tsuzuki.designsystem.M3Motion.Short3), initialScale = 0.92f),
+        exit = androidx.compose.animation.fadeOut(androidx.compose.animation.core.tween(dev.errnolink.tsuzuki.designsystem.M3Motion.Short3)),
+    ) {
+        dev.errnolink.tsuzuki.designsystem.GlassSurface(context = null, shape = CircleShape) {
+            Row(
+                Modifier.padding(horizontal = 14.dp, vertical = 9.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                dev.errnolink.tsuzuki.designsystem.ProgressRing(0f, "Loading", Modifier.size(16.dp))
+                dev.errnolink.tsuzuki.designsystem.TsuzukiText(
+                    "Still loading this title",
+                    style = TsuzukiTheme.typography.footnote,
+                    color = TsuzukiTheme.colors.text,
+                )
+            }
+        }
+    }
+    }
 }
+
+private const val LoadingHintMillis = 1600L
 
 @Composable
 fun DetailChapterRowSkeleton(index: Int, modifier: Modifier = Modifier) {
@@ -351,6 +421,20 @@ fun DetailChapterRowSkeleton(index: Int, modifier: Modifier = Modifier) {
                 .fillMaxWidth()
                 .height(TsuzukiSpacing.hairline)
                 .background(TsuzukiTheme.colors.separator),
+        )
+    }
+}
+
+@Composable
+private fun SkeletonCover(image: androidx.compose.ui.graphics.ImageBitmap?, modifier: Modifier) {
+    if (image == null) {
+        ShimmerBox(modifier = modifier, shape = RoundedCornerShape(TsuzukiCorners.cover))
+    } else {
+        androidx.compose.foundation.Image(
+            bitmap = image,
+            contentDescription = null,
+            modifier = modifier.clip(RoundedCornerShape(TsuzukiCorners.cover)),
+            contentScale = androidx.compose.ui.layout.ContentScale.Crop,
         )
     }
 }

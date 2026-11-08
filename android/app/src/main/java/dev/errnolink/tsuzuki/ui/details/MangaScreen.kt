@@ -1,10 +1,12 @@
 package dev.errnolink.tsuzuki.ui.details
 
+import dev.errnolink.tsuzuki.reader.readerOrigin
 import androidx.activity.compose.BackHandler
 import dev.errnolink.tsuzuki.ui.shell.DeclareShellTop
 import dev.errnolink.tsuzuki.ui.shell.ShellTopAction
 import dev.errnolink.tsuzuki.ui.shell.ShellActionSheet
 import dev.errnolink.tsuzuki.ui.shell.ShellSheetAction
+import dev.errnolink.tsuzuki.ui.shell.heroDismissDrag
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
@@ -26,6 +28,7 @@ import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -70,6 +73,7 @@ import dev.errnolink.tsuzuki.designsystem.GlassMaterial
 import dev.errnolink.tsuzuki.designsystem.GlassSurface
 import dev.errnolink.tsuzuki.designsystem.TsuzukiCorners
 import dev.errnolink.tsuzuki.designsystem.TsuzukiText
+import dev.errnolink.tsuzuki.designsystem.ProgressRing
 import dev.errnolink.tsuzuki.designsystem.TsuzukiTheme
 import dev.errnolink.tsuzuki.designsystem.PullDownAction
 import dev.errnolink.tsuzuki.designsystem.PullDownConfirmSheet
@@ -132,7 +136,6 @@ import tachiyomi.domain.manga.model.Manga
 import tachiyomi.domain.manga.model.asMangaCover
 import tachiyomi.domain.source.model.StubSource
 import tachiyomi.i18n.MR
-import tachiyomi.presentation.core.components.material.PullRefresh
 import tachiyomi.presentation.core.i18n.stringResource
 import tachiyomi.presentation.core.util.collectAsState
 import tachiyomi.source.local.isLocal
@@ -228,9 +231,17 @@ fun MangaScreen(
             ?: chapters.asReversed().firstOrNull { !it.chapter.read && dex.accessMessage(it.chapter) == null }?.chapter
     }
     val selected = remember(state.chapters) { state.chapters.filter { it.selected } }
-    val collapseOffset = with(LocalDensity.current) { 48.dp.roundToPx() }
-    val collapsed by remember(collapseOffset) {
-        derivedStateOf { listState.firstVisibleItemIndex > 0 || listState.firstVisibleItemScrollOffset > collapseOffset }
+    val heroTitle = remember { HeroTitleAnchor() }
+    val collapsed by remember(listState) {
+        derivedStateOf {
+            val hero = listState.layoutInfo.visibleItemsInfo.firstOrNull { it.key == "hero" }
+            dev.errnolink.tsuzuki.designsystem.headerScrolledAway(
+                hero?.offset,
+                heroTitle.titleBottomInHero ?: hero?.size ?: 0,
+                listState.firstVisibleItemIndex,
+                0,
+            )
+        }
     }
     val motion = TsuzukiTheme.motion
     var aboutVisible by remember { mutableStateOf(false) }
@@ -245,7 +256,8 @@ fun MangaScreen(
     var heroCoverReady by remember(state.manga.id, state.manga.coverLastModified, state.manga.thumbnailUrl) { mutableStateOf(false) }
     val glow = rememberDetailsGlow(state.manga, heroCoverReady)
     val tsuzukiPreferences = remember { Injekt.get<TsuzukiPreferences>() }
-    val appleHeader by tsuzukiPreferences.detailsAppleHeader().collectAsState()
+    val headerStyle by tsuzukiPreferences.detailsHeader().collectAsState()
+    val appleHeader = headerStyle == dev.errnolink.tsuzuki.preference.DetailsHeader.CENTERED
     val coversAvailable = remember(state.source.id, state.manga.source, state.mergedData, onCoversClicked) {
         onCoversClicked != null && (
             state.source.getMainSource<MetadataSource<*, *>>() is MangaDex ||
@@ -316,7 +328,7 @@ fun MangaScreen(
     if (glowAccent != null && stableDominant.value == null) stableDominant.value = glowAccent
     val themeColors = TsuzukiTheme.colors
     val pendingActionColor = if (themeColors.isDark) themeColors.selectedFill else themeColors.secondary
-    val actionColor by androidx.compose.animation.animateColorAsState(
+    val actionColor = androidx.compose.animation.animateColorAsState(
         targetValue = stableDominant.value?.let { ContinueActionColor.forCover(it, themeColors.tabTint) } ?: pendingActionColor,
         animationSpec = if (TsuzukiTheme.motion.reduced) androidx.compose.animation.core.snap() else androidx.compose.animation.core.tween(220),
         label = "continueActionColor",
@@ -370,7 +382,6 @@ fun MangaScreen(
             onWebViewClicked?.let { add(detailMenuAction("Open in browser", TsuzukiIcons.Globe, group = 1, onClick = it)) }
             onWebViewLongClicked?.let { add(detailMenuAction("Copy link", TsuzukiIcons.Copy, group = 1, onClick = it)) }
             // Group 2: every action from today's menu that is not now on the row
-            add(detailMenuAction("Refresh", TsuzukiIcons.RefreshCw, group = 2, onClick = onRefresh))
             if (state.manga.favorite) add(detailMenuAction("Edit title information", TsuzukiIcons.Pencil, group = 2, onClick = onEditInfoClicked))
             onEditFetchIntervalClicked?.let { add(detailMenuAction("Update schedule", TsuzukiIcons.Calendar, subtitle = nextUpdateText, group = 2, onClick = it)) }
             if (BuildConfig.DEBUG) {
@@ -407,7 +418,7 @@ fun MangaScreen(
             glass = glass,
             continueLabel = continueLabel,
             continueEnabled = continueEnabled,
-            actionColor = if (chaptersKnown) actionColor else pendingActionColor,
+            actionColor = { if (chaptersKnown) actionColor.value else pendingActionColor },
             onContinueClick = openContinue,
             inLibrary = state.manga.favorite,
             onLibraryClick = {
@@ -443,6 +454,7 @@ fun MangaScreen(
         } else {
             buildList {
                 onShareClicked?.let { add(ShellTopAction("Share", TsuzukiIcons.Share, it)) }
+                add(ShellTopAction("Check for new chapters", TsuzukiIcons.RefreshCw, onRefresh, enabled = !state.isRefreshingData))
                 add(
                     ShellTopAction(
                         "More title actions",
@@ -455,12 +467,11 @@ fun MangaScreen(
             }
         },
         inlineTitle = { if (selected.isNotEmpty() || collapsed) 1f else 0f },
+        tint = dev.errnolink.tsuzuki.ui.shell.MangaHero.cardColor(state.manga.id),
     )
+    DetailsCardTheme(state.manga.id) {
     Box(Modifier.fillMaxSize().background(TsuzukiTheme.colors.background)) {
-        PullRefresh(
-            refreshing = state.isRefreshingData && !state.chaptersPending, onRefresh = onRefresh, enabled = selected.isEmpty(),
-            indicatorPadding = PaddingValues(top = top),
-        ) {
+        Box(Modifier.fillMaxSize()) {
             LazyColumn(
                 flingBehavior = dev.errnolink.tsuzuki.designsystem.tsuzukiFlingBehavior(),
                 state = listState,
@@ -469,20 +480,23 @@ fun MangaScreen(
             ) {
                 item("hero") {
                     Box(
-                        Modifier
+                        heroTitle.hero(Modifier)
+                            .heroDismissDrag { listState.firstVisibleItemIndex == 0 && listState.firstVisibleItemScrollOffset == 0 && selected.isEmpty() }
                             .fillMaxWidth()
                             .detailsHeroGlow(
                                 glow = glow,
                                 topInset = top,
                                 isDark = TsuzukiTheme.colors.isDark,
                                 backgroundColor = TsuzukiTheme.colors.background,
+                                strength = if (dev.errnolink.tsuzuki.ui.shell.MangaHero.cardColor(state.manga.id) != null) CardGlowStrength else 1f,
                             ),
                     ) {
+                        androidx.compose.runtime.CompositionLocalProvider(LocalHeroTitleAnchor provides heroTitle) {
                         if (appleHeader) {
                             MangaInfoHeaderApple(
                                 appBarPadding = 0.dp,
                                 manga = state.manga,
-                                accent = glow.accent.value,
+                                accent = glow.accent.value.takeIf { dev.errnolink.tsuzuki.ui.shell.MangaHero.cardColor(state.manga.id) == null },
                                 sourceName = state.source.getNameForMangaInfo(state.mergedData?.sources),
                                 sourceLanguage = state.source.lang.uppercase(),
                                 isStubSource = state.source is StubSource,
@@ -494,7 +508,7 @@ fun MangaScreen(
                                 coverRatio = coverRatio,
                                 onCoverLoaded = { heroCoverReady = true },
                                 chapterCount = chapterCount,
-                                mergedSourceCount = state.mergedData?.sources?.size ?: 0,
+                                mergedSourceCount = state.mergedData?.sources?.count { it.id != MERGED_SOURCE_ID } ?: 0,
                                 actionRow = { detailsActionRow(Modifier) },
                             )
                         } else {
@@ -507,12 +521,13 @@ fun MangaScreen(
                                 onCoverClick = onCoverClicked, doSearch = onSearch, librarySearch = librarySearch,
                                 onSourceClick = onSourceClick, coverRatio = coverRatio,
                                 showMangaDexRating = isMdTitle,
-                                mergedSourceCount = state.mergedData?.sources?.size ?: 0,
+                                mergedSourceCount = state.mergedData?.sources?.count { it.id != MERGED_SOURCE_ID } ?: 0,
                                 chapterCount = chapterCount,
                                 lastChapterUpdate = heroLastUpdate,
                                 onRatingClick = { ratingSheetVisible = true },
                                 onCoverLoaded = { heroCoverReady = true },
                             )
+                        }
                         }
                     }
                 }
@@ -557,6 +572,7 @@ fun MangaScreen(
                         ChapterHeaderRow(
                             count = chapterCount.takeUnless { state.chaptersPending },
                             summary = activeFilters,
+                            checking = state.isRefreshingData && !state.chaptersPending,
                             onDownloadActionClicked = onDownloadActionClicked,
                             onDownloadAllClicked = onDownloadAllClicked,
                             onRemoveDownloadsClicked = onRemoveDownloadsClicked,
@@ -618,19 +634,12 @@ fun MangaScreen(
                             MangaChapterListItem(
                                 modifier = Modifier
                                     .animateItem(
-                                        fadeInSpec = when {
-                                            motion.reduced -> snap()
-                                            motion.standardTokens -> tween(dev.errnolink.tsuzuki.designsystem.M3Motion.Short3, easing = dev.errnolink.tsuzuki.designsystem.M3Motion.Standard)
-                                            else -> motion.tabSpring()
-                                        },
+                                        fadeInSpec = if (motion.reduced) snap() else tween(dev.errnolink.tsuzuki.designsystem.M3Motion.Short3, easing = dev.errnolink.tsuzuki.designsystem.M3Motion.Standard),
                                         placementSpec = if (motion.reduced) snap() else motion.tabSpring(),
-                                        fadeOutSpec = when {
-                                            motion.reduced -> snap()
-                                            motion.standardTokens -> tween(dev.errnolink.tsuzuki.designsystem.M3Motion.Short3, easing = dev.errnolink.tsuzuki.designsystem.M3Motion.Standard)
-                                            else -> motion.tabSpring()
-                                        },
+                                        fadeOutSpec = if (motion.reduced) snap() else tween(dev.errnolink.tsuzuki.designsystem.M3Motion.Short3, easing = dev.errnolink.tsuzuki.designsystem.M3Motion.Standard),
                                     )
-                                    .padding(horizontal = 20.dp),
+                                    .padding(horizontal = 20.dp)
+                                    .readerOrigin(),
                                 shape = when {
                                     roundedTop && roundedBottom -> ChapterRowShape
                                     roundedTop -> ChapterRowTopShape
@@ -695,6 +704,7 @@ fun MangaScreen(
             state = snackbarHostState,
             modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = bottom),
         )
+    }
     }
     DetailsAboutSheet(
         visible = aboutVisible,
@@ -771,6 +781,7 @@ private fun SynopsisPreview(
 private fun ChapterHeaderRow(
     count: Int?,
     summary: String,
+    checking: Boolean,
     onDownloadActionClicked: ((DownloadAction) -> Unit)?,
     onDownloadAllClicked: (() -> Unit)?,
     onRemoveDownloadsClicked: (() -> Unit)?,
@@ -782,6 +793,10 @@ private fun ChapterHeaderRow(
     Row(modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
         Row(Modifier.weight(1f).padding(end = 12.dp), verticalAlignment = Alignment.CenterVertically) {
             TsuzukiText(count?.let { "$it chapters" } ?: "Chapters", style = TsuzukiTheme.typography.headline)
+            if (checking) {
+                Spacer(Modifier.width(8.dp))
+                ProgressRing(0f, "Checking for new chapters", Modifier.size(16.dp))
+            }
             if (summary.isNotEmpty()) {
                 Spacer(Modifier.width(8.dp))
                 TsuzukiText(
@@ -875,3 +890,5 @@ private val ChapterRowShape = RoundedCornerShape(TsuzukiCorners.cover)
 private val ChapterRowTopShape = RoundedCornerShape(topStart = TsuzukiCorners.cover, topEnd = TsuzukiCorners.cover)
 private val ChapterRowBottomShape = RoundedCornerShape(bottomStart = TsuzukiCorners.cover, bottomEnd = TsuzukiCorners.cover)
 private val ChapterRowMiddleShape = RoundedCornerShape(0.dp)
+
+private const val CardGlowStrength = 0.45f

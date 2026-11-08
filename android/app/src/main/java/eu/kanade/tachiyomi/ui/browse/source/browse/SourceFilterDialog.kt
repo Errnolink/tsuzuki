@@ -108,23 +108,27 @@ private fun FilterItem(filter: Filter<*>, onUpdate: () -> Unit, startExpanded: B
             var expanded by remember { mutableStateOf(false) }
             Box {
                 GroupedRow(filter.name, value = filter.values.getOrNull(filter.state)?.toString(), chevron = true, onClick = { expanded = true })
-                GlassMenu(
-                    expanded = expanded,
-                    label = filter.name,
-                    actions = filter.values.mapIndexed { index, value ->
-                        ContextMenuAction(
-                            label = value.toString(),
-                            icon = if (index == filter.state) {
-                                {
-                                    Icon(TsuzukiIcons.Check, null, Modifier.size(16.dp), tint = TsuzukiTheme.colors.accent)
-                                }
-                            } else {
-                                null
+                Box(Modifier.matchParentSize(), contentAlignment = androidx.compose.ui.Alignment.CenterEnd) {
+                    Box(Modifier.padding(end = 16.dp).size(24.dp)) {
+                        GlassMenu(
+                            expanded = expanded,
+                            label = filter.name,
+                            actions = filter.values.mapIndexed { index, value ->
+                                ContextMenuAction(
+                                    label = value.toString(),
+                                    icon = if (index == filter.state) {
+                                        {
+                                            Icon(TsuzukiIcons.Check, null, Modifier.size(16.dp), tint = TsuzukiTheme.colors.accent)
+                                        }
+                                    } else {
+                                        null
+                                    },
+                                ) { filter.state = index; onUpdate() }
                             },
-                        ) { filter.state = index; onUpdate() }
-                    },
-                    onDismissRequest = { expanded = false },
-                )
+                            onDismissRequest = { expanded = false },
+                        )
+                    }
+                }
             }
         }
         is Filter.Sort -> FilterGroup(filter.name, startExpanded) {

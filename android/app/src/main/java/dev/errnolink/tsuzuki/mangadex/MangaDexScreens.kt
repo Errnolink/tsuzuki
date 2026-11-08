@@ -94,6 +94,7 @@ import eu.kanade.tachiyomi.ui.reader.ReaderActivity
 import exh.md.dto.CustomListDto
 import exh.md.handlers.MangaDexArtwork
 import exh.md.handlers.MangaDexFeedEntry
+import dev.errnolink.tsuzuki.reader.readerOrigin
 import kotlinx.coroutines.flow.distinctUntilChanged
 import tachiyomi.domain.manga.model.Manga
 import java.time.Duration
@@ -118,7 +119,8 @@ class MangaDexFeedScreen(private val embedded: Boolean = false) : Screen() {
         MangaDexNavigationEffect(screenModel) { navigation ->
             when (navigation) {
                 is MangaDexNavigation.Title -> navigator.push(MangaScreen(navigation.id, true))
-                is MangaDexNavigation.Chapter -> context.startActivity(
+                is MangaDexNavigation.Chapter -> dev.errnolink.tsuzuki.reader.ReaderTransition.open(
+                    context,
                     ReaderActivity.newIntent(context, navigation.mangaId, navigation.chapterId),
                 )
             }
@@ -245,6 +247,7 @@ private fun FeedEntryRow(
         val colors = TsuzukiTheme.colors
         Row(
             Modifier.fillMaxWidth().padding(horizontal = 20.dp)
+                .readerOrigin()
                 .clip(shape)
                 .background(colors.grouped)
                 .drawBehind {
@@ -511,6 +514,7 @@ private fun MangaDexMangaTile(
                 contentDescription = manga.title,
                 modifier = Modifier.fillMaxWidth(),
                 arrivals = arrivals,
+                heroMangaId = manga.id,
             )
         }
         TsuzukiText(

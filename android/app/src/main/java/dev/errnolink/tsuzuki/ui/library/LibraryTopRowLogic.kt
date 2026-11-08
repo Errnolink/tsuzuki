@@ -6,6 +6,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.staticCompositionLocalOf
+import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.unit.dp
 import dev.errnolink.tsuzuki.designsystem.PullDownTriState
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -78,6 +79,7 @@ data class LibraryMenuOptionsState(
     val useLangIcon: Boolean = true,
     val sourceBadge: Boolean = true,
     val continueReadingButton: Boolean = false,
+    val progressRing: Boolean = true,
     val categoryTabs: Boolean = true,
     val showHiddenCategories: Boolean = false,
     val categoryNumberOfItems: Boolean = false,
@@ -87,8 +89,6 @@ private val LibraryMenuOptionsDefaults = LibraryMenuOptionsState()
 
 fun libraryOptionsAtDefaults(state: LibraryMenuOptionsState): Boolean =
     state == LibraryMenuOptionsDefaults
-
-val LibraryTopRowSubPillHeight = 36.dp
 
 enum class LibraryTopRowCollapseState {
     Expanded,
@@ -169,7 +169,6 @@ class LibraryTopRowStateMachine(
 
 class ShellTabScrollStates(
     val libraryGridStates: MutableMap<Long, LazyStaggeredGridState> = mutableMapOf(),
-    val libraryStripState: LazyListState = LazyListState(),
     val updatesListState: LazyListState = LazyListState(),
     val historyListState: LazyListState = LazyListState(),
 ) {
@@ -178,9 +177,6 @@ class ShellTabScrollStates(
 }
 
 val LocalShellTabScrollStates = staticCompositionLocalOf { ShellTabScrollStates() }
-
-fun calculateCategoryStripScrollOffset(viewportWidth: Int, itemWidth: Int): Int =
-    if (viewportWidth > itemWidth) -(viewportWidth - itemWidth) / 2 else 0
 
 object LibraryMenuPullDownState {
     private val mutableIsOpen = MutableStateFlow(false)
@@ -200,6 +196,8 @@ object LibraryMenuPullDownState {
 object LibraryFilterSheetState {
     private val mutableIsOpen = MutableStateFlow(false)
     val isOpen: StateFlow<Boolean> = mutableIsOpen.asStateFlow()
+
+    var buttonBoundsInWindow by mutableStateOf<Rect?>(null)
 
     fun open() {
         LibraryMenuPullDownState.close()

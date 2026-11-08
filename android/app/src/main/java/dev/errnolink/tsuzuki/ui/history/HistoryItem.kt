@@ -1,5 +1,6 @@
 package dev.errnolink.tsuzuki.ui.history
 
+import dev.errnolink.tsuzuki.reader.readerOrigin
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
@@ -72,6 +73,7 @@ fun HistoryItem(
     }
     Row(
         modifier = modifier.fillMaxWidth()
+            .readerOrigin()
             .clip(shape)
             .background(if (selected) colors.selectedFill else colors.grouped)
             .combinedClickable(onClick = onClick, onLongClick = longClick)
@@ -107,7 +109,7 @@ fun HistoryItem(
                 color = if (history.read && readProgress == null) colors.secondary else colors.text,
             )
             TsuzukiText(
-                if (history.chapterNumber >= 0) "Chapter ${history.chapterNumber.toString().removeSuffix(".0")}" else "Chapter",
+                if (history.chapterNumber >= 0) "Chapter ${eu.kanade.presentation.util.formatChapterNumber(history.chapterNumber)}" else "Unnumbered chapter",
                 style = TsuzukiTheme.typography.footnote,
                 color = colors.secondary,
             )

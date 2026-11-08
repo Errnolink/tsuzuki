@@ -1,6 +1,7 @@
 package tachiyomi.data.source
 
 import androidx.paging.PagingState
+import dev.errnolink.tsuzuki.data.listing.ListingCache
 import eu.kanade.tachiyomi.source.Source
 import eu.kanade.tachiyomi.source.model.FilterList
 import eu.kanade.tachiyomi.source.model.MangasPage
@@ -22,25 +23,31 @@ class SourceSearchPagingSource(
     private val filters: FilterList,
 ) : BaseSourcePagingSource(source) {
     override suspend fun requestNextPage(currentPage: Int): MangasPage {
-        return source.getSearchManga(currentPage, query.sanitize(), filters)
+        val key = ListingCache.Key(source.id, ListingCache.Kind.Search, currentPage, query.sanitize(), ListingCache.fingerprint(filters))
+        return listingCache.page(key) { source.getSearchManga(currentPage, query.sanitize(), filters) }
     }
 }
 
 class SourcePopularPagingSource(source: Source) : BaseSourcePagingSource(source) {
     override suspend fun requestNextPage(currentPage: Int): MangasPage {
-        return source.getPopularManga(currentPage)
+        return listingCache.page(ListingCache.Key(source.id, ListingCache.Kind.Popular, currentPage)) {
+            source.getPopularManga(currentPage)
+        }
     }
 }
 
 class SourceLatestPagingSource(source: Source) : BaseSourcePagingSource(source) {
     override suspend fun requestNextPage(currentPage: Int): MangasPage {
-        return source.getLatestUpdates(currentPage)
+        return listingCache.page(ListingCache.Key(source.id, ListingCache.Kind.Latest, currentPage)) {
+            source.getLatestUpdates(currentPage)
+        }
     }
 }
 
 abstract class BaseSourcePagingSource(
     protected val source: Source,
     protected val networkToLocalManga: NetworkToLocalManga = Injekt.get(),
+    protected val listingCache: ListingCache = Injekt.get(),
 ) : SourcePagingSource() {
 
     protected val seenManga = hashSetOf<String>()

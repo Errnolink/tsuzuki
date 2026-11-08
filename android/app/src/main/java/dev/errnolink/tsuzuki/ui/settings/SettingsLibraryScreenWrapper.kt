@@ -4,6 +4,8 @@ import eu.kanade.presentation.more.settings.screen.SearchableSettings
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.ReadOnlyComposable
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.getValue
+import tachiyomi.presentation.core.util.collectAsState
 import eu.kanade.domain.ui.UiPreferences
 import eu.kanade.presentation.more.settings.Preference
 import eu.kanade.presentation.more.settings.screen.SettingsLibraryScreen
@@ -30,6 +32,7 @@ object TsuzukiSettingsLibraryScreen : SearchableSettings {
         "default_category",
         "categorized_display",
         "pref_library_update_interval_key",
+        "pref_library_smart_update",
         "library_update_restriction",
         "library_update_categories",
         "group_library_update_type",
@@ -111,10 +114,27 @@ object TsuzukiSettingsLibraryScreen : SearchableSettings {
         val updatesBadge = updateItems?.byStoreKey("library_show_updates_count")
         val updatingBanner = updateItems?.byStoreKey("pref_show_updating_progress_banner_key")
 
+        val context = androidx.compose.ui.platform.LocalContext.current
+        val tsuzukiPreferences = remember { Injekt.get<dev.errnolink.tsuzuki.preference.TsuzukiPreferences>() }
+        val smartPref = tsuzukiPreferences.smartUpdate()
+        val smartOn by smartPref.collectAsState()
+        val smartToggle = Preference.PreferenceItem.SwitchPreference(
+            preference = smartPref,
+            title = "Smart updates",
+            subtitle = "Checks each title in the background around its predicted release day, then every 12 hours while a chapter is late. Pull to refresh still checks everything.",
+            onValueChanged = {
+                androidx.core.content.ContextCompat.getMainExecutor(context).execute {
+                    eu.kanade.tachiyomi.data.library.LibraryUpdateJob.setupTask(context)
+                }
+                true
+            },
+        )
+
         val updateSection = newGroup(
             title = "Library updates",
             items = listOfNotNull(
-                interval,
+                smartToggle,
+                interval.takeUnless { smartOn },
                 restriction,
                 updateCategories,
                 groupUpdates,

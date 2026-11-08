@@ -31,6 +31,6 @@ public sealed record SChapter(string Url, string Name)
     public string? ExternalUrl { get; init; }
 }
 
-public sealed record PageRef(int Index, Uri ImageUrl);
+public sealed record PageRef(int Index, Uri ImageUrl, string CacheKey);
 
 public sealed record MangasPage(IReadOnlyList<SManga> Mangas, bool HasNextPage);

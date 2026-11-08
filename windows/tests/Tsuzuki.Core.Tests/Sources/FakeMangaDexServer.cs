@@ -34,6 +34,7 @@ public sealed class FakeMangaDexServer : HttpMessageHandler
         (var p, _) when p == $"/manga/{YotsubaUuid}/aggregate" => "yotsuba-aggregate.json",
         (var p, _) when p == $"/manga/{YotsubaUuid}/feed" => "yotsuba-feed.json",
         (var p, _) when p == $"/manga/{YotsubaUuid}" => "yotsuba-details.json",
+        ("/manga/tag", _) => "manga-tag.json",
         ("/manga", var q) when q.Contains("order%5BfollowedCount%5D=desc") => "popular-en.json",
         ("/manga", var q) when q.Contains("ids%5B%5D=") => "latest-mangas.json",
         ("/manga", var q) when q.Contains("title=") => "search-yotsuba.json",

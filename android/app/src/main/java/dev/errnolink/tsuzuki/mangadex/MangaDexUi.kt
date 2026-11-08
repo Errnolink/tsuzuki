@@ -25,6 +25,9 @@ import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.graphics.asImageBitmap
+import coil3.toBitmap
+import dev.errnolink.tsuzuki.ui.shell.mangaHeroSource
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -39,6 +42,8 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import coil3.compose.AsyncImage
 import coil3.compose.AsyncImagePainter
 import coil3.decode.DataSource
+import coil3.network.NetworkHeaders
+import coil3.network.httpHeaders
 import dev.errnolink.tsuzuki.designsystem.Banner
 import dev.errnolink.tsuzuki.designsystem.CoverArrivalState
 import dev.errnolink.tsuzuki.designsystem.CoverImage
@@ -125,7 +130,9 @@ internal fun MangaDexRemoteCover(
     arrivals: CoverArrivalState,
     fallbackRatio: Float = 2f / 3f,
     onClick: (() -> Unit)? = null,
+    heroMangaId: Long? = null,
 ) {
+    var heroImage by remember(url) { mutableStateOf<androidx.compose.ui.graphics.ImageBitmap?>(null) }
     val canonicalUrl = remember(url) { url?.let { exh.md.utils.MdCoverVariantUtil.normalizeCoverUrl(it) } }
     val qualityPref = remember { exh.md.MangaDexPreferences().coverQuality() }
     val quality by qualityPref.collectAsState()
@@ -142,23 +149,38 @@ internal fun MangaDexRemoteCover(
             exh.md.utils.MdCoverVariantUtil.getVariantUrl(base, variant)
         }
     }
+    val context = LocalContext.current
+    val request = remember(effectiveUrl) {
+        effectiveUrl?.let { target ->
+            coil3.request.ImageRequest.Builder(context)
+                .data(target)
+                .apply {
+                    dev.errnolink.tsuzuki.network.MangaDexCoverAgent.userAgentFor(target)?.let { agent ->
+                        httpHeaders(NetworkHeaders.Builder().set("User-Agent", agent).build())
+                    }
+                }
+                .build()
+        }
+    }
     var ratio by remember(canonicalUrl) { mutableFloatStateOf(canonicalUrl?.let { remoteCoverRatios.get(it) } ?: fallbackRatio) }
     var loaded by remember(canonicalUrl) { mutableStateOf(false) }
     var cached by remember(canonicalUrl) { mutableStateOf(false) }
     var failed by remember(canonicalUrl) { mutableStateOf(false) }
-    if (effectiveUrl != null && !failed) {
+    if (request != null && !failed) {
         CoverImage(
-            imageKey = canonicalUrl ?: effectiveUrl,
+            imageKey = canonicalUrl ?: request,
             aspectRatio = ratio,
             loaded = loaded,
             arrivals = arrivals,
-            modifier = modifier.onSizeChanged { displaySizePx = android.util.Size(it.width, it.height) },
+            modifier = modifier
+                .then(if (heroMangaId != null) Modifier.mangaHeroSource(heroMangaId, heroImage) else Modifier)
+                .onSizeChanged { displaySizePx = android.util.Size(it.width, it.height) },
             cached = cached,
             label = contentDescription,
             onClick = onClick,
         ) {
             AsyncImage(
-                model = effectiveUrl,
+                model = request,
                 contentDescription = contentDescription,
                 modifier = Modifier.matchParentSize(),
                 contentScale = ContentScale.Crop,
@@ -169,6 +191,7 @@ internal fun MangaDexRemoteCover(
                             if (image.width > 0 && image.height > 0) {
                                 ratio = image.width.toFloat() / image.height
                                 canonicalUrl?.let { remoteCoverRatios.put(it, ratio) }
+                                heroImage = image.toBitmap().asImageBitmap()
                             }
                             cached = result.result.dataSource == DataSource.MEMORY_CACHE
                             loaded = true

@@ -6,3 +6,4 @@ artifacts/
 publish/
 Releases/
 TestResults/
+__pycache__/

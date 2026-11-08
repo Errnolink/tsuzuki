@@ -28,7 +28,9 @@ public static class Motion
     public static readonly TimeSpan Long1 = TimeSpan.FromMilliseconds(450);
     public static readonly TimeSpan Long2 = TimeSpan.FromMilliseconds(500);
     public static readonly TimeSpan HeroOpen = TimeSpan.FromMilliseconds(210);
-    public static readonly TimeSpan HeroBack = TimeSpan.FromMilliseconds(230);
+    public static readonly TimeSpan HeroBack = TimeSpan.FromMilliseconds(340);
+    public const float SnappySpring = 7.43f;
+    public const float SettlingSpring = 5.5f;
 
     private static readonly UISettings Settings = new();
 
@@ -101,6 +103,24 @@ public static class Motion
         a.Duration = duration;
         a.DelayTime = delay;
         a.DelayBehavior = AnimationDelayBehavior.SetInitialValueBeforeDelay;
+        return a;
+    }
+
+    public static ScalarKeyFrameAnimation CriticalSpring(Compositor c, float from, float to, TimeSpan duration, float stiffness = SnappySpring)
+    {
+        const int Samples = 24;
+        var end = 1 - (1 + stiffness) * MathF.Exp(-stiffness);
+        var a = c.CreateScalarKeyFrameAnimation();
+        var linear = c.CreateLinearEasingFunction();
+        a.InsertKeyFrame(0f, from);
+        for (var i = 1; i <= Samples; i++)
+        {
+            var t = (float)i / Samples;
+            var u = stiffness * t;
+            var progress = (1 - (1 + u) * MathF.Exp(-u)) / end;
+            a.InsertKeyFrame(t, from + (to - from) * progress, linear);
+        }
+        a.Duration = duration;
         return a;
     }
 

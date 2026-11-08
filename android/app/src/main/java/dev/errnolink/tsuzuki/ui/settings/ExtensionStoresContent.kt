@@ -83,10 +83,28 @@ private fun ExtensionStoresListItem(
             )
         },
         trailing = {
-            ShellAction("Repository actions", TsuzukiIcons.Ellipsis, { expanded = true })
+            androidx.compose.foundation.layout.Box {
+                ShellAction("Repository actions", TsuzukiIcons.Ellipsis, { expanded = true })
+                StoreMenu(store, expanded, isDisabled, onOpenWebsite, onOpenDiscord, onCopy, onEnable, onDisable, onDelete) { expanded = false }
+            }
         },
         onClick = onOpenWebsite,
     )
+}
+
+@Composable
+private fun StoreMenu(
+    store: ExtensionStore,
+    expanded: Boolean,
+    isDisabled: Boolean,
+    onOpenWebsite: () -> Unit,
+    onOpenDiscord: () -> Unit,
+    onCopy: () -> Unit,
+    onEnable: () -> Unit,
+    onDisable: () -> Unit,
+    onDelete: () -> Unit,
+    onDismissRequest: () -> Unit,
+) {
     GlassMenu(
         expanded = expanded,
         label = store.name,
@@ -114,7 +132,7 @@ private fun ExtensionStoresListItem(
                 ),
             )
         },
-        onDismissRequest = { expanded = false },
+        onDismissRequest = onDismissRequest,
     )
 }
 

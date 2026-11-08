@@ -38,7 +38,7 @@ public static class GithubReleaseList
 
     public static IReadOnlyList<GithubReleaseInfo> SelectWindows(IEnumerable<GithubReleaseInfo> releases, bool includePrereleases) =>
         releases
-            .Where(r => r.Tag?.StartsWith(WindowsUpdateSource.TagPrefix, StringComparison.OrdinalIgnoreCase) == true && !r.Draft)
+            .Where(r => r.Tag is not null && System.Text.RegularExpressions.Regex.IsMatch(r.Tag, @"^v\d") && !r.Draft)
             .Where(r => includePrereleases || !r.Prerelease)
             .OrderByDescending(r => r.PublishedAt ?? DateTimeOffset.MinValue)
             .ToList();
@@ -77,7 +77,6 @@ public static class GithubReleaseList
 public sealed class WindowsUpdateSource : GithubSource
 {
     public const string RepoUrl = "https://github.com/Errnolink/tsuzuki";
-    public const string TagPrefix = "windows-v";
 
     private const int PageSize = 100;
     private const int MaxPages = 10;

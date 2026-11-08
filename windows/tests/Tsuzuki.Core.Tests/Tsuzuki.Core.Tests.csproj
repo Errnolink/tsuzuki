@@ -12,6 +12,6 @@
     <ProjectReference Include="../../src/Tsuzuki.Core/Tsuzuki.Core.csproj" />
   </ItemGroup>
   <ItemGroup>
-    <None Include="Sources/Fixtures/**/*.json" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="Sources/Fixtures/**/*.json;Sources/Fixtures/**/*.html" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 </Project>

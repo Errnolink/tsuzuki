@@ -171,10 +171,15 @@ class ExtensionManager(
     }
     // EXH <--
 
+    private var lastIndexFetch = 0L
+    private val INDEX_KEEP_MILLIS = 6 * 60 * 60_000L
+
     /**
      * Finds the available extensions in the [api] and updates [availableExtensionMapFlow].
      */
-    suspend fun findAvailableExtensions() {
+    suspend fun findAvailableExtensions(force: Boolean = false) {
+        val now = System.currentTimeMillis()
+        if (!force && availableExtensionMapFlow.value.isNotEmpty() && now - lastIndexFetch < INDEX_KEEP_MILLIS) return
         val extensions: List<Extension.Available> = try {
             api.findExtensions()
         } catch (e: Exception) {
@@ -182,6 +187,7 @@ class ExtensionManager(
             withUIContext { context.toast(MR.strings.extension_api_error) }
             return
         }
+        lastIndexFetch = now
 
         enableAdditionalSubLanguages(extensions)
 

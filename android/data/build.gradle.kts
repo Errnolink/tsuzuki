@@ -43,4 +43,7 @@ dependencies {
     testImplementation(libs.junit.jupiter)
     testRuntimeOnly(libs.junit.platform.launcher)
     testImplementation(libs.sqldelight.jvm.driver)
+    // UpdatesWidgetSubscriptionTest: UpdatesWithRelations constructs its title via
+    // a companion injectLazy(GetCustomMangaInfo), so JVM tests need the registry.
+    testImplementation(libs.injekt)
 }

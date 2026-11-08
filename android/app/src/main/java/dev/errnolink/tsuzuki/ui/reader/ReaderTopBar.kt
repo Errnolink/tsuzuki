@@ -43,6 +43,7 @@ fun ReaderTopBar(
     onClickChapterList: () -> Unit = {},
     onClickSettings: () -> Unit = {},
     moreActions: List<ContextMenuAction> = emptyList(),
+    pagesLeft: String? = null,
 ) {
     Row(
         modifier.fillMaxWidth(),
@@ -54,7 +55,13 @@ fun ReaderTopBar(
                 DetailIcon("Back", TsuzukiIcons.Back, navigateUp, enabled = enabled)
                 Column(Modifier.weight(1f).clickable(enabled = enabled, onClick = onTitleClick).padding(end = 12.dp, top = 8.dp, bottom = 8.dp)) {
                     TsuzukiText(mangaTitle.orEmpty(), style = TsuzukiTheme.typography.headline, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                    TsuzukiText(chapterTitle.orEmpty(), style = TsuzukiTheme.typography.caption1, color = TsuzukiTheme.colors.secondary, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    TsuzukiText(
+                        listOfNotNull(chapterTitle?.takeIf { it.isNotBlank() }, pagesLeft).joinToString(" · "),
+                        style = TsuzukiTheme.typography.caption1,
+                        color = TsuzukiTheme.colors.secondary,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
                 }
             }
         }

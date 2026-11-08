@@ -145,7 +145,6 @@ fun DetentSheet(
 ) {
     val colors = TsuzukiTheme.colors
     val motion = TsuzukiTheme.motion
-    val tokens = LocalMotionTokens.current
     val labels = LocalTsuzukiComponentLabels.current
     val haptics = TsuzukiTheme.haptics
     val scope = rememberCoroutineScope()
@@ -188,7 +187,7 @@ fun DetentSheet(
         val trackedReveal = if (dismiss) 0f else 1f
         animation = scope.launch {
             val animated = withTimeoutOrNull(DetentSheetGeometry.SettleWallClockBoundMillis) {
-                animateSheetOffset(start, target, velocity, viewportHeight, motion, dismiss, velocityDriven, tokens) { value, progress ->
+                animateSheetOffset(start, target, velocity, viewportHeight, motion, dismiss, velocityDriven) { value, progress ->
                     offset = value.coerceIn(0f, viewportHeight)
                     sheetAlpha = when {
                         !motion.reduced -> 1f
@@ -444,7 +443,6 @@ private suspend fun animateSheetOffset(
     motion: TsuzukiMotion,
     closing: Boolean,
     velocityDriven: Boolean,
-    standardTokens: Boolean,
     update: (Float, Float) -> Unit,
 ) {
     if (start == target) {
@@ -471,7 +469,7 @@ private suspend fun animateSheetOffset(
     val presenting = !closing && start >= height - 0.5f
     val spec: FiniteAnimationSpec<Float> = when {
         closing -> M3Motion.exit()
-        presenting -> if (standardTokens) M3Motion.enter(M3Motion.Medium3) else M3Motion.enter()
+        presenting -> M3Motion.enter(M3Motion.Medium3)
         velocityDriven -> motion.sheetSpring()
         else -> M3Motion.emphasized(M3Motion.Medium2)
     }

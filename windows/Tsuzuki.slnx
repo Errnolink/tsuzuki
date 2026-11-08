@@ -4,8 +4,10 @@
       <Platform Project="x64" />
     </Project>
     <Project Path="src/Tsuzuki.Core/Tsuzuki.Core.csproj" />
+    <Project Path="src/Tsuzuki.Presentation/Tsuzuki.Presentation.csproj" />
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/Tsuzuki.Core.Tests/Tsuzuki.Core.Tests.csproj" />
+    <Project Path="tests/Tsuzuki.Presentation.Tests/Tsuzuki.Presentation.Tests.csproj" />
   </Folder>
 </Solution>

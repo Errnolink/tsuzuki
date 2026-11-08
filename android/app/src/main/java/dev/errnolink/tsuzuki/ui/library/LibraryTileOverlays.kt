@@ -1,5 +1,6 @@
 package dev.errnolink.tsuzuki.ui.library
 
+import dev.errnolink.tsuzuki.reader.readerOrigin
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
@@ -24,6 +25,7 @@ import dev.errnolink.tsuzuki.designsystem.TsuzukiIcons
 import dev.errnolink.tsuzuki.designsystem.TsuzukiTheme
 import dev.errnolink.tsuzuki.ui.shell.ShellBadge
 import eu.kanade.tachiyomi.ui.library.LibraryItem
+import exh.source.MERGED_SOURCE_ID
 
 @Immutable
 data class LibraryTileOverlays(
@@ -47,9 +49,9 @@ data class LibraryTileOverlays(
             downloads = item.downloadCount.coerceAtLeast(0),
             read = item.libraryManga.unreadCount <= 0L,
             isLocal = item.isLocal,
-            sourceLanguage = item.sourceLanguage.takeIf { it.isNotEmpty() },
+            sourceLanguage = item.sourceLanguage.takeIf { it.isNotEmpty() && item.source?.id != MERGED_SOURCE_ID },
             useLangIcon = item.useLangIcon,
-            sourceName = item.source?.name,
+            sourceName = if (item.source?.id == MERGED_SOURCE_ID) "Merged" else item.source?.name,
             continueChapterId = continueChapterId,
             continueProgress = continueProgress,
         )
@@ -118,24 +120,56 @@ fun LibraryTileOverlays.summaryText(badges: LibraryTileBadges): String {
 fun LibraryTileContinuePill(
     modifier: Modifier = Modifier,
     contentDescription: String = "Resume next chapter",
+    progress: Float? = null,
     onClick: () -> Unit,
 ) {
     val colors = TsuzukiTheme.colors
+    val readPercent = progress?.let { (it.coerceIn(0f, 1f) * 100).toInt() }
     Box(
         modifier = modifier
+            .readerOrigin()
             .sizeIn(minWidth = 48.dp, minHeight = 48.dp)
-            .semantics { this.contentDescription = contentDescription }
+            .semantics {
+                this.contentDescription = readPercent?.let { "$contentDescription, $it% read" } ?: contentDescription
+            }
             .clickable(onClick = onClick),
         contentAlignment = Alignment.Center,
     ) {
+        if (progress != null) {
+            androidx.compose.foundation.Canvas(Modifier.size(42.dp)) {
+                val stroke = 3.dp.toPx()
+                val inset = stroke / 2f
+                val arcSize = androidx.compose.ui.geometry.Size(size.width - stroke, size.height - stroke)
+                val topLeft = androidx.compose.ui.geometry.Offset(inset, inset)
+                drawCircle(androidx.compose.ui.graphics.Color.Black.copy(alpha = 0.45f), radius = size.minDimension / 2f)
+                drawArc(
+                    color = androidx.compose.ui.graphics.Color.White.copy(alpha = 0.28f),
+                    startAngle = 0f,
+                    sweepAngle = 360f,
+                    useCenter = false,
+                    topLeft = topLeft,
+                    size = arcSize,
+                    style = androidx.compose.ui.graphics.drawscope.Stroke(stroke),
+                )
+                drawArc(
+                    color = androidx.compose.ui.graphics.Color.White,
+                    startAngle = -90f,
+                    sweepAngle = 360f * progress.coerceIn(0f, 1f),
+                    useCenter = false,
+                    topLeft = topLeft,
+                    size = arcSize,
+                    style = androidx.compose.ui.graphics.drawscope.Stroke(stroke, cap = androidx.compose.ui.graphics.StrokeCap.Round),
+                )
+            }
+        }
         Box(
             Modifier
-                .size(34.dp)
+                .size(if (progress != null) 30.dp else 34.dp)
                 .clip(CircleShape)
                 .background(colors.accent, CircleShape),
             contentAlignment = Alignment.Center,
         ) {
-            Icon(TsuzukiIcons.Play, null, Modifier.size(18.dp), tint = colors.onAccent)
+            Icon(TsuzukiIcons.Play, null, Modifier.size(if (progress != null) 16.dp else 18.dp), tint = colors.onAccent)
         }
     }
 }

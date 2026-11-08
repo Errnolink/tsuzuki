@@ -91,6 +91,28 @@ class HeroCardTest {
     }
 
     @Test
+    fun `a tile shaped differently from the details cover starts as exactly the tile and lands in the slot`() {
+        for (otherTile in listOf(Rect(560f, 900f, 1020f, 1360f), Rect(560f, 900f, 1020f, 1700f))) {
+            val start = heroCard(otherTile, largeCover, screen, 0f)
+            assertRect(otherTile, start.bounds)
+            assertRect(otherTile, requireNotNull(start.cover))
+            for (step in 0..10) {
+                val card = heroCard(otherTile, largeCover, screen, step / 10f)
+                val cover = requireNotNull(card.cover)
+                val bounds = card.bounds
+                assertTrue(
+                    cover.left >= bounds.left - 0.5f && cover.right <= bounds.right + 0.5f &&
+                        cover.top >= bounds.top - 0.5f && cover.bottom <= bounds.bottom + 0.5f,
+                    "cover hangs outside the card at ${step / 10f} for $otherTile",
+                )
+            }
+            val end = heroCard(otherTile, largeCover, screen, 1f)
+            assertRect(fullScreen, end.bounds)
+            assertRect(largeCover, requireNotNull(end.cover))
+        }
+    }
+
+    @Test
     fun `the flying cover lands in the details slot exactly when the clip reaches the screen`() {
         for (step in 1..9) {
             val p = step / 10f
@@ -114,5 +136,37 @@ class HeroCardTest {
         val end = heroCard(tile, null, screen, 1f)
         assertEquals(1f, end.scale, 1e-4f)
         assertRect(fullScreen, end.bounds)
+    }
+
+    @Test
+    fun `dragging back shrinks the page around its centre and carries it with the finger`() {
+        val full = heroCard(tile, largeCover, screen, 1f)
+        val finger = androidx.compose.ui.geometry.Offset(120f, 60f)
+        val dragged = heroPose(full, 1f, finger)
+
+        assertTrue(dragged.scale < full.scale, "the page must shrink while dragged")
+        assertEquals(fullScreen.center.x + finger.x, dragged.bounds.center.x, 0.5f)
+        assertEquals(fullScreen.center.y + finger.y, dragged.bounds.center.y, 0.5f)
+        val cover = requireNotNull(dragged.cover)
+        assertTrue(cover.width < largeCover.width, "the cover shrinks with the page")
+        assertEquals(cover.width / cover.height, largeCover.width / largeCover.height, 1e-3f)
+    }
+
+    @Test
+    fun `a cover scrolled off the top shrinks the page as it looks into the tile instead of anchoring on the hidden cover`() {
+        val scrolledAway = Rect(240f, -2600f, 840f, -1700f)
+        val landing = heroCard(tile, scrolledAway, screen, 0f)
+
+        assertRect(tile, Rect(landing.bounds.left, landing.bounds.top, landing.bounds.right, landing.bounds.top + tile.height))
+        assertEquals(tile.width / screen.width, landing.scale, 1e-4f)
+        assertEquals(null, landing.cover)
+    }
+
+    @Test
+    fun `the tile image hands over to the page in the first third of the flight and comes back for the last third`() {
+        assertEquals(1f, flyingCoverAlpha(0f), 1e-4f)
+        assertTrue(flyingCoverAlpha(0.15f) in 0.01f..0.99f)
+        assertEquals(0f, flyingCoverAlpha(0.3f), 1e-4f)
+        assertEquals(0f, flyingCoverAlpha(1f), 1e-4f)
     }
 }

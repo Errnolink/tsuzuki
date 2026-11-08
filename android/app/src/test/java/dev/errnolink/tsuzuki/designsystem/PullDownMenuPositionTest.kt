@@ -52,6 +52,38 @@ class PullDownMenuPositionTest {
     }
 
     @Test
+    fun `a menu that grows out of its button covers the button and starts from its exact bounds`() {
+        val below = IntRect(left = 940, top = 100, right = 1040, bottom = 180)
+        val belowResult = computeMenuPosition(
+            anchorBounds = below,
+            windowSize = windowSize,
+            isLtr = true,
+            popupSize = popupSize,
+            marginPx = margin,
+            verticalGapPx = gap,
+            overlapAnchor = true,
+        )
+        assertFalse(belowResult.isAbove)
+        assertEquals(below.top, belowResult.offset.y)
+        assertEquals(below.right, belowResult.offset.x + popupSize.width)
+        assertEquals(IntRect(500, 0, 600, 80), belowResult.anchorInPopup)
+
+        val above = IntRect(left = 900, top = 2250, right = 1000, bottom = 2320)
+        val aboveResult = computeMenuPosition(
+            anchorBounds = above,
+            windowSize = windowSize,
+            isLtr = true,
+            popupSize = popupSize,
+            marginPx = margin,
+            verticalGapPx = gap,
+            overlapAnchor = true,
+        )
+        assertTrue(aboveResult.isAbove)
+        assertEquals(above.bottom, aboveResult.offset.y + popupSize.height)
+        assertEquals(popupSize.height, aboveResult.anchorInPopup.bottom)
+    }
+
+    @Test
     fun `menu aligns right edge with anchor right edge on right half of screen`() {
         // Anchor right = 1040, anchor center = 990 > 540
         val anchor = IntRect(left = 940, top = 100, right = 1040, bottom = 180)
@@ -183,5 +215,27 @@ class PullDownMenuPositionTest {
         assertFalse(result.isAbove)
         assertEquals(topAnchor.bottom + gap, result.offset.y)
         assertEquals(0f, result.origin.pivotFractionY)
+    }
+
+    @Test
+    fun `an overlap offset pulls the menu toward its button whether it opens above or below`() {
+        val overlap = IntOffset(24, -56)
+        val low = IntRect(left = 900, top = 2250, right = 1000, bottom = 2320)
+        val above = computeMenuPosition(low, windowSize, isLtr = true, popupSize, margin, gap, offsetPx = overlap)
+        assertTrue(above.isAbove)
+        assertTrue(above.offset.y + popupSize.height > low.top - gap, "menu above drifted away: bottom ${above.offset.y + popupSize.height}")
+        assertTrue(above.offset.x + popupSize.width <= low.right, "right-aligned menu overshot its button")
+
+        val high = IntRect(left = 900, top = 100, right = 1000, bottom = 180)
+        val below = computeMenuPosition(high, windowSize, isLtr = true, popupSize, margin, gap, offsetPx = overlap)
+        assertFalse(below.isAbove)
+        assertTrue(below.offset.y < high.bottom + gap, "menu below drifted away: top ${below.offset.y}")
+    }
+
+    @Test
+    fun `right-to-left menus mirror the side rule instead of always aligning right`() {
+        val startSide = IntRect(left = 40, top = 100, right = 140, bottom = 180)
+        val result = computeMenuPosition(startSide, windowSize, isLtr = false, popupSize, margin, gap)
+        assertEquals(startSide.left, result.offset.x)
     }
 }

@@ -233,6 +233,8 @@ class MangaScreenModel(
     ),
 ) {
 
+    private val detailsFreshness = dev.errnolink.tsuzuki.data.DetailsFreshness.of(context)
+
     private val successState: State.Success?
         get() = state.value as? State.Success
 
@@ -479,7 +481,7 @@ class MangaScreenModel(
             }
 
             val needRefreshInfo = !manga.initialized
-            val needRefreshChapter = chapters.isEmpty()
+            val needRefreshChapter = detailsFreshness.chaptersDue(manga.id, chapters.isNotEmpty(), manga.lastUpdate)
 
             // Show what we have earlier
             mutableState.update {
@@ -631,6 +633,7 @@ class MangaScreenModel(
                 // KMK -->
                 clearErrorFromDB(state.manga.id)
                 // KMK <--
+                if (fetchChapters) detailsFreshness.markChecked(state.manga.id)
 
                 if (manualFetch) {
                     downloadNewChapters(update.newChapters)
@@ -1168,6 +1171,7 @@ class MangaScreenModel(
         setRelatedMangasFetchedStatus(false)
 
         fun exceptionHandler(e: Throwable) {
+            if (e is CancellationException) return
             logcat(LogPriority.ERROR, e)
             val message = with(context) { e.formattedMessage }
 

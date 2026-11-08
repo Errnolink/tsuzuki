@@ -42,8 +42,6 @@ val LocalOpaqueGlass = staticCompositionLocalOf { true }
 val LocalGlassTintStrength = staticCompositionLocalOf { GlassMaterial.DefaultTintStrength }
 val LocalTsuzukiContentColor = staticCompositionLocalOf { Color.Unspecified }
 val LocalTsuzukiComponentLabels = staticCompositionLocalOf { TsuzukiComponentLabels() }
-val LocalMotionTokens = staticCompositionLocalOf { false }
-val LocalLargeTitles = staticCompositionLocalOf { false }
 @Immutable
 data class TsuzukiComponentLabels(
     val resizeSheet: String = "Resize sheet",
@@ -99,8 +97,7 @@ fun TsuzukiTheme(
     }
     val colors = remember(dark, accent) { tsuzukiColors(dark, accent) }
     val typography = remember { TsuzukiTypography() }
-    val standardTokens = LocalMotionTokens.current
-    val motion = remember(reducedMotion, policy, standardTokens) { TsuzukiMotion(reducedMotion || policy.reducedMotion, standardTokens) }
+    val motion = remember(reducedMotion, policy) { TsuzukiMotion(reducedMotion || policy.reducedMotion) }
     val indication = remember(motion) { PressScaleIndication(motion) }
     val selectionColors = remember(colors) { TextSelectionColors(colors.accent, colors.accent.copy(alpha = 0.24f)) }
     val haptics = rememberHaptics()

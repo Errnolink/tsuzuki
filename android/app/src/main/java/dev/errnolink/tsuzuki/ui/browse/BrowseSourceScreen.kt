@@ -107,7 +107,11 @@ fun BrowseSourceContent(
                 with(columns) { calculateCrossAxisCellSizes(availableSize, spacing) }.toIntArray()
         }
     }
-    ShellRefresh(mangaList.loadState.refresh is LoadState.Loading, selection.isEmpty(), mangaList::refresh) {
+    val listingCache = remember { uy.kohesive.injekt.Injekt.get<dev.errnolink.tsuzuki.data.listing.ListingCache>() }
+    ShellRefresh(mangaList.loadState.refresh is LoadState.Loading, selection.isEmpty(), {
+        source?.let { listingCache.forget(it.id) }
+        mangaList.refresh()
+    }) {
         LazyVerticalStaggeredGrid(
             flingBehavior = dev.errnolink.tsuzuki.designsystem.tsuzukiFlingBehavior(),
             columns = cells,

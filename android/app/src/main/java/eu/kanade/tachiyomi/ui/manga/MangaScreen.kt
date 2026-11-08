@@ -102,7 +102,7 @@ import tachiyomi.i18n.sy.SYMR
 import tachiyomi.presentation.core.screens.LoadingScreen
 import uy.kohesive.injekt.Injekt
 import uy.kohesive.injekt.api.get
-import dev.errnolink.tsuzuki.ui.details.DetailSkeleton
+import dev.errnolink.tsuzuki.ui.details.MangaDetailSkeleton
 import dev.errnolink.tsuzuki.ui.details.rememberPreparedDetailsState
 import dev.errnolink.tsuzuki.ui.shell.SkeletonCrossfade
 import dev.errnolink.tsuzuki.ui.shell.mangaHeroTarget
@@ -146,9 +146,6 @@ class MangaScreen(
         val state by rememberPreparedDetailsState(screenModel.state)
 
         val successState = state as? MangaScreenModel.State.Success
-        if (state !is MangaScreenModel.State.Loading) {
-            LaunchedEffect(Unit) { dev.errnolink.tsuzuki.ui.shell.ScreenReadiness.mark(key) }
-        }
 
         // KMK -->
         val bulkFavoriteScreenModel = rememberScreenModel { BulkFavoriteScreenModel() }
@@ -193,7 +190,7 @@ class MangaScreen(
         TachiyomiTheme {
             SkeletonCrossfade(
                 loading = state is MangaScreenModel.State.Loading,
-                skeleton = { DetailSkeleton(coverModifier = Modifier.mangaHeroTarget(mangaId)) },
+                skeleton = { MangaDetailSkeleton(mangaId, coverModifier = Modifier.mangaHeroTarget(mangaId)) },
                 content = {
                     val loadedState = successState
                     if (loadedState != null) content(loadedState)
@@ -432,15 +429,7 @@ class MangaScreen(
                     if (successState.mergedData == null) {
                         screenModel.source?.let { browseSource(navigator, it, screenModel.useNewSourceNavigation) }
                     } else {
-                        mergedMangaAction(
-                            context,
-                            navigator,
-                            successState.mergedData,
-                            action = { _, nav, _, source ->
-                                source?.let { browseSource(nav, it, screenModel.useNewSourceNavigation) }
-                            },
-                            titleRes = MR.strings.browse,
-                        )
+                        screenModel.showMergeSheet()
                     }
                     // KMK <--
                 } else {
@@ -594,7 +583,7 @@ class MangaScreen(
     }
 
     private fun openChapter(context: Context, chapter: Chapter) {
-        context.startActivity(ReaderActivity.newIntent(context, mangaId, chapter.id))
+        dev.errnolink.tsuzuki.reader.ReaderTransition.open(context, ReaderActivity.newIntent(context, mangaId, chapter.id))
     }
 
     @Suppress("LocalVariableName")

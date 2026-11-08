@@ -37,16 +37,28 @@ public sealed class NavHost(Grid host)
     public bool CanGoBack => stack.Count > 0;
     public string? CurrentRoot => currentRoot;
     public FrameworkElement? Top => stack.Count > 0 ? stack[^1] : currentRoot is null ? null : roots[currentRoot];
+    public FrameworkElement? Below => stack.Count > 1 ? stack[^2] : stack.Count == 1 && currentRoot is not null ? roots[currentRoot] : null;
     public Grid Host => host;
 
     public FrameworkElement? Root(string key) => roots.GetValueOrDefault(key);
-    public Task ShowRootAsync(string key, Func<FrameworkElement> factory) =>
-        RunQueued(() => ShowRootCore(key, factory));
+    public Task ShowRootAsync(string key, Func<FrameworkElement> factory)
+    {
+        Log.Trail("root " + key);
+        return RunQueued(() => ShowRootCore(key, factory));
+    }
 
-    public Task PushAsync(FrameworkElement page) =>
-        RunQueued(() => PushCore(page));
+    public Task PushAsync(FrameworkElement page)
+    {
+        Log.Trail("push " + page.GetType().FullName);
+        return RunQueued(() => PushCore(page));
+    }
 
-    public Task PopAsync() => RunQueued(PopCore);
+    public Task PopAsync()
+    {
+        Log.Trail("pop");
+        DevHarness.Mark("pop input");
+        return RunQueued(PopCore);
+    }
 
     private async Task RunQueued(Func<Task> run)
     {
@@ -99,6 +111,11 @@ public sealed class NavHost(Grid host)
                 (pushed as ITzPage)?.OnHidden();
             }
             stack.Clear();
+            if (currentRoot is not null)
+            {
+                Wake(roots[currentRoot]);
+                roots[currentRoot].Visibility = Visibility.Collapsed;
+            }
         }
         if (currentRoot == key && outgoing == page)
         {
@@ -141,7 +158,7 @@ public sealed class NavHost(Grid host)
         animating = null;
         if (below is not null)
         {
-            below.Visibility = Visibility.Collapsed;
+            Sleep(below);
             (below as ITzPage)?.OnHidden();
         }
         (page as ITzPage)?.OnShown();
@@ -160,8 +177,7 @@ public sealed class NavHost(Grid host)
         if (below is not null)
         {
             below.Visibility = Visibility.Visible;
-            var v = Motion.VisualOf(below);
-            v.Opacity = 1;
+            Wake(below);
         }
         Changed?.Invoke(this, EventArgs.Empty);
         (page as ITzPage)?.OnHidden();
@@ -177,5 +193,29 @@ public sealed class NavHost(Grid host)
         animating = null;
         host.Children.Remove(page);
         (below as ITzPage)?.OnShown();
+    }
+
+    private static void Sleep(FrameworkElement page)
+    {
+        if (page is not TzPage sleeper)
+        {
+            page.Visibility = Visibility.Collapsed;
+            return;
+        }
+        sleeper.IsEnabled = false;
+        sleeper.IsHitTestVisible = false;
+        sleeper.Asleep = true;
+        Motion.VisualOf(sleeper).Opacity = 0.004f;
+    }
+
+    private static void Wake(FrameworkElement page)
+    {
+        if (page is TzPage sleeper)
+        {
+            sleeper.IsEnabled = true;
+            sleeper.IsHitTestVisible = true;
+            sleeper.Asleep = false;
+        }
+        Motion.VisualOf(page).Opacity = 1;
     }
 }

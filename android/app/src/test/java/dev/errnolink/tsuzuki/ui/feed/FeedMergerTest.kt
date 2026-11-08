@@ -190,44 +190,6 @@ class FeedMergerTest {
     }
 
     @Test
-    fun testOldestUnreadChoice() {
-        val chapters = listOf(
-            FeedChapterItem("3", 1L, 30L, "Manga", "Ch 32", 32.0, 1000L, null, isLibrary = true, isRead = false),
-            FeedChapterItem("2", 1L, 20L, "Manga", "Ch 31", 31.0, 1000L, null, isLibrary = true, isRead = false),
-            FeedChapterItem("1", 1L, 10L, "Manga", "Ch 30", 30.0, 1000L, null, isLibrary = true, isRead = false),
-        )
-        val group = FeedTitleGroup(
-            mangaId = 1L,
-            mangaTitle = "Manga",
-            coverUrl = null,
-            chapters = chapters,
-            isLibrary = true,
-        )
-        assertEquals(3, group.newCount)
-        assertEquals(3, group.unreadCount)
-        assertEquals("Ch 30", group.oldestUnreadChapter?.chapterName)
-        assertEquals(30.0, group.oldestUnreadChapter?.chapterNumber)
-    }
-
-    @Test
-    fun testOldestUnreadWhenSomeAlreadyRead() {
-        val chapters = listOf(
-            FeedChapterItem("3", 1L, 30L, "Manga", "Ch 32", 32.0, 1000L, null, isLibrary = true, isRead = false),
-            FeedChapterItem("2", 1L, 20L, "Manga", "Ch 31", 31.0, 1000L, null, isLibrary = true, isRead = false),
-            FeedChapterItem("1", 1L, 10L, "Manga", "Ch 30", 30.0, 1000L, null, isLibrary = true, isRead = true),
-        )
-        val group = FeedTitleGroup(
-            mangaId = 1L,
-            mangaTitle = "Manga",
-            coverUrl = null,
-            chapters = chapters,
-            isLibrary = true,
-        )
-        assertEquals(2, group.unreadCount)
-        assertEquals("Ch 31", group.oldestUnreadChapter?.chapterName)
-    }
-
-    @Test
     fun testGroupingByDayAndTitle() {
         val day1 = 1700000000000L // arbitrary fixed epoch millis
         val day2 = day1 + 86_400_000L

@@ -87,6 +87,7 @@ class GlobalSearchScreen(
                 onClickSource = {
                     navigator.push(BrowseSourceScreen(it.id, state.searchQuery))
                 },
+                onRetrySource = screenModel::retry,
                 onClickItem = { manga ->
                     // KMK -->
                     if (bulkFavoriteState.selectionMode) {

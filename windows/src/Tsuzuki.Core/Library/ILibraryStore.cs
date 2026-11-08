@@ -6,6 +6,7 @@ public interface ILibraryStore
 {
     Task<IReadOnlyList<LibraryEntry>> GetLibraryAsync(CancellationToken ct = default);
     Task<IReadOnlySet<string>> GetFavouriteKeysAsync(CancellationToken ct = default);
+    Task<bool> HasFavouritesAsync(CancellationToken ct = default);
     Task<IReadOnlyList<CategoryInfo>> GetCategoriesAsync(CancellationToken ct = default);
     Task<IReadOnlyList<ContinueEntry>> GetContinueReadingAsync(int limit, CancellationToken ct = default);
     Task<MangaDetails?> GetMangaAsync(long mangaId, CancellationToken ct = default);
@@ -24,6 +25,7 @@ public interface ILibraryStore
     Task SetMangaCategoriesAsync(long mangaId, IReadOnlyList<long> categoryUids, CancellationToken ct = default);
     Task<CategoryInfo> CreateCategoryAsync(string name, CancellationToken ct = default);
     Task FlushAsync(CancellationToken ct = default);
+    IDisposable BeginBatch();
 
     event EventHandler<LibraryChangedEventArgs>? Changed;
 }

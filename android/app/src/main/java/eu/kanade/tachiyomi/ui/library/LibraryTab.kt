@@ -149,7 +149,7 @@ data object LibraryTab : Tab {
                 navigator.push(MangaScreen(it))
             },
             onResume = { mangaId, chapterId ->
-                context.startActivity(ReaderActivity.newIntent(context, mangaId, chapterId))
+                dev.errnolink.tsuzuki.reader.ReaderTransition.open(context, ReaderActivity.newIntent(context, mangaId, chapterId))
             },
             onBrowse = { scope.launch { HomeScreen.openTab(HomeScreen.Tab.Browse()) } },
             onOpenDownloadQueue = { navigator.push(DownloadQueueScreen) },

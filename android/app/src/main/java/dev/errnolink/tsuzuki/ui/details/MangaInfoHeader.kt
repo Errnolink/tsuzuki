@@ -57,6 +57,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.MutableFloatState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -110,16 +111,22 @@ fun MangaInfoBox(
         horizontalArrangement = Arrangement.spacedBy(16.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        DetailsCover(
-            cover = manga.asMangaCover(),
-            title = manga.title,
-            onClick = onCoverClick,
-            modifier = Modifier.width(112.dp),
-            onCoverDecoded = { height, width ->
-                coverRatio.floatValue = height.toFloat() / width
-            },
-            onLoaded = onCoverLoaded,
-        )
+        val knownRatio = remember(manga.id) { knownCoverRatio(manga.id) }
+        var ratio by remember(manga.id) { mutableFloatStateOf(detailsCoverRatio(knownRatio)) }
+        DetailsCoverSlot(centered = false, ratio = ratio) { slot ->
+            DetailsCover(
+                cover = manga.asMangaCover(),
+                title = manga.title,
+                ratio = ratio,
+                onClick = onCoverClick,
+                modifier = slot,
+                onCoverDecoded = { height, width ->
+                    coverRatio.floatValue = height.toFloat() / width
+                    if (knownRatio == null) ratio = detailsCoverRatio(width.toFloat() / height)
+                },
+                onLoaded = onCoverLoaded,
+            )
+        }
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(TsuzukiTheme.spacing.small)) {
             var titleExpanded by rememberSaveable(manga.id) { mutableStateOf(false) }
             ContextMenu(
@@ -135,6 +142,7 @@ fun MangaInfoBox(
                     style = TsuzukiTheme.typography.title3,
                     maxLines = if (titleExpanded) Int.MAX_VALUE else 2,
                     overflow = TextOverflow.Ellipsis,
+                    modifier = LocalHeroTitleAnchor.current?.title() ?: Modifier,
                 )
             }
             val author = manga.author?.takeIf { it.isNotBlank() }
@@ -156,14 +164,12 @@ fun MangaInfoBox(
                 statusColor = mangaStatusColor(statusRes),
                 chapterCount = chapterCount,
             )
-            if (lastChapterUpdate > 0L) {
-                TsuzukiText(
-                    "Updated ${relativeTimeSpanString(lastChapterUpdate)}",
-                    style = TsuzukiTheme.typography.subhead,
-                    color = TsuzukiTheme.colors.secondary,
-                    maxLines = 1,
-                )
-            }
+            TsuzukiText(
+                if (lastChapterUpdate > 0L) "Updated ${relativeTimeSpanString(lastChapterUpdate)}" else " ",
+                style = TsuzukiTheme.typography.subhead,
+                color = TsuzukiTheme.colors.secondary,
+                maxLines = 1,
+            )
             if (isSourceIncognito) TsuzukiText(stringResource(MR.strings.pref_incognito_mode), style = TsuzukiTheme.typography.caption1, color = TsuzukiTheme.colors.secondary)
             SourceLine(
                 label = sourceLineLabel(sourceName, sourceLanguage, mergedSourceCount, isStubSource),
@@ -241,16 +247,22 @@ fun MangaInfoHeaderApple(
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(TsuzukiTheme.spacing.medium),
     ) {
-        DetailsCover(
-            cover = manga.asMangaCover(),
-            title = manga.title,
-            onClick = onCoverClick,
-            modifier = Modifier.fillMaxWidth(0.62f),
-            onCoverDecoded = { height, width ->
-                coverRatio.floatValue = height.toFloat() / width
-            },
-            onLoaded = onCoverLoaded,
-        )
+        val knownRatio = remember(manga.id) { knownCoverRatio(manga.id) }
+        var ratio by remember(manga.id) { mutableFloatStateOf(detailsCoverRatio(knownRatio)) }
+        DetailsCoverSlot(centered = true, ratio = ratio) { slot ->
+            DetailsCover(
+                cover = manga.asMangaCover(),
+                title = manga.title,
+                ratio = ratio,
+                onClick = onCoverClick,
+                modifier = slot,
+                onCoverDecoded = { height, width ->
+                    coverRatio.floatValue = height.toFloat() / width
+                    if (knownRatio == null) ratio = detailsCoverRatio(width.toFloat() / height)
+                },
+                onLoaded = onCoverLoaded,
+            )
+        }
         var titleExpanded by rememberSaveable(manga.id) { mutableStateOf(false) }
         ContextMenu(
             manga.title,
@@ -265,6 +277,7 @@ fun MangaInfoHeaderApple(
                 style = TsuzukiTheme.typography.title2.copy(textAlign = TextAlign.Center),
                 maxLines = if (titleExpanded) Int.MAX_VALUE else 2,
                 overflow = TextOverflow.Ellipsis,
+                modifier = LocalHeroTitleAnchor.current?.title() ?: Modifier,
             )
         }
         val author = manga.author?.takeIf { it.isNotBlank() }
@@ -394,7 +407,11 @@ private fun Byline(
 
 @Composable
 private fun RatingLine(mangaId: Long, onClick: () -> Unit) {
-    val stats = rememberMangaDexHeroStats(mangaId = mangaId) ?: return
+    val stats = rememberMangaDexHeroStats(mangaId = mangaId)
+    if (stats == null) {
+        TsuzukiText(" ", style = TsuzukiTheme.typography.subhead)
+        return
+    }
     Row(
         Modifier.clickable(onClick = onClick),
         verticalAlignment = Alignment.CenterVertically,
@@ -425,6 +442,7 @@ internal fun formatFollowsCompact(follows: Long): String = when {
 private fun DetailsCover(
     cover: tachiyomi.domain.manga.model.MangaCover,
     title: String,
+    ratio: Float,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
     onCoverDecoded: (height: Int, width: Int) -> Unit,
@@ -443,7 +461,10 @@ private fun DetailsCover(
     var smallCached by remember(key) { mutableStateOf(false) }
     var failed by remember(key) { mutableStateOf(false) }
     var retryAttempt by remember(key) { mutableIntStateOf(0) }
-    val retry: () -> Unit = { retryAttempt++ }
+    val retry: () -> Unit = {
+        cover.url?.let(dev.errnolink.tsuzuki.network.RefusedCovers.shared::forget)
+        retryAttempt++
+    }
     val context = LocalContext.current
     val sizeResolver = rememberConstraintsSizeResolver()
     val originalRequest = remember(cover, context, sizeResolver, retryAttempt) {
@@ -469,6 +490,7 @@ private fun DetailsCover(
         animationSpec = if (motion.reduced) snap() else tween(durationMillis = 300),
         label = "details_cover_crossfade",
     )
+    val heroBitmap = remember(cover.mangaId) { dev.errnolink.tsuzuki.ui.shell.MangaHero.source(cover.mangaId)?.image }
     Box(
         modifier
             .mangaHeroTarget(cover.mangaId)
@@ -476,14 +498,22 @@ private fun DetailsCover(
     ) {
         CoverImage(
             imageKey = key,
-            aspectRatio = 2f / 3f,
-            loaded = smallLoaded || originalLoaded,
+            aspectRatio = ratio,
+            loaded = smallLoaded || originalLoaded || heroBitmap != null,
             arrivals = arrivals,
-            cached = originalCached || smallCached,
+            cached = originalCached || smallCached || heroBitmap != null,
             label = title,
-            onClick = if (failed && !smallLoaded) retry else onClick,
+            onClick = if (failed && !smallLoaded && heroBitmap == null) retry else onClick,
             modifier = Modifier.fillMaxWidth(),
         ) {
+            if (heroBitmap != null && (!originalLoaded || alpha < 1f)) {
+                androidx.compose.foundation.Image(
+                    bitmap = heroBitmap,
+                    contentDescription = null,
+                    modifier = Modifier.fillMaxSize(),
+                    contentScale = ContentScale.Crop,
+                )
+            }
             if (isMdCover && !hasCustomCover && placeholderRequest != null && (!originalLoaded || alpha < 1f)) {
                 AsyncImage(
                     model = placeholderRequest,
@@ -499,7 +529,7 @@ private fun DetailsCover(
             AsyncImage(
                 model = originalRequest,
                 contentDescription = stringResource(MR.strings.manga_cover),
-                modifier = Modifier.fillMaxSize().alpha(if (smallLoaded) alpha else 1f).then(sizeResolver),
+                modifier = Modifier.fillMaxSize().alpha(if (smallLoaded || heroBitmap != null) alpha else 1f).then(sizeResolver),
                 contentScale = ContentScale.Crop,
                 onSuccess = {
                     val image = it.result.image
@@ -514,9 +544,9 @@ private fun DetailsCover(
                 onError = { failed = true },
             )
         }
-        if (failed && !smallLoaded) {
+        if (failed && !smallLoaded && heroBitmap == null) {
             Column(
-                Modifier.align(Alignment.Center).clickable { retryAttempt++ }.padding(8.dp),
+                Modifier.align(Alignment.Center).clickable(onClick = retry).padding(8.dp),
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.spacedBy(6.dp),
             ) {

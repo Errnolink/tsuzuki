@@ -172,7 +172,6 @@ val prefKeys: Set<String> = setOf(
         )
 
         return listOf(
-            getLayoutLabGroup(),
             troubleshooting,
             getBackgroundActivityGroup(),
             getNetworkGroup(networkPreferences = networkPreferences),
@@ -186,49 +185,6 @@ val prefKeys: Set<String> = setOf(
             // SY -->
             getDeveloperToolsGroup(),
             // SY <--
-        )
-    }
-
-    @Composable
-    private fun getLayoutLabGroup(): Preference.PreferenceGroup {
-        val tsuzukiPreferences = remember { Injekt.get<dev.errnolink.tsuzuki.preference.TsuzukiPreferences>() }
-        val feedLayoutPref = tsuzukiPreferences.feedLayout()
-        val browseLayoutPref = tsuzukiPreferences.browseLayout()
-        return Preference.PreferenceGroup(
-            title = "Layout lab",
-            preferenceItems = persistentListOf(
-                Preference.PreferenceItem.ListPreference(
-                    preference = feedLayoutPref,
-                    entries = persistentMapOf(
-                        dev.errnolink.tsuzuki.preference.FeedLayout.NEW to "New",
-                        dev.errnolink.tsuzuki.preference.FeedLayout.CLASSIC to "Classic",
-                    ),
-                    title = "Feed layout",
-                    subtitleProvider = { value, entries -> entries[value] ?: "New" },
-                ),
-                Preference.PreferenceItem.ListPreference(
-                    preference = browseLayoutPref,
-                    entries = persistentMapOf(
-                        dev.errnolink.tsuzuki.preference.BrowseLayout.HYBRID to "Hybrid",
-                        dev.errnolink.tsuzuki.preference.BrowseLayout.DISCOVER to "Discover",
-                        dev.errnolink.tsuzuki.preference.BrowseLayout.CLASSIC to "Classic",
-                    ),
-                    title = "Browse layout",
-                    subtitleProvider = { value, entries -> entries[value] ?: "Hybrid" },
-                ),
-                Preference.PreferenceItem.SwitchPreference(
-                    preference = tsuzukiPreferences.motionStandardTokens(),
-                    title = "Motion: standard tokens",
-                ),
-                Preference.PreferenceItem.SwitchPreference(
-                    preference = tsuzukiPreferences.largeTitles(),
-                    title = "Large titles",
-                ),
-                Preference.PreferenceItem.SwitchPreference(
-                    preference = tsuzukiPreferences.detailsAppleHeader(),
-                    title = "Details: Apple header (beta)",
-                ),
-            ),
         )
     }
 

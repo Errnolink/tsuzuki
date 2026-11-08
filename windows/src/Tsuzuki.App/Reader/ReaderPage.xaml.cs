@@ -1,15 +1,16 @@
 using System.Numerics;
-using Microsoft.UI.Dispatching;
+using System.Runtime.ExceptionServices;
+using System.Runtime.InteropServices;
 using Microsoft.UI.Input;
 using Microsoft.UI.Windowing;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Input;
 using Microsoft.UI.Xaml.Media;
-using Microsoft.UI.Xaml.Media.Imaging;
 using Tsuzuki.App.Design;
 using Tsuzuki.Core.Images;
 using Tsuzuki.Core.Library;
+using Tsuzuki.Core.Reader;
 using Tsuzuki.Core.Sources;
 using Windows.Foundation;
 using Windows.System;
@@ -21,22 +22,31 @@ namespace Tsuzuki.App.Reader;
 public sealed partial class ReaderPage : UserControl
 {
     private static ReaderPage? current;
+    private static Task<ReaderProfiles>? profilesLoad;
 
     private readonly long mangaId;
-    private readonly Dictionary<int, (DecodedPage Page, List<SoftwareBitmapSource> Sources)> decoded = [];
-    private readonly Dictionary<int, Task<(DecodedPage Page, List<SoftwareBitmapSource> Sources)>> decoding = [];
+    private readonly Dictionary<int, DecodedPage> decoded = [];
+    private readonly Dictionary<int, Task<DecodedPage>> decoding = [];
+    private readonly List<DecodedPage> retired = [];
+    private readonly HashSet<long> prefetchedChapters = [];
     private readonly DispatcherQueueTimer chromeTimer;
     private readonly DispatcherQueueTimer saveTimer;
+    private readonly DispatcherQueueTimer pillTimer;
     private readonly StripFactory stripFactory;
+    private CancellationTokenSource generationCts = new();
     private MangaDetails? manga;
-    private IReadOnlyList<ChapterGroup> ascending = [];
+    private readonly Tsuzuki.Presentation.ReaderSessionViewModel session = new();
     private ChapterRow? chapter;
     private IReadOnlyList<PageRef> pages = [];
-    private Tsuzuki.Core.Reader.ReaderSpreadPlanner? spreadPlanner;
-    private bool? spreadFirstPageAlone;
+    private Task<IReadOnlyList<PageRef>?>? pageRefresh;
+    private IReadOnlyList<PageRef>? pageRefreshFor;
+    private ReaderSpreadPlanner? spreadPlanner;
+    private (bool CoverAlone, bool Offset, int Count)? spreadKey;
+    private readonly HashSet<int> landscapePages = [];
     private int index;
     private int loadVersion;
-    private int chapterVersion;
+    private int settledLoad;
+    private int generation;
     private bool chromeVisible = true;
     private bool pointerOverChrome;
     private double wheelAccumulator;
@@ -44,22 +54,29 @@ public sealed partial class ReaderPage : UserControl
     private long lastTurnMs;
     private int pendingSaveIndex = -1;
     private long pendingSaveChapter = -1;
-    private FrameworkElement? origin;
-    private ReaderMode mode;
+    private TransitionOrigin origin = TransitionOrigin.None;
+    private ReaderLayout layout;
+    private bool rightToLeft;
+    private PageFit fit;
+    private bool spreadOffset;
     private bool closing;
+    private bool loadingChapter;
+    private bool suppressSlider;
+    private bool cursorHidden;
+    private int pillVersion;
+    private Action? messageRetry;
 
     private ReaderPage(long mangaId)
     {
         InitializeComponent();
-        A11y.NameFromTooltips(BackButton, ModeSingle, ModeDouble, ModeStrip, DirectionButton, FitButton, FullscreenButton, PrevChapter, NextChapter);
         this.mangaId = mangaId;
-        mode = Services.Settings.ReaderMode;
+        ApplyProfile(DefaultProfile());
         chromeTimer = DispatcherQueue.CreateTimer();
         chromeTimer.Interval = TimeSpan.FromMilliseconds(2400);
         chromeTimer.IsRepeating = false;
         chromeTimer.Tick += (_, _) =>
         {
-            if (!DevHarness.Active && !pointerOverChrome && !PageSlider.FocusState.HasFlag(FocusState.Pointer))
+            if (!DevHarness.Active && AutoHideEnabled && !pointerOverChrome && !ExplorerOpen && !ActiveSlider.FocusState.HasFlag(FocusState.Pointer))
             {
                 SetChrome(false);
             }
@@ -67,43 +84,25 @@ public sealed partial class ReaderPage : UserControl
         saveTimer = DispatcherQueue.CreateTimer();
         saveTimer.Interval = TimeSpan.FromMilliseconds(600);
         saveTimer.IsRepeating = false;
-        saveTimer.Tick += (_, _) => _ = FlushProgressAsync();
+        saveTimer.Tick += (_, _) => _ = Log.Guard("reader progress", FlushProgressAsync);
+        pillTimer = DispatcherQueue.CreateTimer();
+        pillTimer.Interval = TimeSpan.FromMilliseconds(1000);
+        pillTimer.IsRepeating = false;
+        pillTimer.Tick += (_, _) => _ = HidePillAsync();
 
         stripFactory = new StripFactory(this);
         Strip.ItemTemplate = stripFactory;
 
-        BackButton.Click += (_, _) => _ = CloseAsync();
-        ModeSingle.Click += (_, _) => SetMode(ReaderMode.Single);
-        ModeDouble.Click += (_, _) => SetMode(ReaderMode.Double);
-        ModeStrip.Click += (_, _) => SetMode(ReaderMode.Webtoon);
-        DirectionButton.Click += (_, _) => ToggleDirection();
-        FitButton.Click += (_, _) => CycleFit();
-        FullscreenButton.Click += (_, _) => ToggleFullscreen();
-        PrevChapter.Click += (_, _) => _ = GoChapterAsync(-1);
-        NextChapter.Click += (_, _) => _ = GoChapterAsync(1);
         EndNext.Click += (_, _) => _ = GoChapterAsync(1);
         EndClose.Click += (_, _) => _ = CloseAsync();
-        MessageAction.Click += (_, _) => { if (chapter is not null) _ = LoadChapterAsync(chapter.ChapterId, index); };
-        PageSlider.ValueChanged += (_, e) =>
-        {
-            var target = (int)e.NewValue - 1;
-            if (target != index && pages.Count > 0 && Math.Abs(e.NewValue - e.OldValue) > 0.5)
-            {
-                if (mode == ReaderMode.Webtoon)
-                {
-                    index = Math.Clamp(target, 0, pages.Count - 1);
-                    ScrollStripTo(index);
-                    UpdatePageLabels(index, null);
-                    QueueProgress(index);
-                }
-                else
-                {
-                    _ = GoToPageAsync(target, animate: false);
-                }
-            }
-        };
+        EndRefresh.Click += (_, _) => _ = Log.Guard("reader check chapters", CheckForNewChaptersAsync);
+        MessageAction.Click += (_, _) => messageRetry?.Invoke();
+        GoToInput.KeyDown += OnGoToKeyDown;
+        GoToInput.LostFocus += (_, _) => HideGoTo(refocus: false);
+        GoToInput.BeforeTextChanging += (_, e) => e.Cancel = e.NewText.Any(c => !char.IsAsciiDigit(c) && c != '/' && c != ' ');
 
-        foreach (var bar in new FrameworkElement[] { TopBar, BottomBar })
+        BuildNextChrome();
+        foreach (var bar in new FrameworkElement[] { ChromeTop, ChromeBottom })
         {
             bar.PointerEntered += (_, _) => pointerOverChrome = true;
             bar.PointerExited += (_, _) => { pointerOverChrome = false; chromeTimer.Start(); };
@@ -112,7 +111,6 @@ public sealed partial class ReaderPage : UserControl
         Root.Tapped += OnTapped;
         Root.DoubleTapped += OnDoubleTapped;
         PagedScroll.AddHandler(PointerWheelChangedEvent, new PointerEventHandler(OnPagedWheel), true);
-        PagedScroll.ViewChanged += (_, _) => UpdatePagedEdgeState();
         StripScroll.ViewChanged += (_, _) => OnStripScrolled();
         Root.SizeChanged += (_, _) => LayoutPaged();
         KeyDown += OnKeyDown;
@@ -125,15 +123,11 @@ public sealed partial class ReaderPage : UserControl
                 _ = CloseAsync();
             }
         };
-        ApplyModeButtons();
-        DirectionText.Text = Services.Settings.RightToLeft ? "RTL" : "LTR";
     }
-
-    private static T Res<T>(string key) => (T)Application.Current.Resources[key];
 
     public static Task CloseCurrentAsync() => current?.CloseAsync(animate: false) ?? Task.CompletedTask;
 
-    public static async Task OpenAsync(long mangaId, long chapterId, int page, FrameworkElement? from)
+    public static async Task OpenAsync(long mangaId, long chapterId, int page, TransitionOrigin from)
     {
         if (current is not null)
         {
@@ -146,13 +140,56 @@ public sealed partial class ReaderPage : UserControl
         window.ReaderLayer.Children.Add(reader);
         window.ReaderLayer.Visibility = Visibility.Visible;
         reader.UpdateLayout();
-        window.SetTitleBar(reader.DragArea);
+        window.EnterReaderTitleBar(reader.ActiveDragArea);
         reader.Focus(FocusState.Programmatic);
-        var reveal = reader.RevealAsync(from);
+        var reveal = reader.RevealAsync();
         var load = reader.InitializeAsync(chapterId, page);
         await Task.WhenAll(reveal, load);
         reader.ShowHintOnce();
         reader.chromeTimer.Start();
+    }
+
+    private static Task<ReaderProfiles> ProfilesAsync() =>
+        profilesLoad ??= Task.Run(() => ReaderProfiles.Load(Path.Combine(DevHarness.ResolvePaths().Root, "reader-profiles.json")));
+
+    private static ReaderProfile DefaultProfile() => new(
+        LayoutOf(Services.Settings.ReaderMode),
+        Services.Settings.RightToLeft,
+        Services.Settings.ReaderFit switch
+        {
+            ReaderFit.Width => PageFit.Width,
+            ReaderFit.Original => PageFit.Original,
+            _ => PageFit.Screen,
+        },
+        SpreadOffset: false);
+
+    private static ReaderLayout LayoutOf(ReaderMode mode) => mode switch
+    {
+        ReaderMode.Double => ReaderLayout.Double,
+        ReaderMode.Webtoon => ReaderLayout.Strip,
+        _ => ReaderLayout.Single,
+    };
+
+    private void ApplyProfile(ReaderProfile profile)
+    {
+        layout = profile.Layout;
+        rightToLeft = profile.RightToLeft;
+        fit = profile.Fit;
+        spreadOffset = profile.SpreadOffset;
+        spreadPlanner = null;
+        ApplyNextState();
+    }
+
+    private void RememberProfile()
+    {
+        var profile = new ReaderProfile(layout, rightToLeft, fit, spreadOffset);
+        var id = mangaId;
+        _ = Log.Guard("reader profile", async () =>
+        {
+            var store = await ProfilesAsync();
+            store.Set(id, profile);
+            await Task.Run(store.Save);
+        });
     }
 
     private DispatcherQueueTimer? hintTimer;
@@ -166,9 +203,9 @@ public sealed partial class ReaderPage : UserControl
         }
         Services.Settings.ReaderHintsShown = true;
         Services.Settings.Save();
-        HintText.Text = mode == ReaderMode.Webtoon
-            ? "Scroll to read · ← → switch chapters · chrome hides as you read"
-            : "← → or click the page edges to turn · scroll wheel pages · chrome hides as you read";
+        HintText.Text = layout == ReaderLayout.Strip
+            ? "Scroll to read · [ ] switch chapters · ? shows every shortcut"
+            : "← → or click the page edges to turn · scroll wheel pages · ? shows every shortcut";
         HintBar.Visibility = Visibility.Visible;
         var visual = Motion.VisualOf(HintBar);
         var compositor = visual.Compositor;
@@ -176,11 +213,11 @@ public sealed partial class ReaderPage : UserControl
         hintTimer = DispatcherQueue.CreateTimer();
         hintTimer.Interval = TimeSpan.FromSeconds(7);
         hintTimer.IsRepeating = false;
-        hintTimer.Tick += (_, _) => HideHint();
+        hintTimer.Tick += (_, _) => _ = HideHintAsync();
         hintTimer.Start();
     }
 
-    private async void HideHint()
+    private async Task HideHintAsync()
     {
         if (hintHidden || HintBar.Visibility != Visibility.Visible)
         {
@@ -197,20 +234,19 @@ public sealed partial class ReaderPage : UserControl
         HintBar.Visibility = Visibility.Collapsed;
     }
 
-    private async Task RevealAsync(FrameworkElement? from)
+    private async Task RevealAsync()
     {
         var layer = App.MainWindow.ReaderLayer;
-        if (from is not null && from.XamlRoot is not null && !Motion.Reduced)
+        var plan = ContainerTransform.PlanOpen(origin, layer);
+        if (plan.Transform && ActualWidth > 1 && ActualHeight > 1)
         {
-            var rect = ContainerTransform.BoundsIn(from, layer);
-            if (ContainerTransform.IsOnScreen(rect, layer))
-            {
-                await ContainerTransform.Expand(this, rect, new Rect(0, 0, ActualWidth, ActualHeight), 18, Motion.Medium4, [TopBar, BottomBar], null, BeginTransition());
-                return;
-            }
+            await ContainerTransform.Expand(this, ContainerTransform.ToRect(plan.Anchor), new Rect(0, 0, ActualWidth, ActualHeight), ContainerTransform.RadiusOf(origin.Element), RevealParts(), BeginTransition());
+            return;
         }
-        await Motion.FadeIn(this, Motion.Medium1);
+        await ContainerTransform.Fade(this, opening: true, BeginTransition());
     }
+
+    private HeroParts RevealParts() => new([], [ChromeTop, ChromeBottom, PagedScroll, StripScroll]);
 
     private async Task InitializeAsync(long chapterId, int page)
     {
@@ -218,15 +254,32 @@ public sealed partial class ReaderPage : UserControl
         {
             return;
         }
-        manga = await engine.Library.GetMangaAsync(mangaId);
-        var rows = await engine.Library.GetChaptersAsync(mangaId);
-        ascending = ChapterGrouping.Group(rows).Reverse().ToList();
-        if (manga is not null && manga.Genres.Any(g => g.Equals("Long Strip", StringComparison.OrdinalIgnoreCase) || g.Equals("Web Comic", StringComparison.OrdinalIgnoreCase)) && mode != ReaderMode.Webtoon && !Services.Settings.ReaderModeChosen)
+        ReaderProfiles store;
+        try
         {
-            mode = ReaderMode.Webtoon;
-            ApplyModeButtons();
+            store = await ProfilesAsync();
+            manga = await engine.Library.GetMangaAsync(mangaId);
+            var rows = await engine.Library.GetChaptersAsync(mangaId);
+            session.SetChapters(rows);
         }
-        TitleLine.Text = manga?.Title ?? string.Empty;
+        catch (Exception e)
+        {
+            Log.Error("reader setup", e);
+            ShowMessage("Couldn't open this chapter", "Your library couldn't be read right now.", "Try again", () => _ = InitializeAsync(chapterId, page));
+            return;
+        }
+        var saved = store.Get(mangaId);
+        var profile = saved ?? DefaultProfile();
+        if (saved is null && !Services.Settings.ReaderModeChosen && manga is not null
+            && manga.Genres.Any(g => g.Equals("Long Strip", StringComparison.OrdinalIgnoreCase) || g.Equals("Web Comic", StringComparison.OrdinalIgnoreCase)))
+        {
+            profile = profile with { Layout = ReaderLayout.Strip };
+        }
+        if (DevHarness.Current is { Mode: { } forced, ReaderManga: { } harnessManga } && harnessManga == mangaId)
+        {
+            profile = profile with { Layout = LayoutOf(forced) };
+        }
+        ApplyProfile(profile);
         await LoadChapterAsync(chapterId, page);
     }
 
@@ -236,72 +289,138 @@ public sealed partial class ReaderPage : UserControl
         {
             return;
         }
-        await FlushProgressAsync();
-        var my = ++chapterVersion;
-        ReleaseAll();
-        Message.Visibility = Visibility.Collapsed;
-        EndCard.Visibility = Visibility.Collapsed;
-        PageLeft.Source = null;
-        PageRight.Source = null;
-        LoadingRing.IsActive = true;
-        chapter = await engine.Library.GetChapterAsync(chapterId);
-        if (chapter is null || my != chapterVersion)
-        {
-            return;
-        }
-        ChapterLine.Text = ChapterTitle(chapter);
-        var source = engine.Sources.Get(chapter.Source);
-        if (source is null)
-        {
-            ShowMessage("This chapter reads on your phone", $"{engine.Sources.DisplayName(chapter.Source)} isn't available on Windows yet.", null);
-            return;
-        }
+        loadingChapter = true;
+        Log.Trail($"reader chapter {mangaId}:{chapterId} page {page} {layout}");
         try
         {
-            pages = await source.GetPageListAsync(chapter.Url);
-            spreadPlanner = null;
+            await FlushProgressAsync();
+            Retire();
+            landscapePages.Clear();
+            await LoadChapterCoreAsync(engine, chapterId, page, generation, generationCts.Token);
         }
-        catch (Exception e) when (e is HttpRequestException or TaskCanceledException or IOException or InvalidOperationException)
+        catch (OperationCanceledException)
         {
-            if (my == chapterVersion)
+        }
+        catch (Exception e)
+        {
+            Log.Error("reader chapter", e);
+            if (!closing)
             {
-                ShowMessage("Couldn't load this chapter", "Check your connection, then try again.", "Try again");
+                ClearChapter();
+                ShowMessage("Couldn't open this chapter", "Something went wrong while loading it.", "Try again", () => RetryChapter(chapterId, page));
+            }
+        }
+        finally
+        {
+            loadingChapter = false;
+        }
+    }
+
+    private void RetryChapter(long chapterId, int page)
+    {
+        if (!loadingChapter)
+        {
+            _ = LoadChapterAsync(chapterId, page);
+        }
+    }
+
+    private async Task LoadChapterCoreAsync(Tsuzuki.Core.Engine engine, long chapterId, int page, int my, CancellationToken ct)
+    {
+        Message.Visibility = Visibility.Collapsed;
+        EndCard.Visibility = Visibility.Collapsed;
+        pages = [];
+        _ = SpinWhileAsync(() => my == generation && loadingChapter);
+        chapter = await engine.Library.GetChapterAsync(chapterId);
+        session.Chapter = chapter;
+        if (my != generation)
+        {
+            return;
+        }
+        if (chapter is null)
+        {
+            ClearChapter();
+            ShowMessage("This chapter is gone", "The source no longer lists it.", null, null);
+            return;
+        }
+        UpdateNextTitle();
+        UpdateChapterButtons();
+        IReadOnlyList<PageRef>? downloaded = null;
+        try
+        {
+            downloaded = await engine.Downloads.OpenLocalAsync(chapter.OwnerMangaId, chapter.Url, ct);
+        }
+        catch (Exception e) when (e is IOException or InvalidDataException or UnauthorizedAccessException)
+        {
+            Log.Error("reader local", e);
+        }
+        if (my != generation)
+        {
+            return;
+        }
+        var source = engine.Sources.Get(chapter.Source);
+        if (source is null && downloaded is null)
+        {
+            ClearChapter();
+            ShowMessage("This chapter reads on your phone", $"{engine.Sources.DisplayName(chapter.Source)} isn't available on Windows yet.", null, null);
+            return;
+        }
+        IReadOnlyList<PageRef> list;
+        try
+        {
+            list = downloaded ?? await source!.GetPageListAsync(chapter.Url, ct: ct);
+        }
+        catch (Exception e) when (e is not OperationCanceledException || e is TaskCanceledException)
+        {
+            if (my == generation)
+            {
+                ClearChapter();
+                ShowMessage("Couldn't load this chapter", "Check your connection, then try again.", "Try again", () => RetryChapter(chapterId, page));
             }
             return;
         }
-        if (my != chapterVersion)
+        if (my != generation)
         {
             return;
         }
-        if (pages.Count == 0)
+        if (list.Count == 0)
         {
-            ShowMessage("No pages here", chapter.ExternalUrl is null ? "This chapter has no pages on the source." : "This chapter is hosted on the publisher's site.", null);
+            ClearChapter();
+            ShowMessage("No pages here", chapter.ExternalUrl is null ? "This chapter has no pages on the source." : "This chapter is hosted on the publisher's site.", null, null);
             return;
         }
+        pages = list;
+        ResetThumbnails();
+        spreadPlanner = null;
         index = Math.Clamp(page, 0, pages.Count - 1);
-        PageSlider.Minimum = 1;
-        PageSlider.Maximum = Math.Max(1, pages.Count);
-        PageTotal.Text = pages.Count.ToString();
-        UpdateChapterButtons();
-        engine.Pages.Prefetch(pages.Skip(index).Take(6).Select(p => p.ImageUrl));
-        if (mode == ReaderMode.Webtoon)
+        suppressSlider = true;
+        ActiveSlider.Minimum = 1;
+        ActiveSlider.Maximum = Math.Max(1, pages.Count);
+        ActiveSlider.Value = index + 1;
+        suppressSlider = false;
+        engine.Pages.Prefetch(PageRequests(index, 3));
+        if (layout == ReaderLayout.Strip)
         {
+            stripFactory.Reset();
             ShowStrip();
         }
         else
         {
+            Strip.ItemsSource = null;
+            stripFactory.Reset();
             ShowPaged();
             await GoToPageAsync(index, animate: false, force: true);
         }
         QueueProgress(index);
     }
 
-    private void ShowMessage(string title, string body, string? action)
+    private void ShowMessage(string title, string body, string? action, Action? retry)
     {
         LoadingRing.IsActive = false;
         MessageTitle.Text = title;
         MessageBody.Text = body;
+        MessageAction.Content = action ?? string.Empty;
         MessageAction.Visibility = action is null ? Visibility.Collapsed : Visibility.Visible;
+        messageRetry = retry;
         Message.Visibility = Visibility.Visible;
         SetChrome(true);
     }
@@ -312,9 +431,21 @@ public sealed partial class ReaderPage : UserControl
         return c.Scanlator is null ? number : $"{number} · {c.Scanlator}";
     }
 
+    private async Task SpinWhileAsync(Func<bool> waiting)
+    {
+        await Task.Delay(140);
+        if (waiting())
+        {
+            LoadingRing.IsActive = true;
+        }
+    }
+
     private int ViewportPixelHeight => (int)Math.Max(800, Root.ActualHeight * (XamlRoot?.RasterizationScale ?? 1));
 
-    private Task<(DecodedPage Page, List<SoftwareBitmapSource> Sources)> GetPageAsync(int i, ImagePriority priority)
+    private int PagedDecodeHeight(PageFit forFit) =>
+        forFit == PageFit.Screen ? Math.Max(1600, (int)Math.Min(3400, ViewportPixelHeight * 1.6)) : 4000;
+
+    private Task<DecodedPage> GetPageAsync(int i, ImagePriority priority)
     {
         if (decoded.TryGetValue(i, out var ready))
         {
@@ -324,47 +455,128 @@ public sealed partial class ReaderPage : UserControl
         {
             return pending;
         }
-        var task = LoadPageAsync(i, priority, chapterVersion);
-        decoding[i] = task;
+        var task = LoadPageAsync(i, priority, generation, generationCts.Token);
+        if (!task.IsCompleted)
+        {
+            decoding[i] = task;
+        }
         return task;
     }
 
-    private async Task<(DecodedPage Page, List<SoftwareBitmapSource> Sources)> LoadPageAsync(int i, ImagePriority priority, int version)
+    private async Task<DecodedPage> LoadPageAsync(int i, ImagePriority priority, int version, CancellationToken ct)
     {
         try
         {
-            var engine = Services.Engine!;
-            var path = await engine.Pages.GetFileAsync(pages[i].ImageUrl, priority);
+            var path = await FetchPageFileAsync(i, priority, version, ct);
             var scale = XamlRoot?.RasterizationScale ?? 1;
             DecodedPage page;
-            if (mode == ReaderMode.Webtoon)
+            try
             {
-                var width = (int)Math.Min(2000, StripWidth * scale);
-                page = await PageDecoder.DecodeAsync(path, width, int.MaxValue, CancellationToken.None);
+                page = layout == ReaderLayout.Strip
+                    ? await PageDecoder.DecodeAsync(path, (int)Math.Min(2000, StripWidth * scale), int.MaxValue, ct)
+                    : await PageDecoder.DecodeAsync(path, 4000, PagedDecodeHeight(fit), ct);
             }
-            else
+            catch (Exception e) when (e is not OperationCanceledException && i < pages.Count && chapter is { } current)
             {
-                var maxHeight = (int)Math.Min(3400, ViewportPixelHeight * 1.6);
-                page = await PageDecoder.DecodeAsync(path, 4000, Math.Max(1600, maxHeight), CancellationToken.None);
+                Services.Engine?.Pages.Invalidate(ImageRequest.Page(current.Source, pages[i]));
+                throw;
             }
-            var sources = new List<SoftwareBitmapSource>(page.Slices.Count);
-            foreach (var slice in page.Slices)
+            if (version != generation)
             {
-                sources.Add(await PageDecoder.ToSourceAsync(slice.Bitmap));
+                page.Dispose();
+                throw new OperationCanceledException();
             }
-            var result = (page, sources);
-            if (version == chapterVersion)
+            if (page.Landscape)
             {
-                decoded[i] = result;
+                landscapePages.Add(i);
             }
-            return result;
+            if (!decoded.TryAdd(i, page))
+            {
+                page.Dispose();
+                return decoded[i];
+            }
+            return page;
         }
         finally
         {
-            if (version == chapterVersion)
+            if (version == generation)
             {
                 decoding.Remove(i);
             }
+        }
+    }
+
+    private async Task<string> FetchPageFileAsync(int i, ImagePriority priority, int version, CancellationToken ct)
+    {
+        var engine = Services.Engine!;
+        var list = pages;
+        var sourceId = chapter!.Source;
+        Exception failure;
+        try
+        {
+            return await engine.Pages.GetFileAsync(ImageRequest.Page(sourceId, list[i]), priority, ct);
+        }
+        catch (Exception e) when (e is HttpRequestException || (e is TaskCanceledException && !ct.IsCancellationRequested))
+        {
+            failure = e;
+        }
+        var fresh = await RefreshedPagesAsync(list, version);
+        if (fresh is null || i >= fresh.Count)
+        {
+            ExceptionDispatchInfo.Throw(failure);
+        }
+        return await engine.Pages.GetFileAsync(ImageRequest.Page(sourceId, fresh[i]), priority, ct);
+    }
+
+    private IEnumerable<ImageRequest> PageRequests(int from, int count)
+    {
+        var sourceId = chapter!.Source;
+        return pages.Skip(from).Take(count).Select(p => ImageRequest.Page(sourceId, p)).ToList();
+    }
+
+    private Task<IReadOnlyList<PageRef>?> RefreshedPagesAsync(IReadOnlyList<PageRef> failed, int version)
+    {
+        if (version != generation)
+        {
+            return Task.FromResult<IReadOnlyList<PageRef>?>(null);
+        }
+        if (!ReferenceEquals(failed, pages))
+        {
+            return Task.FromResult<IReadOnlyList<PageRef>?>(pages);
+        }
+        if (pageRefresh is { IsCompleted: false } && ReferenceEquals(pageRefreshFor, failed))
+        {
+            return pageRefresh;
+        }
+        pageRefreshFor = failed;
+        return pageRefresh = RefreshPagesAsync(version, generationCts.Token);
+    }
+
+    private async Task<IReadOnlyList<PageRef>?> RefreshPagesAsync(int version, CancellationToken ct)
+    {
+        if (chapter is not { } c || Services.Engine is not { } engine || engine.Downloads.IsDownloaded(c.OwnerMangaId, c.Url) || engine.Sources.Get(c.Source) is not { } source)
+        {
+            return null;
+        }
+        try
+        {
+            var list = await source.GetPageListAsync(c.Url, refresh: true, ct: ct);
+            if (version != generation || list.Count != pages.Count)
+            {
+                return null;
+            }
+            pages = list;
+            thumbnails.Load(list, c.Source);
+            return list;
+        }
+        catch (Exception e) when (!ct.IsCancellationRequested)
+        {
+            Log.Error("reader page refresh", e);
+            return null;
+        }
+        catch (OperationCanceledException)
+        {
+            return null;
         }
     }
 
@@ -372,25 +584,61 @@ public sealed partial class ReaderPage : UserControl
     {
         foreach (var key in decoded.Keys.Where(k => !keep(k)).ToList())
         {
-            var (page, sources) = decoded[key];
+            decoded[key].Dispose();
             decoded.Remove(key);
-            foreach (var s in sources)
-            {
-                s.Dispose();
-            }
-            foreach (var slice in page.Slices)
-            {
-                slice.Bitmap.Dispose();
-            }
         }
+    }
+
+    private void Retire()
+    {
+        generation++;
+        generationCts.Cancel();
+        generationCts = new CancellationTokenSource();
+        retired.AddRange(decoded.Values);
+        decoded.Clear();
+        decoding.Clear();
+        pageRefresh = null;
+        pageRefreshFor = null;
+    }
+
+    private void DisposeRetired()
+    {
+        foreach (var page in retired)
+        {
+            page.Dispose();
+        }
+        retired.Clear();
     }
 
     private void ReleaseAll()
     {
-        Evict(_ => false);
-        decoding.Clear();
+        Retire();
+        ClearSpread();
+        DisposeRetired();
         stripFactory.Reset();
         Strip.ItemsSource = null;
+        pages = [];
+        ResetThumbnails();
+    }
+
+    private void ClearSpread()
+    {
+        PageLeft.Source = null;
+        PageRight.Source = null;
+        PageLeft.Tag = null;
+        PageRight.Tag = null;
+        PageRight.Visibility = Visibility.Collapsed;
+        Spine.Visibility = Visibility.Collapsed;
+    }
+
+    private void ClearChapter()
+    {
+        pages = [];
+        ClearSpread();
+        DisposeRetired();
+        Strip.ItemsSource = null;
+        stripFactory.Reset();
+        ResetThumbnails();
     }
 
     private void ShowPaged()
@@ -399,74 +647,93 @@ public sealed partial class ReaderPage : UserControl
         PagedScroll.Visibility = Visibility.Visible;
     }
 
-    private (int First, int? Second) SpreadFor(int i)
+    private ReaderSpreadPlanner Planner()
     {
-        if (mode != ReaderMode.Double || pages.Count < 2)
+        var key = (CoverAlone: Services.Settings.FirstPageAlone, Offset: spreadOffset, Count: pages.Count);
+        if (spreadPlanner is null || spreadKey != key)
         {
-            return (i, null);
+            spreadKey = key;
+            spreadPlanner = new ReaderSpreadPlanner(key.Count, key.CoverAlone, key.Offset, landscapePages.Contains);
         }
-        if (spreadPlanner is null || spreadFirstPageAlone != Services.Settings.FirstPageAlone)
-        {
-            spreadFirstPageAlone = Services.Settings.FirstPageAlone;
-            spreadPlanner = new Tsuzuki.Core.Reader.ReaderSpreadPlanner(
-                pages.Count, spreadFirstPageAlone.Value,
-                i => decoded.TryGetValue(i, out var d) && d.Page.SourceWidth > d.Page.SourceHeight);
-        }
-        return spreadPlanner.SpreadFor(i);
+        return spreadPlanner;
     }
+
+    private (int First, int? Second) SpreadFor(int i) =>
+        layout != ReaderLayout.Double || pages.Count < 2 ? (i, null) : Planner().SpreadFor(i);
 
     private async Task GoToPageAsync(int target, bool animate, bool force = false, int direction = 0)
     {
-        if (pages.Count == 0 || mode == ReaderMode.Webtoon)
+        if (pages.Count == 0 || layout == ReaderLayout.Strip)
         {
             return;
         }
         target = Math.Clamp(target, 0, pages.Count - 1);
-        if (!force && target == index && PageLeft.Source is not null)
+        if (!force && target == index && PageLeft.Source is not null && Message.Visibility != Visibility.Visible)
         {
             return;
         }
         var my = ++loadVersion;
+        var version = generation;
         var engine = Services.Engine!;
-        var spinner = Task.Delay(140).ContinueWith(_ => DispatcherQueue.TryEnqueue(() => { if (my == loadVersion) LoadingRing.IsActive = true; }), TaskScheduler.Default);
+        _ = SpinWhileAsync(() => my == loadVersion && settledLoad != my);
         var (first, second) = SpreadFor(target);
-        var firstPage = await GetPageAsync(first, ImagePriority.Visible);
-        (DecodedPage Page, List<SoftwareBitmapSource> Sources)? secondPage = null;
-        if (second is { } s)
+        DecodedPage firstPage;
+        DecodedPage? secondPage = null;
+        try
         {
-            secondPage = await GetPageAsync(s, ImagePriority.Visible);
-            if (secondPage.Value.Page.SourceWidth > secondPage.Value.Page.SourceHeight || firstPage.Page.SourceWidth > firstPage.Page.SourceHeight)
+            for (var attempt = 0; ; attempt++)
             {
-                secondPage = null;
-                second = null;
+                firstPage = await GetPageAsync(first, ImagePriority.Visible);
+                secondPage = second is { } s ? await GetPageAsync(s, ImagePriority.Visible) : null;
+                var settled = SpreadFor(target);
+                if (settled == (first, second) || attempt == 3)
+                {
+                    break;
+                }
+                (first, second) = settled;
             }
         }
-        if (my != loadVersion)
+        catch (Exception e)
+        {
+            if (my == loadVersion && version == generation)
+            {
+                settledLoad = my;
+                Log.Error("reader page", e);
+                ClearSpread();
+                DisposeRetired();
+                ShowMessage("Couldn't load this page", "Check your connection, then try again.", "Try again", () => _ = GoToPageAsync(target, animate: false, force: true));
+            }
+            return;
+        }
+        if (my != loadVersion || version != generation)
         {
             return;
         }
+        settledLoad = my;
         LoadingRing.IsActive = false;
         Message.Visibility = Visibility.Collapsed;
         index = target;
-        spreadPlanner?.OnDisplayed(first, secondPage is not null);
-        var rtl = Services.Settings.RightToLeft;
-        if (secondPage is { } sp)
+        Log.Trail($"reader page {first}{(second is { } paired ? "+" + paired : string.Empty)} of {pages.Count} {layout} rtl={rightToLeft} offset={spreadOffset}");
+        var (leftIndex, rightIndex) = ReaderSpreadPlanner.Arrange(first, second, rightToLeft);
+        var left = leftIndex == first ? firstPage : secondPage!;
+        var right = rightIndex is null ? null : rightIndex == first ? firstPage : secondPage;
+        PageLeft.Source = left.Slices[0].Source;
+        PageLeft.Tag = left;
+        if (right is not null)
         {
-            PageLeft.Source = rtl ? sp.Sources[0] : firstPage.Sources[0];
-            PageRight.Source = rtl ? firstPage.Sources[0] : sp.Sources[0];
-            PageLeft.Tag = rtl ? sp.Page : firstPage.Page;
-            PageRight.Tag = rtl ? firstPage.Page : sp.Page;
+            PageRight.Source = right.Slices[0].Source;
+            PageRight.Tag = right;
             PageRight.Visibility = Visibility.Visible;
             Spine.Visibility = Visibility.Visible;
         }
         else
         {
-            PageLeft.Source = firstPage.Sources[0];
-            PageLeft.Tag = firstPage.Page;
             PageRight.Source = null;
+            PageRight.Tag = null;
             PageRight.Visibility = Visibility.Collapsed;
             Spine.Visibility = Visibility.Collapsed;
         }
+        DisposeRetired();
         LayoutPaged();
         PagedScroll.ZoomTo(1, null, new ScrollingZoomOptions(ScrollingAnimationMode.Disabled));
         PagedScroll.ScrollTo(0, 0, new ScrollingScrollOptions(ScrollingAnimationMode.Disabled));
@@ -477,7 +744,7 @@ public sealed partial class ReaderPage : UserControl
             lastTurnMs = now;
             var v = Motion.VisualOf(Spread);
             var c = v.Compositor;
-            var dx = direction == 0 ? 0 : (direction > 0 ^ rtl ? 1f : -1f) * (float)(20 + 24 * pace);
+            var dx = direction == 0 ? 0 : (direction > 0 ^ rightToLeft ? 1f : -1f) * (float)(20 + 24 * pace);
             var slide = TimeSpan.FromMilliseconds(140 + 80 * pace);
             v.StartAnimation("Translation", Motion.Vector3(c, new Vector3(dx, 0, 0), Vector3.Zero, slide, Curve.EmphasizedDecelerate));
             v.StartAnimation("Opacity", Motion.Scalar(c, 0.35f, 1, TimeSpan.FromMilliseconds(110 + 60 * pace), Curve.StandardDecelerate));
@@ -490,8 +757,8 @@ public sealed partial class ReaderPage : UserControl
         var keepFrom = first - 2;
         var keepTo = shownLast + 4;
         Evict(k => k >= keepFrom && k <= keepTo);
-        engine.Pages.Prefetch(pages.Skip(shownLast + 1).Take(6).Select(p => p.ImageUrl));
-        for (var ahead = shownLast + 1; ahead <= Math.Min(pages.Count - 1, shownLast + 3); ahead++)
+        engine.Pages.Prefetch(PageRequests(shownLast + 1, 3));
+        for (var ahead = shownLast + 1; ahead <= Math.Min(pages.Count - 1, shownLast + 2); ahead++)
         {
             _ = GetPageAsync(ahead, ImagePriority.Prefetch).ContinueWith(t => _ = t.Exception, TaskScheduler.Default);
         }
@@ -499,7 +766,7 @@ public sealed partial class ReaderPage : UserControl
         {
             _ = GetPageAsync(first - 1, ImagePriority.Prefetch).ContinueWith(t => _ = t.Exception, TaskScheduler.Default);
         }
-        if (shownLast >= pages.Count - 2)
+        if (shownLast >= pages.Count - 3)
         {
             PrefetchNextChapter();
         }
@@ -507,7 +774,7 @@ public sealed partial class ReaderPage : UserControl
 
     private void LayoutPaged()
     {
-        if (mode == ReaderMode.Webtoon || PageLeft.Tag is not DecodedPage left)
+        if (layout == ReaderLayout.Strip || PageLeft.Tag is not DecodedPage left)
         {
             return;
         }
@@ -515,19 +782,12 @@ public sealed partial class ReaderPage : UserControl
         var vh = Math.Max(1, Root.ActualHeight);
         var right = PageRight.Visibility == Visibility.Visible ? PageRight.Tag as DecodedPage : null;
         var totalAspectWidth = 1 / left.Aspect + (right is null ? 0 : 1 / right.Aspect);
-        double height;
-        switch (Services.Settings.ReaderFit)
+        var height = fit switch
         {
-            case ReaderFit.Width:
-                height = vw / totalAspectWidth;
-                break;
-            case ReaderFit.Original:
-                height = left.SourceHeight / (XamlRoot?.RasterizationScale ?? 1);
-                break;
-            default:
-                height = Math.Min(vh, vw / totalAspectWidth);
-                break;
-        }
+            PageFit.Width => vw / totalAspectWidth,
+            PageFit.Original => left.SourceHeight / (XamlRoot?.RasterizationScale ?? 1),
+            _ => Math.Min(vh, vw / totalAspectWidth),
+        };
         PageLeft.Height = height;
         PageLeft.Width = height / left.Aspect;
         if (right is not null)
@@ -542,15 +802,15 @@ public sealed partial class ReaderPage : UserControl
 
     private void UpdatePageLabels(int first, int? second)
     {
-        PageLabel.Text = second is { } s ? $"{first + 1}–{s + 1}" : (first + 1).ToString();
-        PageSlider.Value = first + 1;
+        ActiveSlider.Value = first + 1;
+        UpdateThumbPosition(first, second);
     }
 
     private void UpdateChapterButtons()
     {
         var position = CurrentGroupIndex();
-        PrevChapter.IsEnabled = position > 0;
-        NextChapter.IsEnabled = position >= 0 && position < ascending.Count - 1;
+        nextPrev!.IsEnabled = position > 0;
+        nextNext!.IsEnabled = position >= 0 && position < session.Ascending.Count - 1;
     }
 
     private int CurrentGroupIndex()
@@ -559,9 +819,9 @@ public sealed partial class ReaderPage : UserControl
         {
             return -1;
         }
-        for (var i = 0; i < ascending.Count; i++)
+        for (var i = 0; i < session.Ascending.Count; i++)
         {
-            var g = ascending[i];
+            var g = session.Ascending[i];
             if (g.Primary.ChapterId == chapter.ChapterId || g.Alternates.Any(a => a.ChapterId == chapter.ChapterId))
             {
                 return i;
@@ -570,40 +830,15 @@ public sealed partial class ReaderPage : UserControl
         return -1;
     }
 
-    private ChapterRow? ReadableCopy(ChapterGroup group)
-    {
-        if (chapter?.Scanlator is { } scan)
-        {
-            var same = new[] { group.Primary }.Concat(group.Alternates).FirstOrDefault(c => c.Scanlator == scan && c.Readable && c.ExternalUrl is null);
-            if (same is not null)
-            {
-                return same;
-            }
-        }
-        return new[] { group.Primary }.Concat(group.Alternates).FirstOrDefault(c => c.Readable && c.ExternalUrl is null);
-    }
-
-    private ChapterRow? NeighbourChapter(int delta)
-    {
-        var position = CurrentGroupIndex();
-        if (position < 0)
-        {
-            return null;
-        }
-        for (var i = position + delta; i >= 0 && i < ascending.Count; i += delta)
-        {
-            var copy = ReadableCopy(ascending[i]);
-            if (copy is not null)
-            {
-                return copy;
-            }
-        }
-        return null;
-    }
+    private ChapterRow? NeighbourChapter(int delta) => session.Neighbour(delta);
 
     private void PrefetchNextChapter()
     {
         if (NeighbourChapter(1) is not { } next || Services.Engine is not { } engine || engine.Sources.Get(next.Source) is not { } source)
+        {
+            return;
+        }
+        if (engine.Downloads.IsDownloaded(next.OwnerMangaId, next.Url) || !prefetchedChapters.Add(next.ChapterId))
         {
             return;
         }
@@ -612,9 +847,9 @@ public sealed partial class ReaderPage : UserControl
             try
             {
                 var list = await source.GetPageListAsync(next.Url);
-                engine.Pages.Prefetch(list.Take(3).Select(p => p.ImageUrl));
+                engine.Pages.Prefetch(list.Take(2).Select(p => ImageRequest.Page(next.Source, p)));
             }
-            catch (Exception)
+            catch (Exception e) when (e is not OperationCanceledException || e is TaskCanceledException)
             {
             }
         });
@@ -622,6 +857,10 @@ public sealed partial class ReaderPage : UserControl
 
     private async Task GoChapterAsync(int delta)
     {
+        if (loadingChapter)
+        {
+            return;
+        }
         var target = NeighbourChapter(delta);
         if (target is null)
         {
@@ -631,11 +870,42 @@ public sealed partial class ReaderPage : UserControl
             }
             return;
         }
-        if (delta > 0 && chapter is not null)
+        loadingChapter = true;
+        try
         {
-            await MarkCurrentReadAsync();
+            if (delta > 0 && chapter is not null)
+            {
+                await MarkCurrentReadAsync();
+            }
+            var fresh = Services.Engine is { } engine ? await engine.Library.GetChapterAsync(target.ChapterId) ?? target : target;
+            await LoadChapterAsync(fresh.ChapterId, fresh.Read ? 0 : fresh.LastPageRead);
         }
-        await LoadChapterAsync(target.ChapterId, delta > 0 ? 0 : (target.Read ? 0 : target.LastPageRead));
+        catch (Exception e)
+        {
+            Log.Error("reader chapter switch", e);
+        }
+        finally
+        {
+            loadingChapter = false;
+        }
+    }
+
+    private async Task NextChapterAsync()
+    {
+        if (loadingChapter)
+        {
+            return;
+        }
+        if (layout != ReaderLayout.Strip && EndCard.Visibility != Visibility.Visible && pages.Count > 0)
+        {
+            var (first, second) = SpreadFor(index);
+            if ((second ?? first) >= pages.Count - 1)
+            {
+                await NextAsync();
+                return;
+            }
+        }
+        await GoChapterAsync(1);
     }
 
     private async Task MarkCurrentReadAsync()
@@ -647,74 +917,177 @@ public sealed partial class ReaderPage : UserControl
         saveTimer.Stop();
         pendingSaveIndex = -1;
         await engine.Library.SetChapterProgressAsync(chapter.ChapterId, pages.Count - 1, true);
+        ReportRead(engine, chapter);
     }
+
+    private void ReportRead(Tsuzuki.Core.Engine engine, ChapterRow finished) =>
+        _ = Log.Guard("tracking-read", () => engine.Tracking.ChapterReadAsync(mangaId, finished.ChapterNumber));
 
     private void ShowEndCard(ChapterRow? next)
     {
         next ??= NeighbourChapter(1);
-        EndTitle.Text = next is null ? "You're all caught up" : "Up next: " + (next.ChapterNumber >= 0 ? "Chapter " + Format.ChapterNumber(next.ChapterNumber) : next.Name);
-        EndBody.Text = next is null ? "No newer chapters are available to read here yet." : next.Scanlator ?? string.Empty;
-        EndNext.Visibility = next is null ? Visibility.Collapsed : Visibility.Visible;
-        EndCard.Visibility = Visibility.Visible;
-        _ = Motion.FadeIn(EndCard, Motion.Medium1, 12);
+        var finished = chapter is { } current ? ChapterLabel(current) : "Chapter";
+        EndFinished.Text = $"{finished} finished";
+        EndSeries.Text = manga?.Title ?? string.Empty;
+        EndCover.SourceId = manga?.Source ?? 0;
+        EndCover.Url = manga?.ThumbnailUrl;
+        var position = CurrentGroupIndex();
+        var total = session.Ascending.Count;
+        var read = session.Ascending.Count(g => g.Read) + (position >= 0 && !session.Ascending[position].Read ? 1 : 0);
+        EndProgress.Value = total == 0 ? 0 : Math.Min(1, read / (double)total);
+        var left = Math.Max(0, total - read);
+        EndProgressText.Text = total == 0 ? string.Empty : left == 0 ? $"All {total:N0} chapters read" : $"{read:N0} of {total:N0} chapters read · {left:N0} left";
+        var forward = rightToLeft && layout != ReaderLayout.Strip ? "←" : "→";
+        var back = rightToLeft && layout != ReaderLayout.Strip ? "→" : "←";
         if (next is null)
         {
-            _ = MarkCurrentReadAsync();
+            EndNextCard.Visibility = Visibility.Collapsed;
+            EndNext.Visibility = Visibility.Collapsed;
+            EndCaughtUp.Visibility = Visibility.Visible;
+            EndRefresh.Visibility = Visibility.Visible;
+            EndRefreshText.Text = "Check for new chapters";
+            EndRefresh.IsEnabled = true;
+            EndCaughtUpBody.Text = $"{finished} is the latest chapter here. New chapters show up in Updates as soon as they're out.";
+            EndHint.Text = $"{back} back to the last page";
+        }
+        else
+        {
+            var label = ChapterLabel(next);
+            EndNextCard.Visibility = Visibility.Visible;
+            EndNext.Visibility = Visibility.Visible;
+            EndCaughtUp.Visibility = Visibility.Collapsed;
+            EndRefresh.Visibility = Visibility.Collapsed;
+            EndTitle.Text = label;
+            var name = next.Name.Trim();
+            EndChapterName.Text = name;
+            EndChapterName.Visibility = name.Length == 0 || name.Equals(label, StringComparison.OrdinalIgnoreCase) || name.StartsWith("Chapter ", StringComparison.OrdinalIgnoreCase) || name.StartsWith("Ch.", StringComparison.OrdinalIgnoreCase)
+                ? Visibility.Collapsed
+                : Visibility.Visible;
+            var meta = new List<string>();
+            if (!string.IsNullOrWhiteSpace(next.Scanlator))
+            {
+                meta.Add(next.Scanlator!);
+            }
+            if (next.DateUpload > 0)
+            {
+                meta.Add(Format.Relative(next.DateUpload));
+            }
+            if (next.PageCount is { } count and > 0)
+            {
+                meta.Add($"{count} pages");
+            }
+            if (next.LastPageRead > 0 && !next.Read)
+            {
+                meta.Add($"resume on page {next.LastPageRead + 1}");
+            }
+            EndBody.Text = string.Join(" · ", meta);
+            EndNextText.Text = next.LastPageRead > 0 && !next.Read ? $"Resume {label}" : $"Read {label}";
+            Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(EndNext, EndNextText.Text);
+            EndHint.Text = $"{forward} or Space to continue · {back} back to the last page";
+        }
+        EndCard.Visibility = Visibility.Visible;
+        _ = Motion.FadeIn(EndCard, Motion.Short4, 0);
+        _ = Motion.FadeIn(EndColumn, Motion.Medium1, Motion.Reduced ? 0 : 16);
+        (next is null ? EndClose : EndNext).Focus(FocusState.Programmatic);
+        if (next is null)
+        {
+            _ = Log.Guard("reader mark read", MarkCurrentReadAsync);
+        }
+        else
+        {
+            PrefetchNextChapter();
+        }
+    }
+
+    private static string ChapterLabel(ChapterRow c) =>
+        c.ChapterNumber >= 0 ? "Chapter " + Format.ChapterNumber(c.ChapterNumber) : c.Name;
+
+    private async Task CheckForNewChaptersAsync()
+    {
+        if (Services.Engine is not { } engine)
+        {
+            return;
+        }
+        EndRefresh.IsEnabled = false;
+        EndRefreshText.Text = "Checking…";
+        try
+        {
+            await engine.Refresher.RefreshQueuedAsync(mangaId);
+            var rows = await engine.Library.GetChaptersAsync(mangaId);
+            session.SetChapters(rows);
+            if (EndCard.Visibility != Visibility.Visible)
+            {
+                return;
+            }
+            if (NeighbourChapter(1) is { } fresh)
+            {
+                ShowEndCard(fresh);
+                return;
+            }
+            EndRefreshText.Text = "No new chapters yet";
+        }
+        catch (Exception e) when (e is not OperationCanceledException || e is TaskCanceledException)
+        {
+            Log.Error("reader check chapters", e);
+            EndRefreshText.Text = "Couldn't check. Try again";
+            EndRefresh.IsEnabled = true;
         }
     }
 
     private async Task NextAsync()
     {
-        if (mode == ReaderMode.Webtoon)
+        if (loadingChapter)
         {
-            ScrollStrip(0.85);
             return;
         }
-        if (EndCard.Visibility == Visibility.Visible)
+        var last = pages.Count == 0 ? 0 : SpreadFor(index) is var (first, second) ? second ?? first : 0;
+        var step = session.Next(layout == ReaderLayout.Strip, EndCard.Visibility == Visibility.Visible, pages.Count, last);
+        switch (step.Kind)
         {
-            await GoChapterAsync(1);
-            return;
+            case Tsuzuki.Presentation.ReaderStepKind.Scroll:
+                ScrollStrip(0.85);
+                break;
+            case Tsuzuki.Presentation.ReaderStepKind.NextChapter:
+                await GoChapterAsync(1);
+                break;
+            case Tsuzuki.Presentation.ReaderStepKind.FinishChapter when EndCard.Visibility != Visibility.Visible:
+                await MarkCurrentReadAsync();
+                ShowEndCard(null);
+                break;
+            case Tsuzuki.Presentation.ReaderStepKind.Page:
+                await GoToPageAsync(step.Page, animate: true, direction: 1);
+                break;
         }
-        var (first, second) = SpreadFor(index);
-        var last = second ?? first;
-        if (last >= pages.Count - 1)
-        {
-            await MarkCurrentReadAsync();
-            ShowEndCard(null);
-            return;
-        }
-        await GoToPageAsync(last + 1, animate: true, direction: 1);
     }
 
     private async Task PreviousAsync()
     {
-        if (mode == ReaderMode.Webtoon)
+        if (loadingChapter)
         {
-            ScrollStrip(-0.85);
             return;
         }
-        if (EndCard.Visibility == Visibility.Visible)
+        var firstShown = pages.Count == 0 ? 0 : SpreadFor(index).Item1;
+        var step = session.Previous(layout == ReaderLayout.Strip, EndCard.Visibility == Visibility.Visible, pages.Count, firstShown);
+        switch (step.Kind)
         {
-            EndCard.Visibility = Visibility.Collapsed;
-            return;
+            case Tsuzuki.Presentation.ReaderStepKind.Scroll:
+                ScrollStrip(-0.85);
+                break;
+            case Tsuzuki.Presentation.ReaderStepKind.HideEndCard:
+                EndCard.Visibility = Visibility.Collapsed;
+                break;
+            case Tsuzuki.Presentation.ReaderStepKind.PreviousChapter:
+                await LoadChapterAsync(step.Chapter!.ChapterId, int.MaxValue);
+                break;
+            case Tsuzuki.Presentation.ReaderStepKind.Page:
+                var target = step.Page;
+                if (layout == ReaderLayout.Double)
+                {
+                    target = SpreadFor(target).Item1;
+                }
+                await GoToPageAsync(target, animate: true, direction: -1);
+                break;
         }
-        var (first, _) = SpreadFor(index);
-        if (first <= 0)
-        {
-            var previous = NeighbourChapter(-1);
-            if (previous is not null)
-            {
-                await LoadChapterAsync(previous.ChapterId, int.MaxValue);
-            }
-            return;
-        }
-        var target = first - 1;
-        if (mode == ReaderMode.Double)
-        {
-            var (pf, _) = SpreadFor(target);
-            target = pf;
-        }
-        await GoToPageAsync(target, animate: true, direction: -1);
     }
 
     private void QueueProgress(int pageIndex)
@@ -738,72 +1111,281 @@ public sealed partial class ReaderPage : UserControl
         }
         var chapterId = pendingSaveChapter;
         var page = pendingSaveIndex;
-        var read = chapter?.ChapterId == chapterId && pages.Count > 0 && page >= pages.Count - 1;
+        var current = chapter;
+        var read = current?.ChapterId == chapterId && pages.Count > 0 && page >= pages.Count - 1;
         pendingSaveIndex = -1;
         pendingSaveChapter = -1;
         await engine.Library.SetChapterProgressAsync(chapterId, page, read);
+        if (read && current is not null)
+        {
+            ReportRead(engine, current);
+        }
     }
 
-    private void SetMode(ReaderMode next)
+    private static string LayoutName(ReaderLayout value) => value switch
     {
-        Services.Settings.ReaderMode = next;
-        Services.Settings.ReaderModeChosen = true;
-        Services.Settings.Save();
-        if (next == mode)
+        ReaderLayout.Single => "Single page",
+        ReaderLayout.Double => "Two pages",
+        _ => "Long strip",
+    };
+
+    private void SetLayout(ReaderLayout next)
+    {
+        if (loadingChapter)
+        {
+            return;
+        }
+        Flash(LayoutName(next));
+        if (next == layout)
         {
             return;
         }
         var keep = index;
-        mode = next;
-        ApplyModeButtons();
-        ReleaseAll();
+        var fromStrip = layout == ReaderLayout.Strip;
+        layout = next;
+        spreadPlanner = null;
+        ApplyNextState();
+        RememberProfile();
         if (pages.Count == 0)
         {
             return;
         }
         index = keep;
-        if (mode == ReaderMode.Webtoon)
+        if (layout == ReaderLayout.Strip)
         {
+            Retire();
+            ClearSpread();
             ShowStrip();
+            return;
         }
-        else
+        if (fromStrip)
         {
+            Retire();
+            Strip.ItemsSource = null;
             ShowPaged();
-            _ = GoToPageAsync(keep, animate: false, force: true);
         }
-        Toasts.Show(mode switch { ReaderMode.Single => "Single page", ReaderMode.Double => "Two pages", _ => "Long strip" }, null, Icons.BookOpen, seconds: 2);
+        _ = GoToPageAsync(keep, animate: false, force: true);
     }
 
-    private void ApplyModeButtons()
+    private void ToggleOffset()
     {
-        foreach (var (button, m) in new[] { (ModeSingle, ReaderMode.Single), (ModeDouble, ReaderMode.Double), (ModeStrip, ReaderMode.Webtoon) })
+        if (loadingChapter)
         {
-            button.Background = m == mode ? new SolidColorBrush(Windows.UI.Color.FromArgb(46, 255, 255, 255)) : new SolidColorBrush(Microsoft.UI.Colors.Transparent);
+            return;
         }
-        DirectionButton.Visibility = mode == ReaderMode.Webtoon ? Visibility.Collapsed : Visibility.Visible;
-        FitButton.Visibility = mode == ReaderMode.Webtoon ? Visibility.Collapsed : Visibility.Visible;
+        if (layout != ReaderLayout.Double)
+        {
+            Flash("Offset works in two-page view (2)");
+            return;
+        }
+        spreadOffset = !spreadOffset;
+        spreadPlanner = null;
+        ApplyNextState();
+        RememberProfile();
+        Flash(spreadOffset ? "Offset +1" : "Offset off");
+        _ = GoToPageAsync(index, animate: false, force: true);
     }
 
     private void ToggleDirection()
     {
-        Services.Settings.RightToLeft = !Services.Settings.RightToLeft;
-        Services.Settings.Save();
-        DirectionText.Text = Services.Settings.RightToLeft ? "RTL" : "LTR";
+        if (loadingChapter || layout == ReaderLayout.Strip)
+        {
+            return;
+        }
+        rightToLeft = !rightToLeft;
+        ApplyNextState();
+        RememberProfile();
+        Flash(rightToLeft ? "Right to left" : "Left to right");
         _ = GoToPageAsync(index, animate: false, force: true);
-        Toasts.Show(Services.Settings.RightToLeft ? "Right to left" : "Left to right", "Arrow keys and clicks follow the reading direction.", Icons.BookOpen, seconds: 2);
     }
 
     private void CycleFit()
     {
-        Services.Settings.ReaderFit = Services.Settings.ReaderFit switch
+        if (loadingChapter || layout == ReaderLayout.Strip)
         {
-            ReaderFit.Height => ReaderFit.Width,
-            ReaderFit.Width => ReaderFit.Original,
-            _ => ReaderFit.Height,
-        };
-        Services.Settings.Save();
+            return;
+        }
+        SetFit(fit switch
+        {
+            PageFit.Screen => PageFit.Width,
+            PageFit.Width => PageFit.Original,
+            _ => PageFit.Screen,
+        });
+    }
+
+    private void SetFit(PageFit next)
+    {
+        if (loadingChapter || layout == ReaderLayout.Strip || next == fit)
+        {
+            return;
+        }
+        var previous = fit;
+        fit = next;
+        RememberProfile();
+        Flash(fit switch { PageFit.Screen => "Fit to screen", PageFit.Width => "Fit width", _ => "Original size" });
+        PagedScroll.ZoomTo(1, null, new ScrollingZoomOptions(ScrollingAnimationMode.Disabled));
+        if (PagedDecodeHeight(previous) != PagedDecodeHeight(fit) && pages.Count > 0)
+        {
+            Retire();
+            _ = GoToPageAsync(index, animate: false, force: true);
+            return;
+        }
         LayoutPaged();
-        Toasts.Show(Services.Settings.ReaderFit switch { ReaderFit.Height => "Fit to screen", ReaderFit.Width => "Fit to width", _ => "Original size" }, null, Icons.Maximize, seconds: 2);
+    }
+
+    private void Flash(string text)
+    {
+        pillVersion++;
+        PillText.Text = text;
+        var covered = Message.Visibility == Visibility.Visible || EndCard.Visibility == Visibility.Visible;
+        Pill.VerticalAlignment = covered ? VerticalAlignment.Top : VerticalAlignment.Center;
+        Pill.Margin = covered ? new Thickness(0, 76, 0, 0) : new Thickness(0);
+        var visual = Motion.VisualOf(Pill);
+        visual.StopAnimation("Opacity");
+        if (Pill.Visibility == Visibility.Visible || Motion.Reduced)
+        {
+            visual.Opacity = 1;
+        }
+        else
+        {
+            visual.StartAnimation("Opacity", Motion.Scalar(visual.Compositor, 0, 1, Motion.Short2, Curve.StandardDecelerate));
+        }
+        Pill.Visibility = Visibility.Visible;
+        pillTimer.Stop();
+        pillTimer.Start();
+    }
+
+    private async Task HidePillAsync()
+    {
+        var my = pillVersion;
+        if (Pill.Visibility != Visibility.Visible)
+        {
+            return;
+        }
+        if (!Motion.Reduced)
+        {
+            var visual = Motion.VisualOf(Pill);
+            var c = visual.Compositor;
+            await Motion.Run(c, _ => visual.StartAnimation("Opacity", Motion.Scalar(c, 1, 0, Motion.Short3, Curve.StandardAccelerate)));
+        }
+        if (my == pillVersion)
+        {
+            Pill.Visibility = Visibility.Collapsed;
+        }
+    }
+
+    private void ShowShortcutSheet()
+    {
+        ShortcutTitle.Text = layout == ReaderLayout.Strip ? "Shortcuts · long strip" : layout == ReaderLayout.Double ? "Shortcuts · two pages" : "Shortcuts · single page";
+        ShortcutRows.Children.Clear();
+        ShortcutRows.RowDefinitions.Clear();
+        var row = 0;
+        foreach (var (keys, action) in ShortcutList())
+        {
+            ShortcutRows.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+            var key = new TextBlock { Text = keys, Foreground = new SolidColorBrush(Microsoft.UI.Colors.White), FontSize = 13, FontWeight = Microsoft.UI.Text.FontWeights.SemiBold };
+            var label = new TextBlock { Text = action, Foreground = new SolidColorBrush(Windows.UI.Color.FromArgb(200, 255, 255, 255)), FontSize = 13, TextWrapping = TextWrapping.Wrap };
+            Grid.SetRow(key, row);
+            Grid.SetRow(label, row);
+            Grid.SetColumn(label, 1);
+            ShortcutRows.Children.Add(key);
+            ShortcutRows.Children.Add(label);
+            row++;
+        }
+        ShortcutLayer.Visibility = Visibility.Visible;
+        if (!Motion.Reduced)
+        {
+            _ = Motion.FadeIn(ShortcutLayer, Motion.Short4);
+        }
+    }
+
+    private void HideShortcutSheet() => ShortcutLayer.Visibility = Visibility.Collapsed;
+
+    private List<(string Keys, string Action)> ShortcutList()
+    {
+        var list = new List<(string, string)>();
+        if (layout == ReaderLayout.Strip)
+        {
+            list.Add(("Wheel · ↑ ↓", "Scroll"));
+            list.Add(("Space · Shift+Space", "Scroll a screen down or up"));
+            list.Add(("Ctrl+wheel", "Zoom"));
+        }
+        else
+        {
+            list.Add((rightToLeft ? "← · →" : "→ · ←", rightToLeft ? "Next · previous page (right to left)" : "Next · previous page"));
+            list.Add(("Space · Shift+Space", "Next · previous page"));
+            list.Add(("Wheel", "Turn pages"));
+            list.Add(("Ctrl+wheel", "Zoom at the pointer"));
+            list.Add(("Double-click", "Actual size · fit"));
+        }
+        list.Add(("Home · End", "First · last page"));
+        list.Add(("G", "Go to page"));
+        list.Add(("T", "Page thumbnails"));
+        list.Add(("S", "Filmstrip on or off"));
+        list.Add(("[ · ]", "Previous · next chapter"));
+        list.Add(("1 · 2 · 3", "Single page · two pages · long strip"));
+        list.Add(("D", "Two pages on or off"));
+        if (layout == ReaderLayout.Double)
+        {
+            list.Add(("O", spreadOffset ? "Pair pages normally" : "Shift page pairs by one"));
+        }
+        if (layout != ReaderLayout.Strip)
+        {
+            list.Add(("R", "Reading direction"));
+            list.Add(("F", "Fit to screen · width · original"));
+        }
+        list.Add(("F11", "Full screen"));
+        list.Add(("Esc", "Close thumbnails, reset zoom, leave full screen, close"));
+        list.Add(("?", "Show or hide this list"));
+        return list;
+    }
+
+    private void ShowGoTo()
+    {
+        if (pages.Count == 0 || loadingChapter)
+        {
+            return;
+        }
+        GoToTotal.Text = "of " + pages.Count;
+        GoToInput.Text = string.Empty;
+        GoToInput.PlaceholderText = (index + 1).ToString();
+        GoToBox.Visibility = Visibility.Visible;
+        DispatcherQueue.TryEnqueue(() => GoToInput.Focus(FocusState.Keyboard));
+    }
+
+    private void HideGoTo(bool refocus)
+    {
+        if (GoToBox.Visibility != Visibility.Visible)
+        {
+            return;
+        }
+        GoToBox.Visibility = Visibility.Collapsed;
+        if (refocus)
+        {
+            Focus(FocusState.Programmatic);
+        }
+    }
+
+    private void OnGoToKeyDown(object sender, KeyRoutedEventArgs e)
+    {
+        if (e.Key == VirtualKey.Escape)
+        {
+            e.Handled = true;
+            HideGoTo(refocus: true);
+            return;
+        }
+        if (e.Key != VirtualKey.Enter)
+        {
+            return;
+        }
+        e.Handled = true;
+        var target = GoToPage.Parse(GoToInput.Text, pages.Count);
+        HideGoTo(refocus: true);
+        if (target is not { } page)
+        {
+            return;
+        }
+        JumpToPage(page);
     }
 
     private void ToggleFullscreen()
@@ -811,7 +1393,19 @@ public sealed partial class ReaderPage : UserControl
         var window = App.MainWindow.AppWindow;
         var full = window.Presenter.Kind == AppWindowPresenterKind.FullScreen;
         window.SetPresenter(full ? AppWindowPresenterKind.Overlapped : AppWindowPresenterKind.FullScreen);
-        CaptionSpace.Width = new GridLength(full ? 140 : 0);
+        nextCaption.Width = new GridLength(full ? 140 : 0);
+        nextFullIcon!.Glyph = full ? "\uE740" : "\uE73F";
+    }
+
+    private bool ResetZoom()
+    {
+        var scroll = layout == ReaderLayout.Strip ? StripScroll : PagedScroll;
+        if (Math.Abs(scroll.ZoomFactor - 1) < 0.02f)
+        {
+            return false;
+        }
+        scroll.ZoomTo(1, null, new ScrollingZoomOptions(Motion.Reduced ? ScrollingAnimationMode.Disabled : ScrollingAnimationMode.Enabled));
+        return true;
     }
 
     private void SetChrome(bool visible)
@@ -823,40 +1417,66 @@ public sealed partial class ReaderPage : UserControl
                 chromeTimer.Stop();
                 chromeTimer.Start();
             }
+            else
+            {
+                SetCursorHidden(App.MainWindow.AppWindow.Presenter.Kind == AppWindowPresenterKind.FullScreen);
+            }
             return;
         }
         chromeVisible = visible;
+        SetCursorHidden(!visible && App.MainWindow.AppWindow.Presenter.Kind == AppWindowPresenterKind.FullScreen);
         if (Motion.FluentTimings && !Motion.Reduced)
         {
-            Motion.Spring(TopBar, "Translation", new Vector3(0, visible ? 0 : -56, 0), damping: 0.78f, periodMs: 55);
-            Motion.SpringScalar(TopBar, "Opacity", visible ? 1 : 0);
-            Motion.Spring(BottomBar, "Translation", new Vector3(0, visible ? 0 : 40, 0), damping: 0.78f, periodMs: 55);
-            Motion.SpringScalar(BottomBar, "Opacity", visible ? 1 : 0);
+            Motion.Spring(ChromeTop, "Translation", new Vector3(0, visible ? 0 : -TopShift, 0), damping: 0.78f, periodMs: 55);
+            Motion.SpringScalar(ChromeTop, "Opacity", visible ? 1 : 0);
+            Motion.Spring(ChromeBottom, "Translation", new Vector3(0, visible ? 0 : BottomShift, 0), damping: 0.78f, periodMs: 55);
+            Motion.SpringScalar(ChromeBottom, "Opacity", visible ? 1 : 0);
         }
         else
         {
-            var top = Motion.VisualOf(TopBar);
-            var bottom = Motion.VisualOf(BottomBar);
+            var top = Motion.VisualOf(ChromeTop);
+            var bottom = Motion.VisualOf(ChromeBottom);
+            var up = TopShift;
+            var down = BottomShift;
             var c = top.Compositor;
             var duration = visible ? Motion.Short4 : TimeSpan.FromMilliseconds(167);
             var curve = visible ? Curve.EmphasizedDecelerate : Curve.EmphasizedAccelerate;
-            top.StartAnimation("Translation", Motion.Vector3(c, new Vector3(0, visible ? -56 : 0, 0), new Vector3(0, visible ? 0 : -56, 0), duration, curve));
+            top.StartAnimation("Translation", Motion.Vector3(c, new Vector3(0, visible ? -up : 0, 0), new Vector3(0, visible ? 0 : -up, 0), duration, curve));
             top.StartAnimation("Opacity", Motion.Scalar(c, visible ? 0 : 1, visible ? 1 : 0, duration, curve));
-            bottom.StartAnimation("Translation", Motion.Vector3(c, new Vector3(0, visible ? 40 : 0, 0), new Vector3(0, visible ? 0 : 40, 0), duration, curve));
+            bottom.StartAnimation("Translation", Motion.Vector3(c, new Vector3(0, visible ? down : 0, 0), new Vector3(0, visible ? 0 : down, 0), duration, curve));
             bottom.StartAnimation("Opacity", Motion.Scalar(c, visible ? 0 : 1, visible ? 1 : 0, duration, curve));
         }
-        TopBar.IsHitTestVisible = visible;
-        BottomBar.IsHitTestVisible = visible;
+        ChromeTop.IsHitTestVisible = visible;
+        ChromeBottom.IsHitTestVisible = visible;
         if (visible)
         {
             chromeTimer.Start();
         }
     }
 
+    private void SetCursorHidden(bool hidden)
+    {
+        if (hidden == cursorHidden)
+        {
+            return;
+        }
+        cursorHidden = hidden;
+        ShowCursor(!hidden);
+    }
+
+    [LibraryImport("user32.dll")]
+    private static partial int ShowCursor([MarshalAs(UnmanagedType.Bool)] bool show);
+
     private void OnPointerMoved(object sender, PointerRoutedEventArgs e)
     {
         var y = e.GetCurrentPoint(Root).Position.Y;
-        if (y < 80 || y > Root.ActualHeight - 110)
+        if (cursorHidden)
+        {
+            SetCursorHidden(false);
+            chromeTimer.Stop();
+            chromeTimer.Start();
+        }
+        if (y < 80 || y > Root.ActualHeight - BottomRevealZone)
         {
             SetChrome(true);
         }
@@ -864,21 +1484,31 @@ public sealed partial class ReaderPage : UserControl
 
     private void OnTapped(object sender, TappedRoutedEventArgs e)
     {
-        HideHint();
-        if (IsInside(e.OriginalSource as DependencyObject, TopBar) || IsInside(e.OriginalSource as DependencyObject, BottomBar)
-            || IsInside(e.OriginalSource as DependencyObject, EndCard) || IsInside(e.OriginalSource as DependencyObject, Message))
+        _ = HideHintAsync();
+        var source = e.OriginalSource as DependencyObject;
+        if (ShortcutLayer.Visibility == Visibility.Visible)
+        {
+            HideShortcutSheet();
+            return;
+        }
+        if (IsOverChrome(source))
         {
             return;
         }
         var x = e.GetPosition(Root).X / Math.Max(1, Root.ActualWidth);
-        if (mode == ReaderMode.Webtoon || (x > 0.3 && x < 0.7))
+        if (layout == ReaderLayout.Strip || (x > 0.3 && x < 0.7))
         {
             SetChrome(!chromeVisible);
             return;
         }
-        var forward = x >= 0.7 ^ Services.Settings.RightToLeft;
+        var forward = x >= 0.7 ^ rightToLeft;
         _ = forward ? NextAsync() : PreviousAsync();
     }
+    private bool IsOverChrome(DependencyObject? source) =>
+        IsInside(source, ChromeTop) || IsInside(source, ChromeBottom) || IsInside(source, EndCard) || IsInside(source, Message)
+        || IsInside(source, GoToBox) || IsInside(source, ShortcutLayer)
+        || (explorer is not null && IsInside(source, explorer));
+
 
     private static bool IsInside(DependencyObject? node, DependencyObject container)
     {
@@ -895,63 +1525,118 @@ public sealed partial class ReaderPage : UserControl
 
     private void OnDoubleTapped(object sender, DoubleTappedRoutedEventArgs e)
     {
-        if (mode == ReaderMode.Webtoon)
+        var source = e.OriginalSource as DependencyObject;
+        if (layout == ReaderLayout.Strip || PageLeft.Tag is not DecodedPage left || IsOverChrome(source))
         {
             return;
         }
-        var zoomed = PagedScroll.ZoomFactor > 1.05f;
+        if (PagedScroll.ZoomFactor > 1.02f)
+        {
+            PagedScroll.ZoomTo(1, null, new ScrollingZoomOptions(Motion.Reduced ? ScrollingAnimationMode.Disabled : ScrollingAnimationMode.Enabled));
+            return;
+        }
+        var actual = left.SourceHeight / (XamlRoot?.RasterizationScale ?? 1) / Math.Max(1, PageLeft.ActualHeight);
+        var target = (float)Math.Min(6, actual >= 1.25 ? actual : 2);
         var point = e.GetPosition(PagedScroll);
-        PagedScroll.ZoomTo(zoomed ? 1f : 2.2f, zoomed ? null : new Vector2((float)point.X, (float)point.Y), new ScrollingZoomOptions(ScrollingAnimationMode.Enabled));
+        PagedScroll.ZoomTo(target, new Vector2((float)point.X, (float)point.Y), new ScrollingZoomOptions(Motion.Reduced ? ScrollingAnimationMode.Disabled : ScrollingAnimationMode.Enabled));
     }
 
     private void OnPagedWheel(object sender, PointerRoutedEventArgs e)
     {
-        if (mode == ReaderMode.Webtoon)
+        if (layout == ReaderLayout.Strip || e.KeyModifiers.HasFlag(VirtualKeyModifiers.Control))
         {
             return;
         }
         var props = e.GetCurrentPoint(PagedScroll).Properties;
-        if (e.KeyModifiers.HasFlag(VirtualKeyModifiers.Control) || props.IsHorizontalMouseWheel)
-        {
-            return;
-        }
         var delta = props.MouseWheelDelta;
-        var scrollable = PagedScroll.ScrollableHeight > 1 || PagedScroll.ZoomFactor > 1.02f;
-        if (scrollable)
-        {
-            var atBottom = PagedScroll.VerticalOffset >= PagedScroll.ScrollableHeight - 1;
-            var atTop = PagedScroll.VerticalOffset <= 1;
-            if (!((delta < 0 && atBottom) || (delta > 0 && atTop)))
-            {
-                wheelAccumulator = 0;
-                return;
-            }
-        }
-        wheelAccumulator += delta;
-        if ((DateTime.UtcNow - lastWheelTurn).TotalMilliseconds < 220)
+        if (delta == 0)
         {
             return;
         }
-        if (Math.Abs(wheelAccumulator) >= 100)
+        double towardNext;
+        if (props.IsHorizontalMouseWheel)
         {
-            var forward = wheelAccumulator < 0;
-            wheelAccumulator = 0;
-            lastWheelTurn = DateTime.UtcNow;
-            e.Handled = true;
-            _ = forward ? NextAsync() : PreviousAsync();
+            if (PagedScroll.ScrollableWidth > 1)
+            {
+                var atRight = PagedScroll.HorizontalOffset >= PagedScroll.ScrollableWidth - 1;
+                var atLeft = PagedScroll.HorizontalOffset <= 1;
+                if (!((delta > 0 && atRight) || (delta < 0 && atLeft)))
+                {
+                    wheelAccumulator = 0;
+                    return;
+                }
+            }
+            towardNext = rightToLeft ? -delta : delta;
         }
+        else
+        {
+            if (PagedScroll.ScrollableHeight > 1 || PagedScroll.ZoomFactor > 1.02f)
+            {
+                var atBottom = PagedScroll.VerticalOffset >= PagedScroll.ScrollableHeight - 1;
+                var atTop = PagedScroll.VerticalOffset <= 1;
+                if (!((delta < 0 && atBottom) || (delta > 0 && atTop)))
+                {
+                    wheelAccumulator = 0;
+                    return;
+                }
+            }
+            towardNext = -delta;
+        }
+        e.Handled = true;
+        if (Math.Sign(towardNext) != Math.Sign(wheelAccumulator))
+        {
+            wheelAccumulator = 0;
+        }
+        wheelAccumulator += towardNext;
+        if ((DateTime.UtcNow - lastWheelTurn).TotalMilliseconds < 220 || Math.Abs(wheelAccumulator) < 100)
+        {
+            return;
+        }
+        var forward = wheelAccumulator > 0;
+        wheelAccumulator = 0;
+        lastWheelTurn = DateTime.UtcNow;
+        _ = forward ? NextAsync() : PreviousAsync();
     }
 
-    private void UpdatePagedEdgeState()
-    {
-    }
+    private static bool IsModifier(VirtualKey key) => key is VirtualKey.Shift or VirtualKey.LeftShift or VirtualKey.RightShift
+        or VirtualKey.Control or VirtualKey.LeftControl or VirtualKey.RightControl
+        or VirtualKey.Menu or VirtualKey.LeftMenu or VirtualKey.RightMenu or VirtualKey.LeftWindows or VirtualKey.RightWindows;
 
     private void OnKeyDown(object sender, KeyRoutedEventArgs e)
     {
-        HideHint();
-        var rtl = Services.Settings.RightToLeft && mode != ReaderMode.Webtoon;
+        if (e.OriginalSource is TextBox || IsModifier(e.Key))
+        {
+            return;
+        }
+        _ = HideHintAsync();
+        var rtl = rightToLeft && layout != ReaderLayout.Strip;
         var ctrl = InputKeyboardSource.GetKeyStateForCurrentThread(VirtualKey.Control).HasFlag(Windows.UI.Core.CoreVirtualKeyStates.Down);
         var shift = InputKeyboardSource.GetKeyStateForCurrentThread(VirtualKey.Shift).HasFlag(Windows.UI.Core.CoreVirtualKeyStates.Down);
+        var question = shift && (e.Key == (VirtualKey)191 || e.KeyStatus.ScanCode == 0x35);
+        if (ShortcutLayer.Visibility == Visibility.Visible)
+        {
+            HideShortcutSheet();
+            if (question || e.Key == VirtualKey.Escape)
+            {
+                e.Handled = true;
+                return;
+            }
+        }
+        if (question)
+        {
+            ShowShortcutSheet();
+            e.Handled = true;
+            return;
+        }
+        if (ExplorerOpen)
+        {
+            if (e.Key is VirtualKey.Escape or VirtualKey.T)
+            {
+                CloseExplorer();
+                e.Handled = true;
+            }
+            return;
+        }
         switch (e.Key)
         {
             case VirtualKey.Right:
@@ -969,54 +1654,72 @@ public sealed partial class ReaderPage : UserControl
             case VirtualKey.PageUp:
                 _ = PreviousAsync();
                 break;
-            case VirtualKey.Down when mode == ReaderMode.Webtoon:
+            case VirtualKey.Down when layout == ReaderLayout.Strip:
                 ScrollStrip(0.2);
                 break;
-            case VirtualKey.Up when mode == ReaderMode.Webtoon:
+            case VirtualKey.Up when layout == ReaderLayout.Strip:
                 ScrollStrip(-0.2);
                 break;
-            case VirtualKey.Home:
-                if (mode == ReaderMode.Webtoon) ScrollStripTo(0); else _ = GoToPageAsync(0, animate: true, direction: -1);
+            case VirtualKey.Home when !loadingChapter && pages.Count > 0:
+                if (layout == ReaderLayout.Strip) ScrollStripTo(0); else _ = GoToPageAsync(0, animate: true, direction: -1);
                 break;
-            case VirtualKey.End:
-                if (mode == ReaderMode.Webtoon) ScrollStripTo(pages.Count - 1); else _ = GoToPageAsync(pages.Count - 1, animate: true, direction: 1);
+            case VirtualKey.End when !loadingChapter && pages.Count > 0:
+                if (layout == ReaderLayout.Strip) ScrollStripTo(pages.Count - 1); else _ = GoToPageAsync(pages.Count - 1, animate: true, direction: 1);
                 break;
             case VirtualKey.F11:
                 ToggleFullscreen();
                 break;
             case VirtualKey.Escape:
-                if (App.MainWindow.AppWindow.Presenter.Kind == AppWindowPresenterKind.FullScreen)
+                if (!ResetZoom())
                 {
-                    ToggleFullscreen();
-                }
-                else
-                {
-                    _ = CloseAsync();
+                    if (App.MainWindow.AppWindow.Presenter.Kind == AppWindowPresenterKind.FullScreen)
+                    {
+                        ToggleFullscreen();
+                    }
+                    else
+                    {
+                        _ = CloseAsync();
+                    }
                 }
                 break;
             case VirtualKey.Back:
                 _ = CloseAsync();
                 break;
-            case VirtualKey.Number1:
-                SetMode(ReaderMode.Single);
+            case VirtualKey.Number1 when !ctrl:
+                SetLayout(ReaderLayout.Single);
                 break;
-            case VirtualKey.Number2:
-                SetMode(ReaderMode.Double);
+            case VirtualKey.Number2 when !ctrl:
+                SetLayout(ReaderLayout.Double);
                 break;
-            case VirtualKey.Number3:
-                SetMode(ReaderMode.Webtoon);
+            case VirtualKey.Number3 when !ctrl:
+                SetLayout(ReaderLayout.Strip);
                 break;
-            case VirtualKey.R:
+            case VirtualKey.D when !ctrl:
+                SetLayout(layout == ReaderLayout.Double ? ReaderLayout.Single : ReaderLayout.Double);
+                break;
+            case VirtualKey.O when !ctrl:
+                ToggleOffset();
+                break;
+            case VirtualKey.R when !ctrl:
                 ToggleDirection();
                 break;
-            case VirtualKey.F:
+            case VirtualKey.F when !ctrl:
                 CycleFit();
+                break;
+            case VirtualKey.G when !ctrl:
+                ShowGoTo();
+                break;
+            case VirtualKey.T when !ctrl:
+                ToggleExplorer();
+                break;
+            case VirtualKey.S when !ctrl:
+                ToggleFilmstrip();
                 break;
             case (VirtualKey)219:
                 _ = GoChapterAsync(-1);
                 break;
             case (VirtualKey)221:
-                _ = GoChapterAsync(1);
+                _ = NextChapterAsync();
                 break;
             case VirtualKey.Number0 when ctrl:
                 PagedScroll.ZoomTo(1, null, new ScrollingZoomOptions(ScrollingAnimationMode.Enabled));
@@ -1035,7 +1738,14 @@ public sealed partial class ReaderPage : UserControl
             return;
         }
         closing = true;
-        await FlushProgressAsync();
+        try
+        {
+            await FlushProgressAsync();
+        }
+        catch (Exception e)
+        {
+            Log.Error("reader progress", e);
+        }
         var window = App.MainWindow;
         if (window.AppWindow.Presenter.Kind == AppWindowPresenterKind.FullScreen)
         {
@@ -1044,19 +1754,14 @@ public sealed partial class ReaderPage : UserControl
         window.RestoreTitleBar();
         if (animate)
         {
-            var layer = window.ReaderLayer;
-            if (origin is not null && origin.XamlRoot is not null && !Motion.Reduced)
+            var plan = ContainerTransform.PlanReturn([], origin, window.ReaderLayer);
+            if (plan.Target != Tsuzuki.Presentation.ReturnTarget.Fade && ActualWidth > 1 && ActualHeight > 1)
             {
-                var rect = ContainerTransform.BoundsIn(origin, layer);
-                if (ContainerTransform.IsOnScreen(rect, layer))
-                {
-                    await ContainerTransform.Collapse(this, rect, new Rect(0, 0, ActualWidth, ActualHeight), 18, Motion.FluentTimings ? Motion.Short4 : Motion.Medium4, [TopBar, BottomBar, PagedScroll, StripScroll], null, BeginTransition());
-                    Finish();
-                    return;
-                }
+                await ContainerTransform.Collapse(this, ContainerTransform.ToRect(plan.Anchor), new Rect(0, 0, ActualWidth, ActualHeight), ContainerTransform.RadiusOf(origin.Element), RevealParts(), BeginTransition());
+                Finish();
+                return;
             }
-            var v = Motion.VisualOf(this);
-            await Motion.Run(v.Compositor, _ => v.StartAnimation("Opacity", Motion.Scalar(v.Compositor, 1, 0, Motion.Short4, Curve.EmphasizedAccelerate)));
+            await ContainerTransform.Fade(this, opening: false, BeginTransition());
         }
         Finish();
     }
@@ -1071,7 +1776,12 @@ public sealed partial class ReaderPage : UserControl
 
     private void Finish()
     {
+        chromeTimer.Stop();
+        saveTimer.Stop();
+        pillTimer.Stop();
+        hintTimer?.Stop();
         ReleaseAll();
+        SetCursorHidden(false);
         var window = App.MainWindow;
         window.ReaderLayer.Children.Remove(this);
         if (window.ReaderLayer.Children.Count == 0)
@@ -1106,6 +1816,10 @@ public sealed partial class ReaderPage : UserControl
 
     private void ScrollStripTo(int page)
     {
+        if (layout != ReaderLayout.Strip || Strip.ItemsSource is null)
+        {
+            return;
+        }
         if (page <= 0)
         {
             StripScroll.ScrollTo(0, 0, new ScrollingScrollOptions(ScrollingAnimationMode.Disabled));
@@ -1118,7 +1832,7 @@ public sealed partial class ReaderPage : UserControl
 
     private void OnStripScrolled()
     {
-        if (mode != ReaderMode.Webtoon || pages.Count == 0)
+        if (layout != ReaderLayout.Strip || pages.Count == 0)
         {
             return;
         }
@@ -1129,7 +1843,7 @@ public sealed partial class ReaderPage : UserControl
             index = page;
             UpdatePageLabels(page, null);
             QueueProgress(page);
-            Services.Engine?.Pages.Prefetch(pages.Skip(page + 1).Take(6).Select(p => p.ImageUrl));
+            Services.Engine?.Pages.Prefetch(PageRequests(page + 1, 3));
             if (page >= pages.Count - 2)
             {
                 PrefetchNextChapter();
@@ -1139,26 +1853,32 @@ public sealed partial class ReaderPage : UserControl
 
     internal async Task BindStripPageAsync(StripPageView view, int page)
     {
+        if (pages.Count == 0)
+        {
+            return;
+        }
         if (page >= pages.Count)
         {
             view.ShowFooter(NeighbourChapter(1), () => _ = GoChapterAsync(1));
             return;
         }
-        var version = chapterVersion;
+        var version = generation;
         try
         {
             var result = await GetPageAsync(page, ImagePriority.Visible);
-            if (version != chapterVersion || view.Page != page)
+            if (version != generation || view.Page != page)
             {
                 return;
             }
-            view.SetPage(result.Page, result.Sources);
+            view.SetPage(result);
+            DisposeRetired();
             Evict(k => Math.Abs(k - index) <= 6 || stripFactory.IsRealized(k));
         }
-        catch (Exception)
+        catch (Exception e)
         {
-            if (view.Page == page)
+            if (version == generation && view.Page == page)
             {
+                Log.Error("reader strip page", e);
                 view.ShowError(() => _ = BindStripPageAsync(view, page));
             }
         }

@@ -40,7 +40,7 @@ public static class DevicesPanel
         var qrFrame = new Border
         {
             Background = new SolidColorBrush(Microsoft.UI.Colors.White),
-            CornerRadius = new CornerRadius(16),
+            CornerRadius = Res<CornerRadius>("TzCardRadius"),
             Padding = new Thickness(12),
             Child = qrImage,
             VerticalAlignment = VerticalAlignment.Top,
@@ -53,7 +53,7 @@ public static class DevicesPanel
         root.Children.Add(body);
         var warningText = new TextBlock { Style = Res<Style>("TzBody"), TextWrapping = TextWrapping.Wrap };
         var openSettings = new HyperlinkButton { Content = "Open network settings", Padding = new Thickness(0), Margin = new Thickness(0, 6, 0, 0) };
-        openSettings.Click += async (_, _) => await Windows.System.Launcher.LaunchUriAsync(new Uri("ms-settings:network-status"));
+        openSettings.Click += (_, _) => _ = Log.Guard("devices-settings", async () => await Windows.System.Launcher.LaunchUriAsync(new Uri("ms-settings:network-status")));
         var warningBody = new StackPanel();
         warningBody.Children.Add(warningText);
         warningBody.Children.Add(openSettings);
@@ -62,7 +62,7 @@ public static class DevicesPanel
             Visibility = Visibility.Collapsed,
             Margin = new Thickness(0, 20, 0, 0),
             Padding = new Thickness(16, 12, 16, 12),
-            CornerRadius = new CornerRadius(12),
+            CornerRadius = Res<CornerRadius>("TzCardRadius"),
             Background = Design.Theme.Brush("TzCard"),
             BorderBrush = Design.Theme.Brush("TzWarning"),
             BorderThickness = new Thickness(1),
@@ -72,13 +72,17 @@ public static class DevicesPanel
         var primaryHost = new Uri(engine.Hub.GetPairing().PrimaryUrl).Host;
         _ = Task.Run(() => NetworkCheck.PublicNetworkNameAsync(primaryHost)).ContinueWith(t =>
         {
-            if (t.Result is { } network)
+            if (t.IsCompletedSuccessfully && t.Result is { } network)
             {
-                root.DispatcherQueue.TryEnqueue(() =>
+                Ui.Enqueue(root.DispatcherQueue, () =>
                 {
                     warningText.Text = $"Windows treats “{network}” as a public network and blocks your phone from reaching this PC. Set it to Private in network settings, then pair.";
                     warning.Visibility = Visibility.Visible;
-                });
+                }, "devices-network");
+            }
+            else if (t.Exception is { } error)
+            {
+                Log.Error("devices-network", error);
             }
         }, TaskScheduler.Default);
 
@@ -134,17 +138,17 @@ public static class DevicesPanel
             }
         }
 
-        newKey.Click += async (_, _) =>
+        newKey.Click += (_, _) => _ = Log.Guard("devices-key", async () =>
         {
             if (await Dialogs.ConfirmAsync("Make a new key?", "Phones paired with the old key stop syncing until you enter the new one.", "Make new key"))
             {
                 await Render(await engine.Hub.RegenerateKeyAsync());
             }
-        };
+        });
 
         await Render(engine.Hub.GetPairing());
         await RenderDevices();
-        void OnSynced(object? s, DeviceSyncedEventArgs e) => root.DispatcherQueue.TryEnqueue(() => _ = RenderDevices());
+        void OnSynced(object? s, DeviceSyncedEventArgs e) => Ui.Enqueue(root.DispatcherQueue, RenderDevices, "devices-render");
         engine.Hub.DeviceSynced += OnSynced;
         void OnClosed(object? s, EventArgs e)
         {
@@ -177,7 +181,7 @@ public static class DevicesPanel
 
     private static FrameworkElement Field(string label, string value)
     {
-        var grid = new Grid { Margin = new Thickness(36, 0, 0, 0), Padding = new Thickness(14, 10, 8, 10), CornerRadius = new CornerRadius(12), Background = Design.Theme.Brush("TzCard"), BorderBrush = Design.Theme.Brush("TzStroke"), BorderThickness = new Thickness(1) };
+        var grid = new Grid { Margin = new Thickness(36, 0, 0, 0), Padding = new Thickness(14, 10, 8, 10), CornerRadius = Res<CornerRadius>("TzCardRadius"), Background = Design.Theme.Brush("TzCard"), BorderBrush = Design.Theme.Brush("TzStroke"), BorderThickness = new Thickness(1) };
         grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
         grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
         var text = new StackPanel();
@@ -200,7 +204,7 @@ public static class DevicesPanel
 
     private static FrameworkElement DeviceRow(SyncDevice device, Tsuzuki.Core.Engine engine, Func<Task> onRemoved)
     {
-        var grid = new Grid { ColumnSpacing = 12, Padding = new Thickness(12, 10, 12, 10), CornerRadius = new CornerRadius(12), Background = Design.Theme.Brush("TzCard") };
+        var grid = new Grid { ColumnSpacing = 12, Padding = new Thickness(12, 10, 12, 10), CornerRadius = Res<CornerRadius>("TzCardRadius"), Background = Design.Theme.Brush("TzCard") };
         grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
         grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
         grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
@@ -213,7 +217,7 @@ public static class DevicesPanel
 
         var remove = new Button { Style = Res<Style>("TzIconButton"), Content = new FontIcon { Glyph = Icons.Close, FontFamily = Res<FontFamily>("TzIconFont"), FontSize = 15 }, Foreground = Design.Theme.Brush("TzDanger") };
         ToolTipService.SetToolTip(remove, "Remove device");
-        remove.Click += async (_, _) =>
+        remove.Click += (_, _) => _ = Log.Guard("device-remove", async () =>
         {
             if (await Dialogs.ConfirmAsync($"Remove {device.Name}?", "This phone will be forgotten. Because Tsuzuki uses a shared sync key, make a new key if you want to stop this device connecting.", "Remove"))
             {
@@ -221,7 +225,7 @@ public static class DevicesPanel
                 await onRemoved();
                 Toasts.Show("Device removed", $"{device.Name} was removed from the list.", Icons.Check, seconds: 3);
             }
-        };
+        });
         Grid.SetColumn(remove, 2);
         grid.Children.Add(remove);
         return grid;

@@ -71,6 +71,19 @@ import dev.errnolink.tsuzuki.designsystem.pressScale
 
 private val MorphBlurRadius = 10.dp
 private const val SettledSwapMillis = 180
+private const val IconOutEnd = 0.6f
+private const val IconInStart = 0.25f
+private const val IconBlurShare = 0.5f
+private val BandFade = 44.dp
+private val BandUnderBar = 0.96f to 0.92f
+private val BandTail = listOf(
+    0.25f to 0.72f,
+    0.45f to 0.5f,
+    0.62f to 0.3f,
+    0.78f to 0.14f,
+    0.9f to 0.05f,
+    1f to 0f,
+)
 private const val MenuAnchorPressScale = 1.15f
 private const val MenuAnchorPressStiffness = 600f
 private const val MenuAnchorPressDamping = 0.55f
@@ -106,6 +119,8 @@ class ShellTopDeclaration {
     var search: TopBarSearch? by mutableStateOf(null)
     var onTitleClick: (() -> Unit)? by mutableStateOf(null)
     var inlineTitle: Float by mutableFloatStateOf(1f)
+    var edge: Boolean by mutableStateOf(true)
+    var tint: Color? by mutableStateOf(null)
 }
 
 val LocalShellTopOwner = staticCompositionLocalOf<String?> { null }
@@ -125,6 +140,8 @@ fun DeclareShellTop(
     search: TopBarSearch? = null,
     onTitleClick: (() -> Unit)? = null,
     inlineTitle: (() -> Float)? = null,
+    edge: Boolean = true,
+    tint: Color? = null,
 ) {
     val owner = LocalShellTopOwner.current ?: return
     val declaration = remember(owner) {
@@ -154,6 +171,8 @@ fun DeclareShellTop(
         declaration.search = currentSearch
         declaration.onTitleClick = currentTitleClick
         declaration.inlineTitle = inlineNow
+        declaration.edge = edge
+        declaration.tint = tint
         ShellTopControls.declarations[owner] = declaration
     }
     DisposableEffect(owner) {
@@ -188,7 +207,8 @@ internal fun ShellTopControlRow(
     frontKey: String?,
     backKey: String?,
     moving: Boolean,
-    progress: Float,
+    progress: () -> Float,
+    frontTint: Color? = null,
 ) {
     val front = frontKey?.let { ShellTopControls.declarations[it] }
     val back = backKey?.let { ShellTopControls.declarations[it] }
@@ -226,7 +246,7 @@ internal fun ShellTopControlRow(
     val morph: Float
     if (moving) {
         from = ShellTopSnap(back)
-        morph = progress.coerceIn(0f, 1f)
+        morph = progress().coerceIn(0f, 1f)
     } else {
         from = shown.takeIf { it != to }
         morph = if (motion.reduced || from == null) 1f else swap.value
@@ -241,18 +261,63 @@ internal fun ShellTopControlRow(
     )
 
     val visible = from != null || to.declaration != null
-    val colors = TsuzukiTheme.colors
+    val baseColors = TsuzukiTheme.colors
+    val fromTint = from?.declaration?.tint ?: (if (to.declaration == null) frontTint else to.declaration.tint)?.takeIf { from == null }
+    val toTint = if (to.declaration == null) frontTint else to.declaration.tint
+    val colors = dev.errnolink.tsuzuki.designsystem.lerpColors(
+        fromTint?.let { dev.errnolink.tsuzuki.designsystem.tsuzukiCardColors(it) } ?: baseColors,
+        toTint?.let { dev.errnolink.tsuzuki.designsystem.tsuzukiCardColors(it) } ?: baseColors,
+        morph,
+    )
     val fontScale = density.fontScale
     val bodyHeight = (56.dp * fontScale).coerceAtLeast(56.dp)
     val edgeBrush = remember(colors.background) {
         Brush.verticalGradient(listOf(colors.background.copy(alpha = 0.96f), Color.Transparent))
     }
+    val edgeAlpha = lerpValues(
+        if (from?.declaration?.edge != false) 1f else 0f,
+        if (to.declaration?.edge != false) 1f else 0f,
+        morph,
+    ).coerceIn(0f, 1f)
+    val inlineTarget = lerpValues(from?.declaration?.inlineTitle ?: 0f, to.declaration?.inlineTitle ?: 0f, morph)
+        .coerceIn(0f, 1f) * (1f - searchFraction)
+    val band by animateFloatAsState(
+        targetValue = inlineTarget,
+        animationSpec = if (motion.reduced) snap() else tween(M3Motion.Short4, easing = M3Motion.Standard),
+        label = "Shell top band",
+    )
+    val bandFadePx = with(density) { BandFade.toPx() }
 
+    var leadingWidth by remember { mutableStateOf(0.dp) }
+    var trailingWidth by remember { mutableStateOf(0.dp) }
+    androidx.compose.runtime.CompositionLocalProvider(
+        dev.errnolink.tsuzuki.designsystem.LocalTsuzukiColors provides colors,
+        dev.errnolink.tsuzuki.designsystem.LocalTsuzukiContentColor provides colors.text,
+    ) {
     Box(Modifier.fillMaxWidth()) {
         if (visible) {
             Spacer(
                 Modifier.matchParentSize().drawWithCache {
-                    onDrawBehind { drawRect(brush = edgeBrush) }
+                    val total = size.height + bandFadePx
+                    val bar = (size.height / total).coerceIn(0f, 1f)
+                    val bandBrush = Brush.verticalGradient(
+                        *(
+                            listOf(0f to BandUnderBar.first, bar to BandUnderBar.second) +
+                                BandTail.map { (at, alpha) -> (bar + (1f - bar) * at) to alpha }
+                            ).map { (at, alpha) -> at to colors.background.copy(alpha = alpha) }.toTypedArray(),
+                        startY = 0f,
+                        endY = total,
+                    )
+                    onDrawBehind {
+                        if (band < 1f && edgeAlpha > 0f) drawRect(brush = edgeBrush, alpha = (1f - band) * edgeAlpha)
+                        if (band > 0f) {
+                            drawRect(
+                                brush = bandBrush,
+                                size = androidx.compose.ui.geometry.Size(size.width, total),
+                                alpha = band,
+                            )
+                        }
+                    }
                 },
             )
         }
@@ -267,24 +332,29 @@ internal fun ShellTopControlRow(
                 },
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            BackCircleSlot(from, to, morph, moving)
+            Box(Modifier.onSizeChanged { leadingWidth = with(density) { it.width.toDp() } }) {
+                BackCircleSlot(from, to, morph, moving)
+            }
             BoxWithConstraints(Modifier.weight(1f)) {
                 if (search != null && searchFraction > 0.01f && to.declaration != null) {
                     SearchPill(to, search, searchFraction, maxWidth)
                 }
             }
-            ActionsSlot(from, to, morph, searchFraction, moving)
+            Box(Modifier.onSizeChanged { trailingWidth = with(density) { it.width.toDp() } }) {
+                ActionsSlot(from, to, morph, searchFraction, moving)
+            }
         }
         Box(
             Modifier
                 .matchParentSize()
                 .statusBarsPadding()
-                .padding(horizontal = 16.dp, vertical = 4.dp)
+                .padding(horizontal = 16.dp + maxOf(leadingWidth, trailingWidth), vertical = 4.dp)
                 .heightIn(min = bodyHeight),
             contentAlignment = Alignment.Center,
         ) {
             TitleSlot(from, to, morph, searchFraction)
         }
+    }
     }
 }
 
@@ -440,14 +510,14 @@ private fun ActionSlot(from: ShellTopAction?, to: ShellTopAction?, morph: Float,
         to?.let { RowTopButton(it, 1f, 0f, moving) }
         return
     }
-    val outFraction = M3Motion.fadeThroughOut(morph)
-    val inFraction = M3Motion.fadeThroughIn(morph)
+    val outFraction = (1f - morph / IconOutEnd).coerceIn(0f, 1f)
+    val inFraction = ((morph - IconInStart) / (1f - IconInStart)).coerceIn(0f, 1f)
     Box(Modifier.size(48.dp), contentAlignment = Alignment.Center) {
         if (from != null && outFraction > 0.01f) {
-            RowTopButton(from, outFraction, 1f - outFraction, moving)
+            RowTopButton(from, outFraction, (1f - outFraction) * IconBlurShare, moving)
         }
         if (to != null && inFraction > 0.01f) {
-            RowTopButton(to, inFraction, 1f - inFraction, moving)
+            RowTopButton(to, inFraction, (1f - inFraction) * IconBlurShare, moving)
         }
     }
 }
