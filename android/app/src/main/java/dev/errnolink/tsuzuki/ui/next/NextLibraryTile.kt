@@ -26,13 +26,14 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import dev.errnolink.tsuzuki.designsystem.Check
 import androidx.compose.material3.Icon
+import dev.errnolink.tsuzuki.designsystem.ContinueButton
 import dev.errnolink.tsuzuki.designsystem.TsuzukiIcons
 import dev.errnolink.tsuzuki.designsystem.TsuzukiText
 import dev.errnolink.tsuzuki.designsystem.TsuzukiTheme
+import dev.errnolink.tsuzuki.reader.readerOrigin
 import dev.errnolink.tsuzuki.ui.library.LibraryTileBadgeKind
 import dev.errnolink.tsuzuki.ui.library.LibraryTileBadgeValue
 import dev.errnolink.tsuzuki.ui.library.LibraryTileBadges
-import dev.errnolink.tsuzuki.ui.library.LibraryTileContinuePill
 import dev.errnolink.tsuzuki.ui.library.LibraryTileOverlays
 import dev.errnolink.tsuzuki.ui.library.resolvedBadges
 import dev.errnolink.tsuzuki.ui.shell.ShellCover
@@ -104,10 +105,13 @@ fun NextLibraryTile(
                 }
             }
             if (badges.continueButton && onResume != null) {
-                LibraryTileContinuePill(
-                    Modifier.align(Alignment.BottomEnd).padding(2.dp),
-                    progress = if (progressRing) progress.fraction else null,
-                ) { onResume() }
+                ContinueButton(
+                    progress = if (progressRing) overlays.continueProgress else null,
+                    onClick = onResume,
+                    modifier = Modifier.align(Alignment.BottomEnd).padding(2.dp).readerOrigin(),
+                    onImage = true,
+                    contentDescription = "Resume next chapter",
+                )
             }
         }
         if (showText) {

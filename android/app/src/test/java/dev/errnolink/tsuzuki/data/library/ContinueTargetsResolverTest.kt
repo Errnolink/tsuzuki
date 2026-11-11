@@ -359,9 +359,9 @@ class ContinueTargetsResolverTest {
         val chapterId = rows.getValue(manga.id).chapterId
         assertEquals(legacyNextUnreadChapter(manga)?.id, chapterId)
         assertEquals(11L, rows.getValue(manga.id).lastPageRead)
-        assertEquals(12f / 30f, resolver.progressOf(rows.getValue(manga.id), "$chapterId:30"))
-        assertNull(resolver.progressOf(rows.getValue(manga.id), "other:30"))
-        assertNull(resolver.progressOf(rows.getValue(manga.id), "bogus"))
+        assertEquals(12f / 30f, chapterPageProgress(rows.getValue(manga.id).lastPageRead, 30, read = false))
+        assertNull(chapterPageProgress(rows.getValue(manga.id).lastPageRead, null, read = false))
+        assertNull(chapterPageProgress(rows.getValue(manga.id).lastPageRead, 0, read = false))
     }
 
     @Test

@@ -36,6 +36,7 @@ import eu.kanade.tachiyomi.ui.reader.loader.ChapterLoader
 import eu.kanade.tachiyomi.ui.reader.loader.DownloadPageLoader
 import eu.kanade.tachiyomi.ui.reader.loader.HttpPageLoader
 import dev.errnolink.tsuzuki.reader.PagePreloadPolicy
+import dev.errnolink.tsuzuki.data.library.PageTotals
 import eu.kanade.tachiyomi.ui.reader.model.InsertPage
 import eu.kanade.tachiyomi.ui.reader.model.ReaderChapter
 import eu.kanade.tachiyomi.ui.reader.model.ReaderPage
@@ -144,6 +145,8 @@ class ReaderViewModel @JvmOverloads constructor(
     private val getMergedChaptersByMangaId: GetMergedChaptersByMangaId = Injekt.get(),
     // SY <--
 ) : ViewModel() {
+
+    private val pageTotals = PageTotals()
 
     // KMK -->
     private companion object {
@@ -869,7 +872,7 @@ class ReaderViewModel @JvmOverloads constructor(
             val chapterId = readerChapter.chapter.id
             val totalPages = readerChapter.pages?.size
             if (chapterId != null && totalPages != null && totalPages > 0) {
-                uiPreferences.betaNowReadingPages().set("$chapterId:$totalPages")
+                pageTotals.record(chapterId, totalPages)
             }
 
             // SY -->

@@ -8,7 +8,7 @@ import java.net.URI
 
 data class NeededSource(val name: String, val id: Long?, val host: String?, val titles: Int)
 
-data class ExtensionMatch(val needed: NeededSource, val extension: Extension.Available?)
+data class ExtensionMatch(val needed: NeededSource, val extension: Extension.Available?, val title: String)
 
 object RestoreExtensions {
 
@@ -38,7 +38,16 @@ object RestoreExtensions {
     }
 
     fun match(needed: List<NeededSource>, available: List<Extension.Available>): List<ExtensionMatch> =
-        needed.map { source -> ExtensionMatch(source, find(source, available)) }
+        needed.map { source ->
+            val extension = find(source, available)
+            ExtensionMatch(source, extension, title(source, extension))
+        }
+
+    private fun title(source: NeededSource, extension: Extension.Available?): String {
+        val id = source.id ?: return source.name
+        if (source.name != id.toString()) return source.name
+        return extension?.sources?.firstOrNull { it.id == id }?.name ?: source.name
+    }
 
     private fun find(source: NeededSource, available: List<Extension.Available>): Extension.Available? {
         source.id?.let { id -> available.firstOrNull { ext -> ext.sources.any { it.id == id } }?.let { return it } }

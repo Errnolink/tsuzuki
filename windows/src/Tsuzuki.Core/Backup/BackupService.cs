@@ -48,7 +48,7 @@ public sealed class BackupService : IBackupService
     public async Task<BackupResult> CreateAsync(IBackupTarget target, CancellationToken ct = default)
     {
         var backup = await RenderLibrary().ConfigureAwait(false);
-        var name = BackupFiles.Prefix + DateTimeOffset.Now.ToString("yyyy-MM-dd_HH-mm") + BackupFiles.Extension;
+        var name = BackupFiles.Prefix + DateTimeOffset.Now.ToString("yyyy-MM-dd_HH-mm-ss") + BackupFiles.Extension;
         using var buffer = new MemoryStream();
         using (var gzip = new GZipStream(buffer, CompressionLevel.Fastest, leaveOpen: true))
         {

@@ -29,6 +29,20 @@ public sealed partial class ChapterTableRow : Button
     private readonly Grid progressHost = new() { VerticalAlignment = VerticalAlignment.Center, HorizontalAlignment = HorizontalAlignment.Stretch, Margin = new Thickness(0, 0, 12, 0) };
     private readonly StackPanel hoverActions = new() { Orientation = Orientation.Horizontal, Spacing = 2, HorizontalAlignment = HorizontalAlignment.Right, VerticalAlignment = VerticalAlignment.Center, Visibility = Visibility.Collapsed };
     private readonly Border selectionFill = new() { CornerRadius = new CornerRadius(4), IsHitTestVisible = false, Visibility = Visibility.Collapsed };
+    private readonly Button expander = new()
+    {
+        Width = 24,
+        Height = 24,
+        MinWidth = 0,
+        MinHeight = 0,
+        Padding = new Thickness(0),
+        Margin = new Thickness(0, 0, 6, 0),
+        VerticalAlignment = VerticalAlignment.Center,
+        Background = new SolidColorBrush(Microsoft.UI.Colors.Transparent),
+        BorderThickness = new Thickness(0),
+        Visibility = Visibility.Collapsed,
+    };
+    private readonly FontIcon expanderIcon = new() { FontFamily = DetailsTheme.Symbols, FontSize = 10, Glyph = "\uE70D" };
     private readonly Button markPrevious;
     private readonly Button toggleRead;
     private readonly Button more;
@@ -60,6 +74,8 @@ public sealed partial class ChapterTableRow : Button
         markPrevious.Click += (_, _) => MarkPreviousRequested?.Invoke(this, EventArgs.Empty);
         more.Click += (_, _) => MenuRequested?.Invoke(this, more);
         check.Click += (_, _) => SelectRequested?.Invoke(this, new ChapterRowClick(this, Toggle: true, Range: false));
+        expander.Content = expanderIcon;
+        expander.Click += (_, _) => ExpandRequested?.Invoke(this, EventArgs.Empty);
 
         var titleCell = new Grid();
         titleCell.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
@@ -81,7 +97,10 @@ public sealed partial class ChapterTableRow : Button
         grid.Children.Add(check);
         Place(grid, number, 1);
         Place(grid, titleCell, 2);
-        Place(grid, scanlator, 3);
+        var scanCell = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center };
+        scanCell.Children.Add(expander);
+        scanCell.Children.Add(scanlator);
+        Place(grid, scanCell, 3);
         Place(grid, date, 4);
         Place(grid, progressHost, 5);
         Place(grid, hoverActions, 6);
@@ -116,6 +135,8 @@ public sealed partial class ChapterTableRow : Button
     public ChapterGroup? Group { get; private set; }
 
     public event EventHandler? OpenRequested;
+
+    public event EventHandler? ExpandRequested;
 
     public event EventHandler<ChapterRowClick>? SelectRequested;
 
@@ -200,7 +221,7 @@ public sealed partial class ChapterTableRow : Button
         UpdateChrome();
     }
 
-    public void Bind(ChapterGroup group, bool isSelected, bool inSelectionMode)
+    public void Bind(ChapterGroup group, bool isSelected, bool inSelectionMode, bool expanded = false)
     {
         Group = group;
         pointerOver = false;
@@ -214,6 +235,8 @@ public sealed partial class ChapterTableRow : Button
         var name = ChapterTitle(c);
         var label = c.ChapterNumber >= 0 ? "Chapter " + Format.ChapterNumber(c.ChapterNumber) : string.IsNullOrWhiteSpace(c.Name) ? "Chapter" : c.Name;
         title.Text = name ?? label;
+        title.Margin = new Thickness(group.Nested ? 20 : 0, 0, 0, 0);
+        number.Visibility = group.Nested ? Visibility.Collapsed : Visibility.Visible;
         title.FontWeight = read ? FontWeights.Normal : FontWeights.SemiBold;
         title.Foreground = primaryText;
 
@@ -222,6 +245,11 @@ public sealed partial class ChapterTableRow : Button
             ? scan is null ? $"{group.Alternates.Count + 1} copies" : $"{scan} +{group.Alternates.Count}"
             : scan ?? string.Empty;
         scanlator.Foreground = secondaryText;
+        expander.Visibility = group.Alternates.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
+        expanderIcon.Glyph = expanded ? "\uE70E" : "\uE70D";
+        var copiesName = expanded ? "Hide other groups" : $"Show {group.Alternates.Count} other {(group.Alternates.Count == 1 ? "group" : "groups")}";
+        ToolTipService.SetToolTip(expander, copiesName);
+        AutomationProperties.SetName(expander, copiesName);
         date.Text = c.DateUpload > 0 ? Format.Relative(c.DateUpload) : string.Empty;
         date.Foreground = secondaryText;
 
@@ -364,7 +392,7 @@ public static class ChapterColumns
     }
 }
 
-public sealed partial class ChapterTableFactory(Func<ChapterGroup, bool> isSelected, Func<bool> selectionMode, Action<ChapterTableRow> wire) : IElementFactory
+public sealed partial class ChapterTableFactory(Func<ChapterGroup, bool> isSelected, Func<bool> selectionMode, Func<ChapterGroup, bool> isExpanded, Action<ChapterTableRow> wire) : IElementFactory
 {
     private readonly Stack<ChapterTableRow> pool = new();
 
@@ -376,7 +404,7 @@ public sealed partial class ChapterTableFactory(Func<ChapterGroup, bool> isSelec
             wire(row);
         }
         var group = (ChapterGroup)args.Data;
-        row.Bind(group, isSelected(group), selectionMode());
+        row.Bind(group, isSelected(group), selectionMode(), isExpanded(group));
         return row;
     }
 

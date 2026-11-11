@@ -46,7 +46,7 @@ class AboutScreen : Screen() {
 
     @Composable
     override fun Content() {
-        TsuzukiAboutScreen().Content()
+        TsuzukiAboutScreen.Content()
     }
 
     companion object {

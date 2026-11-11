@@ -57,6 +57,7 @@ public sealed partial class DetailsPage : TzPage, ITzPage, ITransitionPage, ITra
     private readonly Task<DetailsSnapshot?> snapshot;
     private readonly GroupCollection rows = [];
     private readonly HashSet<string> selectedKeys = [];
+    private readonly HashSet<string> expandedKeys = [];
     private readonly DetailsViewModel model;
 
     private readonly Grid root = new();
@@ -424,7 +425,7 @@ public sealed partial class DetailsPage : TzPage, ITzPage, ITransitionPage, ITra
         columnHeader.BorderThickness = new Thickness(0, 0, 0, 1);
         columnHeader.Visibility = Visibility.Collapsed;
 
-        chapterList.ItemTemplate = new ChapterTableFactory(g => selectedKeys.Contains(GroupKey(g)), () => selectedKeys.Count > 0, WireRow);
+        chapterList.ItemTemplate = new ChapterTableFactory(g => selectedKeys.Contains(GroupKey(g)), () => selectedKeys.Count > 0, g => expandedKeys.Contains(GroupKey(g)), WireRow);
         chapterList.ItemsSource = rows;
         chapterList.XYFocusKeyboardNavigation = XYFocusKeyboardNavigationMode.Enabled;
         chapterList.TabFocusNavigation = KeyboardNavigationMode.Once;
@@ -516,6 +517,14 @@ public sealed partial class DetailsPage : TzPage, ITzPage, ITransitionPage, ITra
             }
         };
         row.SelectRequested += (_, e) => Select(e);
+        row.ExpandRequested += (s, _) =>
+        {
+            if (((ChapterTableRow)s!).Group is { } group && !expandedKeys.Remove(GroupKey(group)))
+            {
+                expandedKeys.Add(GroupKey(group));
+            }
+            BindChapters(animate: false);
+        };
         row.ToggleReadRequested += (s, args) =>
         {
             if (((ChapterTableRow)s!).Group is { } group)
@@ -534,7 +543,8 @@ public sealed partial class DetailsPage : TzPage, ITzPage, ITransitionPage, ITra
     }
 
     public static string GroupKey(ChapterGroup group) =>
-        group.Number >= 0 ? "n:" + Math.Round(group.Number, 3).ToString(System.Globalization.CultureInfo.InvariantCulture) : "u:" + group.Primary.Url;
+        group.Nested ? "c:" + group.Primary.ChapterId
+        : group.Number >= 0 ? "n:" + Math.Round(group.Number, 3).ToString(System.Globalization.CultureInfo.InvariantCulture) : "u:" + group.Primary.Url;
 
     private void SetTitle(string title)
     {
@@ -1121,7 +1131,7 @@ public sealed partial class DetailsPage : TzPage, ITzPage, ITransitionPage, ITra
 
     private void BindChapters(bool animate)
     {
-        groups = ChapterGrouping.Group(chapters);
+        groups = ChapterGrouping.Group(chapters, mangaId);
         next = ChapterGrouping.NextToRead(groups);
         BindGroupFilter();
         IEnumerable<ChapterGroup> visible = groups;
@@ -1137,8 +1147,13 @@ public sealed partial class DetailsPage : TzPage, ITzPage, ITransitionPage, ITra
         {
             visible = visible.Reverse();
         }
-        var list = visible.ToList();
-        var known = groups.Select(GroupKey).ToHashSet();
+        var list = visible
+            .SelectMany(g => expandedKeys.Contains(GroupKey(g)) && g.Alternates.Count > 0
+                ? g.Alternates.Select(a => new ChapterGroup(a, [], Nested: true)).Prepend(g)
+                : new[] { g })
+            .ToList();
+        var known = groups.SelectMany(g => g.Alternates.Select(a => "c:" + a.ChapterId).Prepend(GroupKey(g))).ToHashSet();
+        expandedKeys.IntersectWith(known);
         if (selectedKeys.RemoveWhere(k => !known.Contains(k)) > 0)
         {
             UpdateSelectionBar();
@@ -1198,10 +1213,11 @@ public sealed partial class DetailsPage : TzPage, ITzPage, ITransitionPage, ITra
         groupFilter.SelectedIndex = groupFilterValue is null ? 0 : names.IndexOf(groupFilterValue) + 1;
     }
 
-    private static int GroupSignature(ChapterGroup group)
+    private int GroupSignature(ChapterGroup group)
     {
         var c = group.Primary;
         var hash = new HashCode();
+        hash.Add(expandedKeys.Contains(GroupKey(group)));
         hash.Add(c.ChapterId);
         hash.Add(c.Name);
         hash.Add(c.Scanlator);
@@ -1219,7 +1235,7 @@ public sealed partial class DetailsPage : TzPage, ITzPage, ITransitionPage, ITra
         return hash.ToHashCode();
     }
 
-    private static int Signature(List<ChapterGroup> list)
+    private int Signature(List<ChapterGroup> list)
     {
         var hash = new HashCode();
         hash.Add(list.Count);
@@ -1588,6 +1604,20 @@ public sealed partial class DetailsPage : TzPage, ITzPage, ITransitionPage, ITra
         BindHeader();
     }
 
+    private void SetPreferredGroup(string? name)
+    {
+        if (name is null)
+        {
+            Services.Settings.PreferredGroups.Remove(mangaId);
+        }
+        else
+        {
+            Services.Settings.PreferredGroups[mangaId] = name;
+        }
+        Services.Settings.Save();
+        BindChapters(animate: false);
+    }
+
     private void ShowOverflow(FrameworkElement anchor)
     {
         var menu = new MenuFlyout { Placement = FlyoutPlacementMode.BottomEdgeAlignedLeft };
@@ -1602,6 +1632,28 @@ public sealed partial class DetailsPage : TzPage, ITzPage, ITransitionPage, ITra
         refresh.Click += (_, _) => _ = Log.Guard("next-details-refresh", () => RefreshAsync(includeDetails: true));
         menu.Items.Add(refresh);
         menu.Items.Add(DownloadActions.SeriesMenu(groups));
+        if (groups.Any(g => g.Alternates.Count > 0) && scanlators.Count > 1)
+        {
+            Services.Settings.PreferredGroups.TryGetValue(mangaId, out var current);
+            var preferred = new MenuFlyoutSubItem { Text = "Preferred group", Icon = DetailsTheme.Icon("\uE716") };
+            var automatic = new RadioMenuFlyoutItem { Text = "Automatic", GroupName = "preferred-group", IsChecked = current is null };
+            automatic.Click += (_, _) => SetPreferredGroup(null);
+            preferred.Items.Add(automatic);
+            preferred.Items.Add(new MenuFlyoutSeparator());
+            foreach (var name in scanlators)
+            {
+                var count = chapters.Count(c => string.Equals(c.Scanlator?.Trim(), name, StringComparison.Ordinal));
+                var item = new RadioMenuFlyoutItem
+                {
+                    Text = $"{name} · {count} {(count == 1 ? "chapter" : "chapters")}",
+                    GroupName = "preferred-group",
+                    IsChecked = string.Equals(current, name, StringComparison.OrdinalIgnoreCase),
+                };
+                item.Click += (_, _) => SetPreferredGroup(name);
+                preferred.Items.Add(item);
+            }
+            menu.Items.Add(preferred);
+        }
         var tracking = new MenuFlyoutItem { Text = "Tracking…", Icon = new FontIcon { Glyph = "\uE9D2" } };
         tracking.Click += (_, _) => _ = Log.Guard("next-details-tracking", () => TrackingDialog.ShowAsync(XamlRoot, mangaId, manga?.Title ?? string.Empty,
             groups.Where(g => g.Read && g.Number > 0).Select(g => g.Number).DefaultIfEmpty(0).Max()));

@@ -50,7 +50,11 @@ class SyncNotifier(private val context: Context) {
 
     suspend fun showSyncProgress(
         content: String = "",
-        progress: Int = 0,
+        // KMK -->
+        // Without an explicit progress nothing is published to the status: the
+        // old default reported a permanent zero percent.
+        progress: Int? = null,
+        // KMK <--
         maxAmount: Int = 100,
     ): NotificationCompat.Builder {
         val builder = with(progressNotificationBuilder) {
@@ -60,10 +64,12 @@ class SyncNotifier(private val context: Context) {
                 setContentText(content)
             }
 
-            setProgress(maxAmount, progress, true)
+            setProgress(maxAmount, progress ?: 0, true)
             setOnlyAlertOnce(true)
             // KMK -->
-            syncStatus.updateProgress(progress.toFloat() / maxAmount)
+            if (progress != null) {
+                syncStatus.updateProgress(progress.toFloat() / maxAmount)
+            }
             // KMK <--
 
             clearActions()

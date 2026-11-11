@@ -43,6 +43,7 @@ import dev.errnolink.tsuzuki.ui.shell.ShellAction
 import dev.errnolink.tsuzuki.ui.shell.ShellEmpty
 import dev.errnolink.tsuzuki.ui.shell.ShellList
 import dev.errnolink.tsuzuki.ui.shell.ShellTopAction
+import dev.errnolink.tsuzuki.ui.shell.rememberPageTotals
 import dev.errnolink.tsuzuki.ui.shell.HistoryRowSkeleton
 import dev.errnolink.tsuzuki.ui.shell.SkeletonCaption
 import dev.errnolink.tsuzuki.ui.shell.SkeletonCrossfade
@@ -107,6 +108,7 @@ fun HistoryScreen(
     val models by produceState(initialValue = emptyList<HistoryUiModel>(), state.list) {
         value = prepareHistoryUiModels(state)
     }
+    val pageTotals = rememberPageTotals()
     @Composable
     fun HistoryShellList(content: LazyListScope.() -> Unit) {
         ShellList(
@@ -203,6 +205,7 @@ fun HistoryScreen(
                                 selected = selected,
                                 readProgress = if (!entry.read) "Page ${entry.lastPageRead + 1}" else null,
                                 usePanoramaCover = usePanoramaCover,
+                                pageTotal = pageTotals[entry.chapterId],
                             )
                     }
                 }

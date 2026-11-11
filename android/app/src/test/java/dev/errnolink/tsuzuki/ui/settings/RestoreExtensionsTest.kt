@@ -69,4 +69,38 @@ class RestoreExtensionsTest {
         )
         assertEquals("en.right", matches.single().extension?.pkgName)
     }
+
+    @Test
+    fun `A source id without a backup name takes the extension source name as its title`() {
+        val backup = Backup(
+            backupManga = listOf(BackupManga(source = mangaDex.id, url = "/a", title = "A")),
+        )
+        val matches = RestoreExtensions.match(
+            RestoreExtensions.needed(backup, emptyList()),
+            listOf(ext("en.mangadex", Extension.Available.Source(mangaDex.id, "en", "MangaDex", "https://mangadex.org"))),
+        )
+        assertEquals("MangaDex", matches.single().title)
+    }
+
+    @Test
+    fun `A source id with no matching extension keeps the id string as its title`() {
+        val backup = Backup(
+            backupManga = listOf(BackupManga(source = mangaDex.id, url = "/a", title = "A")),
+        )
+        val matches = RestoreExtensions.match(RestoreExtensions.needed(backup, emptyList()), emptyList())
+        assertEquals(mangaDex.id.toString(), matches.single().title)
+    }
+
+    @Test
+    fun `A backup-supplied name wins over the extension source name`() {
+        val backup = Backup(
+            backupManga = listOf(BackupManga(source = mangaDex.id, url = "/a", title = "A")),
+            backupSources = listOf(BackupSource("Neko MangaDex", mangaDex.id)),
+        )
+        val matches = RestoreExtensions.match(
+            RestoreExtensions.needed(backup, emptyList()),
+            listOf(ext("en.mangadex", Extension.Available.Source(mangaDex.id, "en", "MangaDex", "https://mangadex.org"))),
+        )
+        assertEquals("Neko MangaDex", matches.single().title)
+    }
 }

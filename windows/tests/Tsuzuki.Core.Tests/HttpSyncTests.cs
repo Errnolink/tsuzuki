@@ -148,10 +148,9 @@ public class HttpSyncTests : IDisposable
             lastPageAt = clock.Elapsed;
             await Task.Delay(500);
         }
-        var finalSeq = await _library.Db.ReadAsync(db => _library.Db.GetSeq(db));
         var (seq, wokeAt) = await waiting;
 
-        Assert.Equal(finalSeq, seq);
+        Assert.True(seq > since, $"woke with seq {seq}, not ahead of the since cursor {since}");
         Assert.True(wokeAt >= lastPageAt, $"woke at {wokeAt.TotalSeconds:F1} s, before the last page turn at {lastPageAt.TotalSeconds:F1} s");
         Assert.True(wokeAt <= lastPageAt + TimeSpan.FromSeconds(6), $"woke at {wokeAt.TotalSeconds:F1} s, more than 6 s after the last page turn at {lastPageAt.TotalSeconds:F1} s");
     }

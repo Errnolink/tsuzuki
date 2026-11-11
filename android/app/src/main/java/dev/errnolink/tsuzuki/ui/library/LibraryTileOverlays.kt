@@ -2,25 +2,22 @@ package dev.errnolink.tsuzuki.ui.library
 
 import dev.errnolink.tsuzuki.reader.readerOrigin
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.sizeIn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.Icon
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.Immutable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import dev.errnolink.tsuzuki.designsystem.Check
-import dev.errnolink.tsuzuki.designsystem.Play
+import dev.errnolink.tsuzuki.designsystem.ContinueButton
 import dev.errnolink.tsuzuki.designsystem.TsuzukiIcons
 import dev.errnolink.tsuzuki.designsystem.TsuzukiTheme
 import dev.errnolink.tsuzuki.ui.shell.ShellBadge
@@ -117,64 +114,6 @@ fun LibraryTileOverlays.summaryText(badges: LibraryTileBadges): String {
 }
 
 @Composable
-fun LibraryTileContinuePill(
-    modifier: Modifier = Modifier,
-    contentDescription: String = "Resume next chapter",
-    progress: Float? = null,
-    onClick: () -> Unit,
-) {
-    val colors = TsuzukiTheme.colors
-    val readPercent = progress?.let { (it.coerceIn(0f, 1f) * 100).toInt() }
-    Box(
-        modifier = modifier
-            .readerOrigin()
-            .sizeIn(minWidth = 48.dp, minHeight = 48.dp)
-            .semantics {
-                this.contentDescription = readPercent?.let { "$contentDescription, $it% read" } ?: contentDescription
-            }
-            .clickable(onClick = onClick),
-        contentAlignment = Alignment.Center,
-    ) {
-        if (progress != null) {
-            androidx.compose.foundation.Canvas(Modifier.size(42.dp)) {
-                val stroke = 3.dp.toPx()
-                val inset = stroke / 2f
-                val arcSize = androidx.compose.ui.geometry.Size(size.width - stroke, size.height - stroke)
-                val topLeft = androidx.compose.ui.geometry.Offset(inset, inset)
-                drawCircle(androidx.compose.ui.graphics.Color.Black.copy(alpha = 0.45f), radius = size.minDimension / 2f)
-                drawArc(
-                    color = androidx.compose.ui.graphics.Color.White.copy(alpha = 0.28f),
-                    startAngle = 0f,
-                    sweepAngle = 360f,
-                    useCenter = false,
-                    topLeft = topLeft,
-                    size = arcSize,
-                    style = androidx.compose.ui.graphics.drawscope.Stroke(stroke),
-                )
-                drawArc(
-                    color = androidx.compose.ui.graphics.Color.White,
-                    startAngle = -90f,
-                    sweepAngle = 360f * progress.coerceIn(0f, 1f),
-                    useCenter = false,
-                    topLeft = topLeft,
-                    size = arcSize,
-                    style = androidx.compose.ui.graphics.drawscope.Stroke(stroke, cap = androidx.compose.ui.graphics.StrokeCap.Round),
-                )
-            }
-        }
-        Box(
-            Modifier
-                .size(if (progress != null) 30.dp else 34.dp)
-                .clip(CircleShape)
-                .background(colors.accent, CircleShape),
-            contentAlignment = Alignment.Center,
-        ) {
-            Icon(TsuzukiIcons.Play, null, Modifier.size(if (progress != null) 16.dp else 18.dp), tint = colors.onAccent)
-        }
-    }
-}
-
-@Composable
 fun LibraryTileOverlayStack(
     overlays: LibraryTileOverlays,
     badges: LibraryTileBadges,
@@ -219,9 +158,13 @@ fun LibraryTileOverlayStack(
             }
         }
         if (badges.continueButton && overlays.showContinue && onResume != null) {
-            LibraryTileContinuePill(
-                Modifier.align(Alignment.BottomStart).padding(7.dp),
-            ) { onResume() }
+            ContinueButton(
+                progress = overlays.continueProgress,
+                onClick = onResume,
+                modifier = Modifier.align(Alignment.BottomStart).padding(7.dp).readerOrigin(),
+                onImage = true,
+                contentDescription = "Resume next chapter",
+            )
         }
     }
 }

@@ -250,7 +250,7 @@ public sealed class LibraryViewModel
                 continue;
             }
             statuses[id] = manga.Status;
-            var groups = ChapterGrouping.Group(await library.GetChaptersAsync(id));
+            var groups = ChapterGrouping.Group(await library.GetChaptersAsync(id), id);
             changes[id] = existing with
             {
                 Title = manga.Title,

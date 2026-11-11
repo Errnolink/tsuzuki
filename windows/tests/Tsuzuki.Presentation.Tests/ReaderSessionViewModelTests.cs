@@ -11,7 +11,7 @@ public sealed class ReaderSessionViewModelTests
     private static ReaderSessionViewModel Session(params ChapterRow[] rows)
     {
         var session = new ReaderSessionViewModel();
-        session.SetChapters(rows.OrderByDescending(r => r.ChapterNumber).ToList());
+        session.SetChapters(rows.OrderByDescending(r => r.ChapterNumber).ToList(), 1);
         return session;
     }
 

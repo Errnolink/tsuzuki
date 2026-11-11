@@ -29,6 +29,7 @@ import cafe.adriel.voyager.navigator.currentOrThrow
 import cafe.adriel.voyager.navigator.tab.LocalTabNavigator
 import cafe.adriel.voyager.navigator.tab.TabOptions
 import dev.errnolink.tsuzuki.ui.category.ChangeCategoryDialog
+import dev.errnolink.tsuzuki.ui.library.ContinueReadingScreen
 import dev.errnolink.tsuzuki.ui.library.DeleteLibraryMangaDialog
 import dev.errnolink.tsuzuki.ui.library.LibraryFilterSheetState
 import eu.kanade.presentation.library.components.LibraryContent
@@ -153,6 +154,7 @@ data object LibraryTab : Tab {
             },
             onBrowse = { scope.launch { HomeScreen.openTab(HomeScreen.Tab.Browse()) } },
             onOpenDownloadQueue = { navigator.push(DownloadQueueScreen) },
+            onSeeAllContinue = { navigator.push(ContinueReadingScreen()) },
             onOpenLibraryUpdateErrors = { navigator.push(LibraryUpdateErrorScreen()) },
             onOpenHelp = { uriHandler.openUri(Constants.URL_HELP) },
             onOpenSettings = { navigator.push(SettingsScreen()) },

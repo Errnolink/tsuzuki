@@ -64,9 +64,7 @@ import java.time.Instant
 import java.time.LocalDateTime
 import java.time.ZoneId
 
-class TsuzukiAboutScreen : Screen() {
-    @Suppress("unused")
-    private fun readResolve(): Any = TsuzukiAboutScreen
+object TsuzukiAboutScreen : Screen() {
 
     @Composable
     override fun Content() {
@@ -194,39 +192,37 @@ class TsuzukiAboutScreen : Screen() {
         }
     }
 
-    companion object {
-        fun getVersionName(withBuildDate: Boolean): String {
-            val version = BuildConfig.VERSION_NAME
-            val channel = when {
-                isDebugBuildType || version.contains("debug", ignoreCase = true) -> "Debug"
-                isPreviewBuildType || version.contains("beta", ignoreCase = true) -> "Beta"
-                else -> "Stable"
+    fun getVersionName(withBuildDate: Boolean): String {
+        val version = BuildConfig.VERSION_NAME
+        val channel = when {
+            isDebugBuildType || version.contains("debug", ignoreCase = true) -> "Debug"
+            isPreviewBuildType || version.contains("beta", ignoreCase = true) -> "Beta"
+            else -> "Stable"
+        }
+        return when {
+            isDebugBuildType -> "$channel ${BuildConfig.COMMIT_SHA}".let {
+                if (withBuildDate) "$it (${getFormattedBuildTime()})" else it
             }
-            return when {
-                isDebugBuildType -> "$channel ${BuildConfig.COMMIT_SHA}".let {
-                    if (withBuildDate) "$it (${getFormattedBuildTime()})" else it
-                }
 
-                else -> "$channel $version".let {
-                    if (withBuildDate) "$it (${getFormattedBuildTime()})" else it
-                }
+            else -> "$channel $version".let {
+                if (withBuildDate) "$it (${getFormattedBuildTime()})" else it
             }
         }
+    }
 
-        internal fun getFormattedBuildTime(): String {
-            return try {
-                LocalDateTime.ofInstant(
-                    Instant.parse(BuildConfig.BUILD_TIME),
-                    ZoneId.systemDefault(),
+    internal fun getFormattedBuildTime(): String {
+        return try {
+            LocalDateTime.ofInstant(
+                Instant.parse(BuildConfig.BUILD_TIME),
+                ZoneId.systemDefault(),
+            )
+                .toDateTimestampString(
+                    UiPreferences.dateFormat(
+                        Injekt.get<UiPreferences>().dateFormat().get(),
+                    ),
                 )
-                    .toDateTimestampString(
-                        UiPreferences.dateFormat(
-                            Injekt.get<UiPreferences>().dateFormat().get(),
-                        ),
-                    )
-            } catch (_: Exception) {
-                BuildConfig.BUILD_TIME
-            }
+        } catch (_: Exception) {
+            BuildConfig.BUILD_TIME
         }
     }
 }

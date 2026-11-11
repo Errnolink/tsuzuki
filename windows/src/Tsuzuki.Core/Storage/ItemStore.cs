@@ -558,7 +558,7 @@ internal sealed class ItemStore
             ON CONFLICT(source, url) DO UPDATE SET
                 title = $title, author = $author, artist = $artist, description = $description,
                 genres = $genres, status = $status, thumbnail_url = $thumb, favorite = $favorite,
-                date_added = $date_added, version = $version, last_modified_at = $modified,
+                date_added = COALESCE(NULLIF(manga.date_added, 0), $date_added), version = $version, last_modified_at = $modified,
                 seq = $seq, origin = $origin, payload = $payload
             """,
             ("$source", keyParts.Source), ("$url", keyParts.Url), ("$title", manga.Title),

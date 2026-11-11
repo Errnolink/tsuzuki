@@ -53,6 +53,7 @@ public sealed class SyncHub : ISyncHub, IDisposable
     private string? _pcName;
     private readonly object _debounceGate = new();
     private Timer? _progressDebounceTimer;
+    private long _debounceGeneration;
     private static readonly TimeSpan WarmDelay = TimeSpan.FromSeconds(30);
     private Timer? _warmTimer;
     private int _warmStarted;
@@ -61,6 +62,7 @@ public sealed class SyncHub : ISyncHub, IDisposable
     {
         lock (_debounceGate)
         {
+            _debounceGeneration++;
             _progressDebounceTimer?.Dispose();
             _progressDebounceTimer = null;
         }
@@ -79,22 +81,19 @@ public sealed class SyncHub : ISyncHub, IDisposable
     {
         lock (_debounceGate)
         {
-            if (_progressDebounceTimer != null)
+            _debounceGeneration++;
+            _progressDebounceTimer?.Dispose();
+            var generation = _debounceGeneration;
+            _progressDebounceTimer = new Timer(_ =>
             {
-                _progressDebounceTimer.Change(TimeSpan.FromSeconds(3), Timeout.InfiniteTimeSpan);
-            }
-            else
-            {
-                _progressDebounceTimer = new Timer(_ =>
+                lock (_debounceGate)
                 {
-                    lock (_debounceGate)
-                    {
-                        _progressDebounceTimer?.Dispose();
-                        _progressDebounceTimer = null;
-                    }
-                    Interlocked.Exchange(ref _seqSignal, new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously)).TrySetResult();
-                }, null, TimeSpan.FromSeconds(3), Timeout.InfiniteTimeSpan);
-            }
+                    if (generation != _debounceGeneration) return;
+                    _progressDebounceTimer?.Dispose();
+                    _progressDebounceTimer = null;
+                }
+                Interlocked.Exchange(ref _seqSignal, new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously)).TrySetResult();
+            }, null, TimeSpan.FromSeconds(3), Timeout.InfiniteTimeSpan);
         }
     }
 
@@ -310,13 +309,18 @@ public sealed class SyncHub : ISyncHub, IDisposable
             var deadline = DateTime.UtcNow.AddSeconds(waitSeconds);
             using var abort = CancellationTokenSource.CreateLinkedTokenSource(ctx.RequestAborted, app.Lifetime.ApplicationStopping);
             long seq;
+            bool? aheadAtStart = null;
+            var signalled = false;
             while (true)
             {
                 var signal = _seqSignal.Task;
                 seq = await _db.ReadAsync(db => _db.GetSeq(db)).ConfigureAwait(false);
+                aheadAtStart ??= since is not null && seq > since;
                 var remaining = deadline - DateTime.UtcNow;
-                if (since is null || (seq > since && !ProgressPending) || remaining <= TimeSpan.Zero || abort.IsCancellationRequested) break;
+                var published = seq > since && !ProgressPending && (aheadAtStart == true || signalled);
+                if (since is null || published || remaining <= TimeSpan.Zero || abort.IsCancellationRequested) break;
                 await Task.WhenAny(signal, Task.Delay(remaining < VersionRecheck ? remaining : VersionRecheck, abort.Token)).ConfigureAwait(false);
+                if (signal.IsCompleted) signalled = true;
             }
             ctx.Response.ContentType = "application/json";
             await ctx.Response.WriteAsync("{\"seq\":" + seq.ToString() + "}").ConfigureAwait(false);

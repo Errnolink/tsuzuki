@@ -36,6 +36,7 @@ import com.elvishew.xlog.printer.file.backup.NeverBackupStrategy
 import com.elvishew.xlog.printer.file.naming.DateFileNameGenerator
 import dev.mihon.injekt.patchInjekt
 import dev.errnolink.tsuzuki.data.DbNullRepair
+import dev.errnolink.tsuzuki.data.library.PageTotals
 import dev.errnolink.tsuzuki.mangadex.TrackingSyncJob
 import dev.errnolink.tsuzuki.sync.ExtensionSync
 import dev.errnolink.tsuzuki.update.AppUpdateJob
@@ -244,6 +245,15 @@ class App : Application(), DefaultLifecycleObserver, SingletonImageLoader.Factor
             }
             dev.errnolink.tsuzuki.perf.PerfTimelineTracer.measureStage("DB null repair") {
                 DbNullRepair(Injekt.get(), Injekt.get()).run()
+            }
+            dev.errnolink.tsuzuki.perf.PerfTimelineTracer.measureStage("Page totals carry-over") {
+                val legacyPagesPref = Injekt.get<PreferenceStore>()
+                    .getString("pref_beta_now_reading_pages", "")
+                val legacyValue = legacyPagesPref.get()
+                if (legacyValue.isNotBlank()) {
+                    PageTotals().carryOver(legacyValue)
+                    legacyPagesPref.delete()
+                }
             }
             dev.errnolink.tsuzuki.perf.PerfTimelineTracer.measureStage("Neko merge reconcile") {
                 val summary = dev.errnolink.tsuzuki.mangadex.backup.NekoMergeReconciler.reconcileOnce()

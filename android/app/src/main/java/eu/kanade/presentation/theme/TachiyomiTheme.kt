@@ -15,7 +15,10 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
+import dev.errnolink.tsuzuki.designsystem.LocalPressShape
 import dev.errnolink.tsuzuki.designsystem.TsuzukiTheme
+import dev.errnolink.tsuzuki.lab.DesignLab
+import dev.errnolink.tsuzuki.lab.state
 import eu.kanade.domain.ui.UiPreferences
 import eu.kanade.domain.ui.model.ThemeMode
 import tachiyomi.presentation.core.util.collectAsState
@@ -125,6 +128,7 @@ private fun BaseTachiyomiTheme(content: @Composable () -> Unit) {
         CompositionLocalProvider(
             LocalIndication provides indication,
             LocalOverscrollFactory provides overscrollFactory,
+            LocalPressShape provides (DesignLab.pressShape.state().value == DesignLab.PressShape.on),
             content = content,
         )
     }

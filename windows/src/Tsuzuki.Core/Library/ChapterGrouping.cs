@@ -1,6 +1,6 @@
 namespace Tsuzuki.Core.Library;
 
-public sealed record ChapterGroup(ChapterRow Primary, IReadOnlyList<ChapterRow> Alternates)
+public sealed record ChapterGroup(ChapterRow Primary, IReadOnlyList<ChapterRow> Alternates, bool Nested = false)
 {
     public bool Read => Primary.Read || Alternates.Any(a => a.Read);
     public bool InProgress => !Read && (Primary.LastPageRead > 0 || Alternates.Any(a => a.LastPageRead > 0));
@@ -10,8 +10,11 @@ public sealed record ChapterGroup(ChapterRow Primary, IReadOnlyList<ChapterRow> 
 
 public static class ChapterGrouping
 {
-    public static IReadOnlyList<ChapterGroup> Group(IReadOnlyList<ChapterRow> rows)
+    public static Func<long, string?>? PreferredFor { get; set; }
+
+    public static IReadOnlyList<ChapterGroup> Group(IReadOnlyList<ChapterRow> rows, long mangaId = 0)
     {
+        var preferred = mangaId == 0 ? null : PreferredFor?.Invoke(mangaId);
         var scanlatorCounts = rows
             .Where(r => !string.IsNullOrEmpty(r.Scanlator))
             .GroupBy(r => r.Scanlator!)
@@ -27,7 +30,8 @@ public static class ChapterGrouping
         {
             var copies = bucket.ToList();
             var primary = copies
-                .OrderByDescending(c => !c.Read && c.LastPageRead > 0 ? 1 : 0)
+                .OrderByDescending(c => preferred is not null && c.Readable && string.Equals(c.Scanlator?.Trim(), preferred, StringComparison.OrdinalIgnoreCase) ? 1 : 0)
+                .ThenByDescending(c => !c.Read && c.LastPageRead > 0 ? 1 : 0)
                 .ThenByDescending(c => c.Readable ? 1 : 0)
                 .ThenByDescending(c => lastReadScanlator is not null && c.Scanlator == lastReadScanlator ? 1 : 0)
                 .ThenByDescending(c => c.Scanlator is not null && scanlatorCounts.TryGetValue(c.Scanlator, out var n) ? n : 0)

@@ -150,39 +150,9 @@ class MangaRestorer(
     }
 
     private suspend fun restoreExistingManga(manga: Manga, dbManga: Manga): Pair<Manga, Boolean> {
-        // KMK -->
-        val backupWins = manga.version > dbManga.version ||
-            (manga.version == dbManga.version && manga.lastModifiedAt > dbManga.lastModifiedAt) ||
-            (manga.version == dbManga.version && manga.lastModifiedAt == dbManga.lastModifiedAt && isSync)
-        // KMK <--
-        return if (backupWins) {
-            updateManga(
-                dbManga.copyFrom(manga).copy(
-                    id = dbManga.id,
-                    // KMK -->
-                    favorite = if (isSync) manga.favorite else dbManga.favorite || manga.favorite,
-                    // KMK <--
-                ),
-            ) to true
-        } else {
-            updateManga(manga.copyFrom(dbManga).copy(id = dbManga.id)) to false
-        }
-    }
-
-    private fun Manga.copyFrom(newer: Manga): Manga {
-        return this.copy(
-            favorite = this.favorite || newer.favorite,
-            // SY -->
-            ogAuthor = newer.author,
-            ogArtist = newer.artist,
-            ogDescription = newer.description,
-            ogGenre = newer.genre,
-            ogThumbnailUrl = newer.thumbnailUrl,
-            ogStatus = newer.status,
-            // SY <--
-            initialized = this.initialized || newer.initialized,
-            version = newer.version,
-        )
+        val result = dev.errnolink.tsuzuki.data.backup.RestoredMangaMerge.merge(manga, dbManga, isSync)
+        updateManga(result.manga)
+        return result.manga to result.backupWins
     }
 
     suspend fun updateManga(manga: Manga): Manga {

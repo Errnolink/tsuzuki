@@ -257,6 +257,22 @@ class TsuzukiTabBarTest {
     }
 
     @Test
+    fun `sloppy tap during travel still settles on the released tab`() {
+        val motion = TsuzukiPillMotion(scope = null, initialIndex = 0)
+        motion.stepDp = 60f
+        motion.animateTo(1)
+        runUntilIdle(motion)
+        motion.startDrag()
+        motion.dragTo(1.1f)
+        runUntilIdle(motion)
+        motion.release(1, 0f)
+        runUntilIdle(motion)
+        assertTrue(motion.isFlat)
+        assertEquals(1f, motion.position, 0.01f)
+        assertEquals(1, motion.index)
+    }
+
+    @Test
     fun `pill goes idle and stays idle after settling`() {
         val motion = TsuzukiPillMotion(scope = null, initialIndex = 0)
         motion.stepDp = 60f

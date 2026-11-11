@@ -19,6 +19,7 @@ public partial class App : Application
             }
         }
         Services.Settings = AppSettings.Load(DevHarness.ResolvePaths().Settings);
+        Tsuzuki.Core.Library.ChapterGrouping.PreferredFor = id => Services.Settings.PreferredGroups.TryGetValue(id, out var group) ? group : null;
         DevHarness.ApplyThemeOverride();
         if (Services.Settings.Theme != ThemeChoice.System)
         {

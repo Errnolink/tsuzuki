@@ -1,0 +1,6 @@
+CREATE TABLE tsuzuki_page_totals(
+    chapter_id INTEGER NOT NULL PRIMARY KEY,
+    total_pages INTEGER NOT NULL,
+    FOREIGN KEY(chapter_id) REFERENCES chapters (_id)
+    ON DELETE CASCADE
+);

@@ -48,6 +48,7 @@ import eu.kanade.tachiyomi.data.backup.BackupDecoder
 import eu.kanade.tachiyomi.extension.ExtensionManager
 import eu.kanade.tachiyomi.extension.model.Extension
 import eu.kanade.tachiyomi.extension.model.InstallStep
+import eu.kanade.tachiyomi.source.Source
 import eu.kanade.tachiyomi.source.online.HttpSource
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -193,21 +194,22 @@ private class RestoreBackupScreenModel(
 
     private suspend fun loadExtensions() {
         val backup = runCatching { BackupDecoder(context).decode(uri.toUri()) }.getOrNull() ?: return
-        fun neededNow() = RestoreExtensions.needed(
+        fun neededNow(sources: List<Source>) = RestoreExtensions.needed(
             backup,
-            sourceManager.getAll().map {
+            sources.map {
                 NekoBackupMapper.SourceIdentity(it.id, it.name, it.lang, (it as? HttpSource)?.baseUrl)
             },
         )
-        if (neededNow().isEmpty()) return
+        if (neededNow(sourceManager.getAll()).isEmpty()) return
         mutableState.update { it.copy(extensions = RestoreExtensionsState.Checking) }
         runCatching { extensionManager.findAvailableExtensions() }
         combine(
             extensionManager.availableExtensionsFlow,
             extensionManager.installedExtensionsFlow,
             installSteps,
-        ) { available, _, steps ->
-            val matches = RestoreExtensions.match(neededNow(), available)
+            sourceManager.sources,
+        ) { available, _, steps, sources ->
+            val matches = RestoreExtensions.match(neededNow(sources), available)
             if (matches.isEmpty()) RestoreExtensionsState.None else RestoreExtensionsState.Ready(matches, steps)
         }.collect { extensions -> mutableState.update { it.copy(extensions = extensions) } }
     }
@@ -217,9 +219,21 @@ private class RestoreBackupScreenModel(
         if (current != null && !current.isCompleted()) return
         installSteps.update { it + (extension.pkgName to InstallStep.Pending) }
         screenModelScope.launch {
-            extensionManager.installExtension(extension).collect { step ->
-                installSteps.update { it + (extension.pkgName to step) }
+            val step = retrying(
+                delaysMs = listOf(2_000L, 6_000L),
+                isFailure = { it == InstallStep.Error },
+            ) {
+                var last = InstallStep.Pending
+                extensionManager.installExtension(extension).collect { step ->
+                    last = step
+                    installSteps.update { it + (extension.pkgName to step) }
+                }
+                if (last == InstallStep.Error) {
+                    installSteps.update { it + (extension.pkgName to InstallStep.Pending) }
+                }
+                last
             }
+            installSteps.update { it + (extension.pkgName to step) }
         }
     }
 

@@ -375,4 +375,90 @@ public class MergeBehaviourTests
         var valueBytes = preference.Value.ToByteArray();
         Assert.Equal(new byte[] { 0x12, 0x00 }, valueBytes[^2..]);
     }
+
+    [Fact]
+    public async Task ThinPhonePayloadDoesNotZeroDateAdded()
+    {
+        var (db, engine) = NewEngine();
+        var seeded = TestLib.Manga(MdSource, "/manga/abc", "One", version: 5, modified: 1000);
+        seeded.DateAdded = 1_700_000_000_000;
+        await engine.Merge("A", "Android", TestLib.Backup(seeded), 0, true, NoDeleted());
+
+        var thin = TestLib.Manga(MdSource, "/manga/abc", "One retitled", version: 6, modified: 2000);
+        await engine.Merge("A", "Android", TestLib.Backup(thin), 1, false, NoDeleted());
+
+        var dateAdded = db.ReadAsync(c => c.Scalar<long>(
+            "SELECT date_added FROM manga WHERE source = $s AND url = $u",
+            ("$s", MdSource), ("$u", "/manga/abc"))).GetAwaiter().GetResult();
+        Assert.Equal(1_700_000_000_000, dateAdded);
+        Assert.Equal("One retitled", RenderAll(db).BackupManga.Single().Title);
+    }
+
+    [Fact]
+    public async Task BookmarkRidesTheChapterPayloadBothWays()
+    {
+        var (db, engine) = NewEngine();
+        var bookmarked = TestLib.Chapter("/chapter/1", number: 1, version: 2, modified: 100);
+        bookmarked.Bookmark = true;
+        await engine.Merge("A", "Android",
+            TestLib.Backup(TestLib.Manga(MdSource, "/manga/abc", "One", version: 5, modified: 1000, bookmarked)),
+            0, true, NoDeleted());
+        Assert.True(StoredChapter(RenderAll(db), "/chapter/1").Bookmark);
+
+        var cleared = TestLib.Chapter("/chapter/1", number: 1, version: 3, modified: 2000);
+        await engine.Merge("A", "Android",
+            TestLib.Backup(TestLib.Manga(MdSource, "/manga/abc", "One", version: 6, modified: 2000, cleared)),
+            1, false, NoDeleted());
+        Assert.False(StoredChapter(RenderAll(db), "/chapter/1").Bookmark);
+    }
+
+    [Fact]
+    public async Task HistoryLastReadNeverGoesBackwards()
+    {
+        var (db, engine) = NewEngine();
+        await engine.Merge("A", "Android",
+            TestLib.Backup(TestLib.Manga(MdSource, "/manga/abc", "One", version: 5, modified: 1000,
+                TestLib.Chapter("/chapter/1", number: 1, read: true, version: 2, modified: 1000))),
+            0, true, NoDeleted());
+
+        var olderStamp = TestLib.Chapter("/chapter/1", number: 1, read: true, page: 3, version: 3, modified: 500);
+        await engine.Merge("A", "Android",
+            TestLib.Backup(TestLib.Manga(MdSource, "/manga/abc", "One", version: 6, modified: 500, olderStamp)),
+            1, false, NoDeleted());
+
+        var lastRead = db.ReadAsync(c => c.Scalar<long>(
+            "SELECT last_read_at FROM chapter WHERE url = $u", ("$u", "/chapter/1"))).GetAwaiter().GetResult();
+        Assert.Equal(1_000_000, lastRead);
+    }
+
+    [Fact]
+    public async Task PhonePayloadCannotLowerTrackerProgress()
+    {
+        var (db, engine) = NewEngine();
+        var bound = TestLib.Manga(MdSource, "/manga/abc", "One", version: 5, modified: 1000,
+            TestLib.Chapter("/chapter/1", number: 1));
+        bound.Tracking.Add(new BackupTracking
+        {
+            SyncId = 1, MediaId = 9, Title = "AniList",
+            LastChapterRead = 10, StartedReadingDate = 100, FinishedReadingDate = 300,
+        });
+        await engine.Merge("A", "Android", TestLib.Backup(bound), 0, true, NoDeleted());
+
+        var thinner = TestLib.Manga(MdSource, "/manga/abc", "One", version: 6, modified: 2000,
+            TestLib.Chapter("/chapter/1", number: 1));
+        thinner.Tracking.Add(new BackupTracking
+        {
+            SyncId = 1, MediaId = 9, Title = "AniList",
+            LastChapterRead = 5, StartedReadingDate = 200, FinishedReadingDate = 250,
+        });
+        await engine.Merge("A", "Android", TestLib.Backup(thinner), 1, false, NoDeleted());
+
+        var track = Assert.Single(RenderAll(db).BackupManga.Single().Tracking);
+        Assert.Equal(10f, track.LastChapterRead);
+        Assert.Equal(100, track.StartedReadingDate);
+        Assert.Equal(300, track.FinishedReadingDate);
+    }
+
+    private static BackupChapter StoredChapter(BackupMessage backup, string url) =>
+        backup.BackupManga.Single().Chapters.Single(c => c.Url == url);
 }

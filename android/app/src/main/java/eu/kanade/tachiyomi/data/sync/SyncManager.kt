@@ -11,6 +11,7 @@ import eu.kanade.tachiyomi.data.backup.restore.BackupRestorer
 import eu.kanade.tachiyomi.data.backup.restore.RestoreOptions
 import dev.errnolink.tsuzuki.sync.ExtensionSync
 import dev.errnolink.tsuzuki.sync.UnchangedRemoteManga
+import eu.kanade.tachiyomi.data.SyncStatus
 import eu.kanade.tachiyomi.data.backup.restore.restorers.CategoriesRestorer
 import eu.kanade.tachiyomi.data.sync.service.GoogleDriveSyncService
 import eu.kanade.tachiyomi.data.sync.service.SyncService as SyncServiceProvider
@@ -48,6 +49,10 @@ class SyncManager(
     private val backupCreator: BackupCreator = BackupCreator(context, false)
     private val notifier: SyncNotifier = SyncNotifier(context)
     private val categoriesRestorer: CategoriesRestorer = CategoriesRestorer()
+
+    // KMK -->
+    private val syncStatus: SyncStatus = Injekt.get()
+    // KMK <--
 
     enum class SyncService(val value: Int) {
         NONE(0),
@@ -203,6 +208,9 @@ class SyncManager(
         val categorySnapshot = backupCreator.backupCategories(backupOptions)
         // KMK <--
         logcat(LogPriority.DEBUG) { "End create backup" }
+        // KMK -->
+        syncStatus.updateProgress(0.25f)
+        // KMK <--
 
         // Create the SyncData object
         val syncData = SyncData(
@@ -217,6 +225,10 @@ class SyncManager(
 
         val tombstonesSent = syncPreferences.categoryState.deleted()
         val result = syncService.doSync(syncData)
+
+        // KMK -->
+        syncStatus.updateProgress(0.5f)
+        // KMK <--
 
         // KMK -->
         val applyFailed = result.changed && applyRemoteBackup(syncService, result, categorySnapshot, backup)

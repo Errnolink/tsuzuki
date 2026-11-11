@@ -357,4 +357,15 @@ public class StorageBehaviourTests : IDisposable
             return 0;
         }).GetAwaiter().GetResult();
     }
+
+    [Fact]
+    public void ANewerSchemaVersionRefusesToOpen()
+    {
+        _db.WriteAsync(db => db.ExecuteNonQuery("UPDATE meta SET value = '99' WHERE key = 'schema_version'"))
+            .GetAwaiter().GetResult();
+
+        using var newer = new LibraryDatabase(_db.Path);
+        var ex = Assert.Throws<InvalidOperationException>(() => newer.Initialise());
+        Assert.Contains("newer app version", ex.Message);
+    }
 }

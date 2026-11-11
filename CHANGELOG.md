@@ -2,6 +2,33 @@
 
 From 0.2.0 on, one release covers both apps, tagged `v<version>`. 0.1.0 is tagged `v0.1.0`.
 
+## 0.2.2 (Android and Windows)
+
+### Android
+
+#### Library
+- **The Continue reading shelf stays put when you swipe between categories.** It used to be part of every category page, so a swipe moved two copies of it.
+- **See all opens the Continue reading list** instead of switching to another tab.
+- **The tab bar pill stays on the tab you picked.** A small drag on the bar could send the pill back to an old tab.
+- **Progress rings show page progress for every chapter**, not only the last one you opened.
+
+#### Sync and restore
+- **The sync pill shows real progress** instead of sitting at 0 %, and sits above the tab bar so it no longer covers snackbars.
+- **The restore screen names each source** (for example "MangaDex") instead of showing a number, notices extensions as soon as they finish installing, and retries a failed install twice before showing "Download failed".
+- **A restore no longer resets when a title was added** to your library.
+
+#### Fixed
+- **A crash when returning to the app from the About screen.**
+- Chapter titles on the title page are tidied up, History labels unnumbered chapters properly, and the global search retry button is easier to see.
+
+### Windows
+
+- **The mouse-wheel step setting works** (issue #2). Quarter, Half and Full now scroll that far in long-strip mode; before, all of them scrolled like System.
+- **Sync no longer wakes your phone mid-reading.** A race in the sync hub could signal a change while you were still on the same page.
+- **Backups made within the same minute no longer overwrite each other.**
+- **A library written by a newer version of the app is refused** instead of being opened and damaged.
+- **A thin sync from another device no longer resets when a title was added.**
+
 ## 0.2.1 (Android and Windows)
 
 ### Android

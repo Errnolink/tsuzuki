@@ -12,6 +12,8 @@ import androidx.compose.ui.util.fastMapNotNull
 import cafe.adriel.voyager.core.model.StateScreenModel
 import cafe.adriel.voyager.core.model.screenModelScope
 import dev.errnolink.tsuzuki.data.library.ContinueTargetsResolver
+import dev.errnolink.tsuzuki.data.library.PageTotals
+import dev.errnolink.tsuzuki.data.library.chapterPageProgress
 import dev.errnolink.tsuzuki.data.library.libraryCollectionActive
 import dev.errnolink.tsuzuki.ui.library.LibraryTileBadges
 import dev.errnolink.tsuzuki.ui.library.matchesMergedFilter
@@ -26,7 +28,6 @@ import eu.kanade.domain.manga.interactor.SmartSearchMerge
 import eu.kanade.domain.manga.interactor.UpdateManga
 import eu.kanade.domain.source.service.SourcePreferences
 import eu.kanade.domain.sync.SyncPreferences
-import eu.kanade.domain.ui.UiPreferences
 import eu.kanade.presentation.components.SEARCH_DEBOUNCE_MILLIS
 import eu.kanade.presentation.library.components.LibraryToolbarTitle
 import eu.kanade.presentation.manga.DownloadAction
@@ -151,7 +152,6 @@ class LibraryScreenModel(
     private val updateManga: UpdateManga = Injekt.get(),
     private val setMangaCategories: SetMangaCategories = Injekt.get(),
     private val preferences: BasePreferences = Injekt.get(),
-    private val uiPreferences: UiPreferences = Injekt.get(),
     private val libraryPreferences: LibraryPreferences = Injekt.get(),
     private val coverCache: CoverCache = Injekt.get(),
     private val sourceManager: SourceManager = Injekt.get(),
@@ -190,6 +190,7 @@ class LibraryScreenModel(
     private var previousFavorites: List<LibraryItem>? = null
 
     private val continueTargetsResolver = ContinueTargetsResolver()
+    private val pageTotals = PageTotals()
     private var continueTargetsDigest: ContinueTargetsResolver.Digest? = null
     private var continueTargetRows: Map<Long, ContinueTargetsResolver.TargetRow> = emptyMap()
 
@@ -434,11 +435,11 @@ class LibraryScreenModel(
                 state
                     .map { it.libraryData.favorites.filter { item -> item.libraryManga.unreadCount > 0 } }
                     .distinctUntilChanged(),
-                uiPreferences.betaNowReadingPages().changes(),
+                pageTotals.inProgressTotals(),
                 ::Pair,
             )
                 .flowOn(Dispatchers.Default)
-                .collectLatest { (candidates, pagesPref) ->
+                .collectLatest { (candidates, totals) ->
                     if (candidates.isEmpty()) {
                         mutableState.update { it.copy(continueTargets = emptyMap()) }
                         continueTargetsDigest = null
@@ -464,7 +465,7 @@ class LibraryScreenModel(
                     val targets = rows.mapValues { (_, row) ->
                         ContinueTarget(
                             row.chapterId,
-                            continueTargetsResolver.progressOf(row, pagesPref),
+                            chapterPageProgress(row.lastPageRead, totals[row.chapterId], read = false),
                         )
                     }
                     mutableState.update { it.copy(continueTargets = targets) }

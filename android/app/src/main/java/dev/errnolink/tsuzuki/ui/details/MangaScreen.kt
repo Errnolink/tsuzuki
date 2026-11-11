@@ -103,6 +103,7 @@ import dev.errnolink.tsuzuki.designsystem.SlidersHorizontal
 import dev.errnolink.tsuzuki.designsystem.Sparkles
 import dev.errnolink.tsuzuki.designsystem.Tag
 import dev.errnolink.tsuzuki.ui.shell.ShellSnackbar
+import dev.errnolink.tsuzuki.ui.shell.rememberPageTotals
 import eu.kanade.tachiyomi.BuildConfig
 import dev.errnolink.tsuzuki.designsystem.Trash2
 import dev.errnolink.tsuzuki.designsystem.X
@@ -205,7 +206,7 @@ fun MangaScreen(
     val glass = rememberGlassContext()
     val context = LocalContext.current
     val dex = rememberMangaDexChapterPresentation(state.manga.id, remember(state.chapters) { state.chapters.map { it.chapter } })
-    val chapterPageTotals = rememberChapterPageTotals()
+    val chapterPageTotals = rememberPageTotals()
     val chapters = remember(state.processedChapters, dex) { state.processedChapters.filter { dex.isVisible(it.chapter) } }
     val heroLastUpdate = remember(chapters, state.manga.lastUpdate) {
         chapters.asSequence().map { it.chapter.dateUpload }.filter { it > 0 }.maxOrNull() ?: state.manga.lastUpdate
@@ -645,10 +646,10 @@ fun MangaScreen(
                                     roundedBottom -> ChapterRowBottomShape
                                     else -> ChapterRowMiddleShape
                                 },
-                                title = if (state.manga.displayMode == Manga.CHAPTER_DISPLAY_NUMBER) stringResource(MR.strings.display_mode_chapter, formatChapterNumber(item.chapter.chapterNumber)) else item.chapter.name,
+                                title = chapterRowTitle(item.chapter.name, item.chapter.chapterNumber, state.manga.displayMode == Manga.CHAPTER_DISPLAY_NUMBER),
                                 date = item.chapter.dateUpload.takeIf { it > 0 }?.let { relativeDateText(it) },
                                 lastPageRead = item.chapter.lastPageRead.takeIf { it > 0 && (!item.chapter.read || state.alwaysShowReadingProgress) },
-                                pageTotal = chapterPageTotals(item.chapter.id),
+                                pageTotal = chapterPageTotals[item.chapter.id],
                                 scanlator = item.chapter.scanlator,
                                 otherGroups = if (groupOpen) 0 else alternates,
                                 unavailable = dex.unavailable(item.chapter),

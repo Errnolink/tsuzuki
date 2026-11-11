@@ -90,6 +90,19 @@ object TsuzukiSettingsMainScreen : Screen() {
                     }
                 }
             }
+            if (dev.errnolink.tsuzuki.lab.DesignLab.enabled) {
+                item(key = "settings-main-design-lab") {
+                    InsetGroupedList {
+                        GroupedRow(
+                            title = "Design lab",
+                            chevron = true,
+                            enabled = true,
+                            divider = false,
+                            onClick = { navigator.navigate(dev.errnolink.tsuzuki.lab.DesignLabScreen, twoPane) },
+                        )
+                    }
+                }
+            }
         }
     }
 
@@ -196,7 +209,7 @@ internal val iaSections: List<SettingsSectionSpec> = listOf(
     ),
     SettingsSectionSpec(
         titleRes = MR.strings.pref_category_about,
-        screen = TsuzukiAboutScreen(),
+        screen = TsuzukiAboutScreen,
         icon = { TsuzukiIcons.Info },
         subtitle = {
             "${stringResource(MR.strings.app_name)} ${TsuzukiAboutScreen.getVersionName(withBuildDate = false)}"

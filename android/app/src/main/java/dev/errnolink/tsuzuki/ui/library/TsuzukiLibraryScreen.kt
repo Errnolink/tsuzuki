@@ -5,6 +5,9 @@ import androidx.compose.animation.expandHorizontally
 import androidx.compose.animation.shrinkHorizontally
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.gestures.Orientation
+import androidx.compose.foundation.gestures.ScrollableDefaults
+import androidx.compose.foundation.gestures.scrollable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.text.BasicTextField
@@ -17,6 +20,7 @@ import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.TextRange
@@ -29,6 +33,7 @@ import androidx.compose.ui.semantics.semantics
 
 import android.content.res.Configuration
 import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.snap
 import androidx.compose.animation.core.tween
@@ -74,6 +79,7 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.lerp
 import dev.errnolink.tsuzuki.designsystem.GlassMaterial
+import dev.errnolink.tsuzuki.designsystem.M3Motion
 import dev.errnolink.tsuzuki.designsystem.BookOpen
 import dev.errnolink.tsuzuki.designsystem.Check
 import dev.errnolink.tsuzuki.designsystem.ChevronDown
@@ -126,8 +132,6 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.lazy.LazyRow
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.staggeredgrid.LazyStaggeredGridScope
 import androidx.compose.foundation.lazy.staggeredgrid.StaggeredGridItemSpan
 import androidx.compose.foundation.lazy.staggeredgrid.itemsIndexed
@@ -141,6 +145,7 @@ import androidx.compose.material3.SnackbarHostState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -154,6 +159,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.layout.positionInWindow
 import androidx.compose.foundation.layout.offset
 import kotlin.math.roundToInt
@@ -162,15 +168,16 @@ import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import dev.errnolink.tsuzuki.designsystem.ContextMenu
 import dev.errnolink.tsuzuki.designsystem.ContextMenuAction
+import dev.errnolink.tsuzuki.designsystem.ContinueButton
+import dev.errnolink.tsuzuki.designsystem.ContinueButtonSize
 import dev.errnolink.tsuzuki.designsystem.PillButton
 import dev.errnolink.tsuzuki.designsystem.TsuzukiText
 import dev.errnolink.tsuzuki.designsystem.TsuzukiTheme
 import dev.errnolink.tsuzuki.ui.shell.LocalShellBottomPadding
-import dev.errnolink.tsuzuki.ui.shell.NowReadingPreferences
 import dev.errnolink.tsuzuki.ui.shell.ShellAction
 import dev.errnolink.tsuzuki.ui.shell.ShellCaption
-import dev.errnolink.tsuzuki.ui.shell.ShellContinueButton
 import dev.errnolink.tsuzuki.ui.shell.ShellEmpty
+import dev.errnolink.tsuzuki.ui.shell.statusSnackbarPadding
 import dev.errnolink.tsuzuki.ui.shell.ShellMangaTile
 import dev.errnolink.tsuzuki.ui.shell.ShellCover
 import dev.errnolink.tsuzuki.ui.shell.ShellRefresh
@@ -178,7 +185,6 @@ import dev.errnolink.tsuzuki.ui.shell.ShellScrollEdge
 import dev.errnolink.tsuzuki.ui.shell.ShellSnackbar
 import dev.errnolink.tsuzuki.ui.shell.ShellSheetAction
 import dev.errnolink.tsuzuki.ui.shell.selectionSwapTransform
-import eu.kanade.domain.ui.UiPreferences
 import eu.kanade.tachiyomi.data.LibraryUpdateStatus
 import eu.kanade.tachiyomi.ui.library.LibraryScreenModel
 import eu.kanade.tachiyomi.ui.library.LibraryTab
@@ -204,6 +210,7 @@ fun TsuzukiLibraryScreen(
     onResume: (Long, Long) -> Unit,
     onBrowse: () -> Unit,
     onOpenDownloadQueue: () -> Unit,
+    onSeeAllContinue: () -> Unit,
     onOpenLibraryUpdateErrors: () -> Unit,
     onOpenHelp: () -> Unit,
     onOpenSettings: () -> Unit,
@@ -223,8 +230,6 @@ fun TsuzukiLibraryScreen(
     val historyFlow = remember { Injekt.get<GetHistory>().subscribeRecent(6) }
     val recent by historyFlow.collectAsStateWithLifecycle(RecentHistoryCache.value, minActiveState = Lifecycle.State.RESUMED)
     SideEffect { RecentHistoryCache.value = recent }
-    val pagesPreference = remember { Injekt.get<UiPreferences>().betaNowReadingPages() }
-    val pagesPref by pagesPreference.collectAsState()
     val refreshing by remember { Injekt.get<LibraryUpdateStatus>().isRunning }.collectAsState()
     val preferences = remember { Injekt.get<LibraryPreferences>() }
     val displayMode by preferences.displayMode().collectAsState()
@@ -309,6 +314,7 @@ fun TsuzukiLibraryScreen(
         if (motion.reduced) snap() else tween(motion.chromeFadeMillis),
         label = "Status bar scrim",
     )
+
     LaunchedEffect(collapsed) {
         if (collapsed) {
             if (filterSheetVisible) LibraryFilterSheetState.close()
@@ -318,6 +324,31 @@ fun TsuzukiLibraryScreen(
 
     val statusTop = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
     val chromeHeight = statusTop + LibraryChromeHeight
+
+    val continueShelfVisible = !state.selectionMode && state.searchQuery.isNullOrEmpty() && recent.isNotEmpty()
+    var shelfHeightPx by remember { mutableIntStateOf(0) }
+    val continueShelfTopPx = remember(chromeHeight, density) { with(density) { (chromeHeight + LibraryContinueTopGap).toPx() } }
+    val maxHeaderOffsetPx = continueShelfTopPx.roundToInt() + shelfHeightPx
+    val headerOffset = remember(maxHeaderOffsetPx, categories) {
+        derivedStateOf {
+            fun offsetOf(page: Int): Int {
+                val grid = gridStateFor(categories.getOrNull(page))
+                return libraryHeaderOffset(grid.firstVisibleItemIndex, grid.firstVisibleItemScrollOffset, maxHeaderOffsetPx)
+            }
+            val page = pagerState.currentPage
+            val fraction = pagerState.currentPageOffsetFraction
+            val neighbour = (page + if (fraction > 0f) 1 else -1).coerceIn(0, (categories.size - 1).coerceAtLeast(0))
+            libraryHeaderOffsetDuringSwipe(offsetOf(page), offsetOf(neighbour), fraction)
+        }
+    }
+    val continueShelfGapPx = remember(density) { with(density) { LibraryContinueShelfGap.toPx() } }
+    val continueShelfPadding by animateDpAsState(
+        targetValue = if (continueShelfVisible) with(density) { (shelfHeightPx + continueShelfGapPx.roundToInt()).toDp() } else 0.dp,
+        animationSpec = if (motion.reduced) snap() else M3Motion.standard(M3Motion.Medium1),
+        label = "ContinueShelfPadding",
+    )
+
+    val settledGridState = gridStateFor(categories.getOrNull(pagerState.settledPage))
 
     val searchLabel = stringResource(MR.strings.tsuzuki_search)
     val menuLabel = stringResource(MR.strings.action_menu)
@@ -377,106 +408,84 @@ fun TsuzukiLibraryScreen(
                         PillButton("Browse manga", onBrowse)
                     }
                 }
-                else -> HorizontalPager(
-                    state = pagerState,
-                    modifier = Modifier.fillMaxSize().floatingNavigationScroll(glass).glassSource(glass),
-                    key = { categories.getOrNull(it)?.id ?: -1L },
-                ) { page ->
-                    val category = categories.getOrNull(page)
-                    val items = remember(state.libraryData, state.groupedFavorites, category) {
-                        category?.let(state::getItemsForCategory).orEmpty()
-                    }
-                    LazyVerticalStaggeredGrid(
-                        flingBehavior = dev.errnolink.tsuzuki.designsystem.tsuzukiFlingBehavior(),
-                        columns = columns,
-                        state = gridStateFor(category),
+                else -> Box(
+                    Modifier
+                        .fillMaxSize()
+                        .floatingNavigationScroll(glass)
+                        .glassSource(glass),
+                ) {
+                    HorizontalPager(
+                        state = pagerState,
                         modifier = Modifier.fillMaxSize(),
-                        horizontalArrangement = Arrangement.spacedBy(TsuzukiTheme.spacing.medium),
-                        verticalItemSpacing = if (displayMode == LibraryDisplayMode.List) 0.dp else TsuzukiTheme.spacing.section,
-                        contentPadding = PaddingValues(
-                            start = TsuzukiTheme.spacing.gutter,
-                            end = TsuzukiTheme.spacing.gutter,
-                            top = chromeHeight + 8.dp,
-                            bottom = clearance + TsuzukiTheme.spacing.section,
-                        ),
-                    ) {
-                        if (!state.selectionMode && state.searchQuery.isNullOrEmpty() && recent.isNotEmpty()) {
-                            item(key = "library-continue", span = StaggeredGridItemSpan.FullLine) {
-                                val screenWidth = LocalConfiguration.current.screenWidthDp.dp
-                                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                                    Row(verticalAlignment = Alignment.CenterVertically) {
-                                        TsuzukiText(
-                                            "Continue reading",
-                                            Modifier.weight(1f),
-                                            TsuzukiTheme.typography.title2,
-                                        )
-                                        Box(
-                                            Modifier.heightIn(min = 44.dp)
-                                                .wrapContentHeight(Alignment.CenterVertically)
-                                                .clickable {
-                                                    scope.launch { HomeScreen.openTab(HomeScreen.Tab.History) }
-                                                },
-                                            contentAlignment = Alignment.Center,
-                                        ) {
-                                            TsuzukiText(
-                                                "See all",
-                                                style = TsuzukiTheme.typography.subhead,
-                                                color = colors.accent,
-                                            )
-                                        }
-                                    }
-                                    if (recent.size == 1) {
-                                        val first = recent.first()
-                                        ContinueCard(
-                                            first,
-                                            pagesPref,
-                                            Modifier.fillMaxWidth(),
-                                            onClick = { onOpen(first.mangaId) },
-                                            onResume = { onResume(first.mangaId, first.chapterId) },
-                                        )
-                                    } else {
-                                        LazyRow(flingBehavior = dev.errnolink.tsuzuki.designsystem.tsuzukiFlingBehavior(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                                            items(recent, key = { it.chapterId }, contentType = { "continue" }) { entry ->
-                                                ContinueCard(
-                                                    entry,
-                                                    pagesPref,
-                                                    Modifier.width(screenWidth * 0.85f),
-                                                    onClick = { onOpen(entry.mangaId) },
-                                                    onResume = { onResume(entry.mangaId, entry.chapterId) },
-                                                )
-                                            }
+                        key = { categories.getOrNull(it)?.id ?: -1L },
+                    ) { page ->
+                        val category = categories.getOrNull(page)
+                        val items = remember(state.libraryData, state.groupedFavorites, category) {
+                            category?.let(state::getItemsForCategory).orEmpty()
+                        }
+                        LazyVerticalStaggeredGrid(
+                            flingBehavior = dev.errnolink.tsuzuki.designsystem.tsuzukiFlingBehavior(),
+                            columns = columns,
+                            state = gridStateFor(category),
+                            modifier = Modifier.fillMaxSize(),
+                            horizontalArrangement = Arrangement.spacedBy(TsuzukiTheme.spacing.medium),
+                            verticalItemSpacing = if (displayMode == LibraryDisplayMode.List) 0.dp else TsuzukiTheme.spacing.section,
+                            contentPadding = PaddingValues(
+                                start = TsuzukiTheme.spacing.gutter,
+                                end = TsuzukiTheme.spacing.gutter,
+                                top = chromeHeight + 8.dp + continueShelfPadding,
+                                bottom = clearance + TsuzukiTheme.spacing.section,
+                            ),
+                        ) {
+                            if (!state.searchQuery.isNullOrEmpty() && !state.isLoading) {
+                                item(key = "library-search-count", span = StaggeredGridItemSpan.FullLine) {
+                                    val scopeCount = state.groupedFavorites.values.sumOf { it.size }
+                                    TsuzukiText(
+                                        if (scopeCount == 1) "1 title" else "$scopeCount titles",
+                                        Modifier.padding(start = 4.dp),
+                                        TsuzukiTheme.typography.footnote,
+                                        colors.secondary,
+                                    )
+                                }
+                            }
+                            if (items.isEmpty()) {
+                                item(key = "library-no-results", span = StaggeredGridItemSpan.FullLine) {
+                                    Box(
+                                        Modifier.fillMaxWidth().heightIn(min = 420.dp),
+                                        contentAlignment = Alignment.Center,
+                                    ) {
+                                        if (state.searchQuery.isNullOrEmpty() && !state.hasActiveFilters) {
+                                            ShellEmpty("No manga in this category", "Add manga or move titles into this category.")
+                                        } else {
+                                            ShellEmpty("No matching manga", "Try another category, search, or filter.")
                                         }
                                     }
                                 }
+                            } else {
+                                libraryGrid(items, state, category, screenModel, displayMode, progressRing, onOpen, onResume)
                             }
                         }
-                        if (!state.searchQuery.isNullOrEmpty() && !state.isLoading) {
-                            item(key = "library-search-count", span = StaggeredGridItemSpan.FullLine) {
-                                val scopeCount = state.groupedFavorites.values.sumOf { it.size }
-                                TsuzukiText(
-                                    if (scopeCount == 1) "1 title" else "$scopeCount titles",
-                                    Modifier.padding(start = 4.dp),
-                                    TsuzukiTheme.typography.footnote,
-                                    colors.secondary,
+                    }
+                    if (continueShelfVisible) {
+                        LibraryContinueHeader(
+                            recent = recent,
+                            onSeeAllContinue = onSeeAllContinue,
+                            onOpen = onOpen,
+                            onResume = onResume,
+                            modifier = Modifier
+                                .scrollable(
+                                    state = settledGridState,
+                                    orientation = Orientation.Vertical,
+                                    reverseDirection = ScrollableDefaults.reverseDirection(
+                                        LocalLayoutDirection.current,
+                                        Orientation.Vertical,
+                                        reverseScrolling = false,
+                                    ),
+                                    flingBehavior = ScrollableDefaults.flingBehavior(),
                                 )
-                            }
-                        }
-                        if (items.isEmpty()) {
-                            item(key = "library-no-results", span = StaggeredGridItemSpan.FullLine) {
-                                Box(
-                                    Modifier.fillMaxWidth().heightIn(min = 420.dp),
-                                    contentAlignment = Alignment.Center,
-                                ) {
-                                    if (state.searchQuery.isNullOrEmpty() && !state.hasActiveFilters) {
-                                        ShellEmpty("No manga in this category", "Add manga or move titles into this category.")
-                                    } else {
-                                        ShellEmpty("No matching manga", "Try another category, search, or filter.")
-                                    }
-                                }
-                            }
-                        } else {
-                            libraryGrid(items, state, category, screenModel, displayMode, progressRing, onOpen, onResume)
-                        }
+                                .onSizeChanged { shelfHeightPx = it.height }
+                                .offset { IntOffset(0, (continueShelfTopPx - headerOffset.value).roundToInt()) },
+                        )
                     }
                 }
             }
@@ -648,7 +657,7 @@ fun TsuzukiLibraryScreen(
                 }
             }
         }
-        ShellSnackbar(snackbar, Modifier.align(Alignment.BottomCenter).padding(bottom = LocalShellBottomPadding.current + 12.dp))
+        ShellSnackbar(snackbar, Modifier.align(Alignment.BottomCenter).statusSnackbarPadding())
         val filterButton = LibraryFilterSheetState.buttonBoundsInWindow
         Box(
             modifier = if (filterButton != null) {
@@ -682,6 +691,8 @@ private object RecentHistoryCache {
 
 private val LibraryChromeHeight = 56.dp
 private val LibraryHeaderInset = 8.dp
+private val LibraryContinueTopGap = 8.dp
+private val LibraryContinueShelfGap = 24.dp
 
 @Composable
 private fun LibraryTopSearchField(
@@ -953,7 +964,12 @@ private fun LazyStaggeredGridScope.libraryGrid(
                             }
                         }
                         if (badges.continueButton && overlays.showContinue) {
-                            LibraryTileContinuePill { resume?.invoke() }
+                            ContinueButton(
+                                progress = overlays.continueProgress,
+                                onClick = { resume?.invoke() },
+                                size = ContinueButtonSize.Compact,
+                                contentDescription = "Resume next chapter",
+                            )
                         }
                     }
                     if (index < libraryItems.lastIndex && !selected) {
@@ -978,62 +994,6 @@ private fun LazyStaggeredGridScope.libraryGrid(
                 )
             }
         }
-    }
-}
-
-@Composable
-private fun ContinueCard(
-    entry: HistoryWithRelations,
-    pagesPref: String,
-    modifier: Modifier = Modifier,
-    onClick: () -> Unit,
-    onResume: () -> Unit,
-) {
-    val colors = TsuzukiTheme.colors
-    val totalPages = NowReadingPreferences.decodePageTotal(pagesPref, entry.chapterId)
-    val progress = totalPages?.takeIf { it > 0 }?.let { pages ->
-        ((entry.lastPageRead + 1).coerceAtMost(pages.toLong())) / pages.toFloat()
-    }
-    Row(
-        modifier
-            .background(colors.grouped, RoundedCornerShape(16.dp))
-            .clickable(onClick = onClick)
-            .padding(start = 12.dp, top = 12.dp, bottom = 12.dp, end = 12.dp),
-        horizontalArrangement = Arrangement.spacedBy(12.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        ShellCover(entry.coverData, entry.title, Modifier.width(56.dp), fixedRatio = 2f / 3f)
-        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            TsuzukiText(
-                entry.title,
-                style = TsuzukiTheme.typography.subhead,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis,
-            )
-            TsuzukiText(
-                "Ch. ${eu.kanade.presentation.util.formatChapterNumber(entry.chapterNumber)} · Page ${entry.lastPageRead + 1}",
-                style = TsuzukiTheme.typography.caption1,
-                color = colors.secondary,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-            if (progress != null) {
-                Box(
-                    Modifier.fillMaxWidth()
-                        .height(4.dp)
-                        .clip(RoundedCornerShape(2.dp))
-                        .background(colors.separator),
-                ) {
-                    Box(
-                        Modifier.fillMaxWidth(progress.coerceIn(0.02f, 1f))
-                            .height(4.dp)
-                            .clip(RoundedCornerShape(2.dp))
-                            .background(colors.accent),
-                    )
-                }
-            }
-        }
-        ShellContinueButton(progress, Modifier) { onResume() }
     }
 }
 

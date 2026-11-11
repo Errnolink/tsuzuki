@@ -1,6 +1,7 @@
 package dev.errnolink.tsuzuki.ui.details
 
 import eu.kanade.presentation.manga.components.ChapterDownloadAction
+import eu.kanade.presentation.util.formatChapterNumber
 import tachiyomi.i18n.MR
 import tachiyomi.presentation.core.i18n.stringResource
 import androidx.compose.foundation.background
@@ -40,7 +41,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.material3.Icon
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
@@ -50,13 +50,9 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import eu.kanade.domain.ui.UiPreferences
 import eu.kanade.tachiyomi.data.download.model.Download
-import dev.errnolink.tsuzuki.ui.shell.NowReadingPreferences
 import me.saket.swipe.SwipeableActionsBox
 import tachiyomi.domain.library.service.LibraryPreferences
-import uy.kohesive.injekt.Injekt
-import uy.kohesive.injekt.api.get
 
 /**
  * In-progress progress text ("Page X" / "Page X of Y") and bar fraction for a chapter row.
@@ -69,6 +65,14 @@ internal fun chapterRowProgress(lastPageRead: Long?, pageTotal: Int?): ChapterRo
     if (pageTotal == null || pageTotal <= 0) return ChapterRowProgress("Page ${read + 1}", null)
     val fraction = ((read + 1).coerceAtMost(pageTotal.toLong()).toFloat() / pageTotal).coerceIn(0f, 1f)
     return ChapterRowProgress("Page ${read + 1} of $pageTotal", fraction)
+}
+
+internal val chapterNameNumberPrefix = Regex("""^(?i)ch(apter)?\.?\s*([0-9]+(\.[0-9]+)?)\b(.*)$""")
+
+internal fun chapterRowTitle(name: String, number: Double, displayByNumber: Boolean): String {
+    if (displayByNumber) return "Chapter ${formatChapterNumber(number)}"
+    val match = chapterNameNumberPrefix.find(name) ?: return name
+    return "Ch. ${formatChapterNumber(match.groupValues[2].toDouble())}${match.groupValues[4]}"
 }
 
 internal fun chapterRowSubtitle(
@@ -86,15 +90,6 @@ internal fun chapterRowSubtitle(
     date,
     scanlator?.takeIf { it.isNotBlank() },
 ).joinToString(" · ")
-
-@Composable
-fun rememberChapterPageTotals(): (chapterId: Long) -> Int? {
-    val pref = remember { Injekt.get<UiPreferences>().betaNowReadingPages() }
-    val pagesPref by pref.changes().collectAsState(pref.get())
-    return remember(pagesPref) {
-        { chapterId: Long -> NowReadingPreferences.decodePageTotal(pagesPref, chapterId) }
-    }
-}
 
 @Composable
 fun MangaChapterListItem(

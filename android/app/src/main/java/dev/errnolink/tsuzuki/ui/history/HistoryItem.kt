@@ -1,6 +1,7 @@
 package dev.errnolink.tsuzuki.ui.history
 
 import dev.errnolink.tsuzuki.reader.readerOrigin
+import eu.kanade.presentation.util.formatChapterNumber
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
@@ -35,12 +36,14 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import dev.errnolink.tsuzuki.designsystem.ContextMenu
 import dev.errnolink.tsuzuki.designsystem.ContextMenuAction
+import dev.errnolink.tsuzuki.designsystem.ContinueButton
+import dev.errnolink.tsuzuki.designsystem.ContinueButtonSize
+import dev.errnolink.tsuzuki.data.library.chapterPageProgress
 import dev.errnolink.tsuzuki.designsystem.TsuzukiCorners
 import dev.errnolink.tsuzuki.designsystem.TsuzukiIcons
 import dev.errnolink.tsuzuki.designsystem.Check
 import dev.errnolink.tsuzuki.designsystem.Heart
 import dev.errnolink.tsuzuki.designsystem.Trash2
-import dev.errnolink.tsuzuki.designsystem.Play
 import dev.errnolink.tsuzuki.designsystem.TsuzukiSpacing
 import tachiyomi.domain.history.model.HistoryWithRelations
 import java.text.DateFormat
@@ -48,6 +51,11 @@ import dev.errnolink.tsuzuki.designsystem.TsuzukiText
 import dev.errnolink.tsuzuki.designsystem.TsuzukiTheme
 import dev.errnolink.tsuzuki.designsystem.insetDivider
 import dev.errnolink.tsuzuki.ui.shell.ShellCover
+
+internal fun historyChapterLabel(number: Double, name: String?): String {
+    if (number.isFinite() && number > 0) return "Ch. ${formatChapterNumber(number)}"
+    return name?.takeIf { it.isNotBlank() } ?: "Chapter"
+}
 
 @Composable
 fun HistoryItem(
@@ -61,6 +69,7 @@ fun HistoryItem(
     selected: Boolean,
     readProgress: String?,
     usePanoramaCover: Boolean,
+    pageTotal: Int? = null,
     coverRatio: MutableFloatState = remember { mutableFloatStateOf(1f) },
     shape: CornerBasedShape = RoundedCornerShape(TsuzukiCorners.group),
     divider: Boolean = false,
@@ -109,7 +118,7 @@ fun HistoryItem(
                 color = if (history.read && readProgress == null) colors.secondary else colors.text,
             )
             TsuzukiText(
-                if (history.chapterNumber >= 0) "Chapter ${eu.kanade.presentation.util.formatChapterNumber(history.chapterNumber)}" else "Unnumbered chapter",
+                text = historyChapterLabel(history.chapterNumber, null),
                 style = TsuzukiTheme.typography.footnote,
                 color = colors.secondary,
             )
@@ -126,28 +135,33 @@ fun HistoryItem(
             }
         }
         val buttonShape = CircleShape
-        Box(
-            Modifier
-                .size(48.dp)
-                .clickable(onClick = onClick)
-                .semantics(mergeDescendants = true) {
-                    contentDescription = if (selected) "Selected" else "Resume"
-                },
-            contentAlignment = Alignment.Center,
-        ) {
+        if (selected) {
             Box(
                 Modifier
-                    .size(if (selected) 44.dp else 36.dp)
-                    .clip(buttonShape)
-                    .background(colors.accent.copy(alpha = 0.15f)),
+                    .size(48.dp)
+                    .clickable(onClick = onClick)
+                    .semantics(mergeDescendants = true) {
+                        contentDescription = "Selected"
+                    },
                 contentAlignment = Alignment.Center,
             ) {
-                if (selected) {
+                Box(
+                    Modifier
+                        .size(44.dp)
+                        .clip(buttonShape)
+                        .background(colors.accent.copy(alpha = 0.15f)),
+                    contentAlignment = Alignment.Center,
+                ) {
                     Icon(TsuzukiIcons.Check, null, Modifier.size(20.dp), tint = colors.accent)
-                } else {
-                    Icon(TsuzukiIcons.Play, null, Modifier.size(18.dp), tint = colors.accent)
                 }
             }
+        } else {
+            ContinueButton(
+                progress = chapterPageProgress(history.lastPageRead, pageTotal, history.read),
+                onClick = onClick,
+                size = ContinueButtonSize.Compact,
+                contentDescription = "Resume",
+            )
         }
     }
 }

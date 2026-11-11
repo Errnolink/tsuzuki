@@ -57,13 +57,14 @@ fun RestoreExtensionsSection(
                 ) {
                     state.matches.forEachIndexed { index, match ->
                         val extension = match.extension
+                        val step = extension?.let { state.steps[it.pkgName] }
                         val titles = "${match.needed.titles} ${if (match.needed.titles == 1) "title" else "titles"}"
                         GroupedRow(
-                            title = match.needed.name,
-                            subtitle = if (extension != null) {
-                                "$titles · ${extension.storeName}"
-                            } else {
-                                "$titles · Not in your extension repos"
+                            title = match.title,
+                            subtitle = when {
+                                extension == null -> "$titles · Not in your extension repos"
+                                step == InstallStep.Error -> "$titles · Download failed. Check the connection or try again later"
+                                else -> "$titles · ${extension.storeName}"
                             },
                             divider = index < state.matches.lastIndex || unavailable.isNotEmpty(),
                             trailing = {

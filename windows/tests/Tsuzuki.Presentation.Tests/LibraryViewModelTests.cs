@@ -130,7 +130,7 @@ public sealed class LibraryViewModelTests : IDisposable
         var readerOpen = true;
         var (model, changes) = Model(() => readerOpen);
         model.Activate();
-        await Until(() => model.Loaded);
+        await Until(() => model.Loaded && changes.Count == 1);
         var before = changes.Count;
 
         var chapter = (await store.GetChaptersAsync(id)).First();

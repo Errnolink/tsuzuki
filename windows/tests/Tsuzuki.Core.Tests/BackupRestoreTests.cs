@@ -69,6 +69,34 @@ public class BackupRestoreTests
     }
 
     [Fact]
+    public async Task TwoBackupsInTheSameSecondProduceTwoFiles()
+    {
+        var (db, store) = TestLib.NewLibrary();
+        var folder = Path.Combine(Path.GetTempPath(), "tsuzuki-test-" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            await using var seed = new MemoryStream(TestLib.Backup(
+                TestLib.Manga(MdSource, "/manga/one", "One", version: 3, modified: 5000,
+                    TestLib.Chapter("/chapter/1", number: 1))).ToByteArray());
+            var service = new BackupService(db, store);
+            await service.RestoreAsync(seed);
+            var target = new LocalFolderTarget(folder);
+            var first = await service.CreateAsync(target);
+            var second = await service.CreateAsync(target);
+
+            Assert.NotEqual(first.Location, second.Location);
+            var files = Directory.GetFiles(folder, BackupFiles.Prefix + "*" + BackupFiles.Extension);
+            Assert.Equal(2, files.Length);
+            Assert.All(files, f => Assert.True(new FileInfo(f).Length > 0));
+        }
+        finally
+        {
+            db.Dispose();
+            try { Directory.Delete(folder, true); } catch (IOException) { }
+        }
+    }
+
+    [Fact]
     public async Task PruneKeepsTheNewestOwnBackupsAndNeverTouchesOtherFiles()
     {
         var folder = Directory.CreateTempSubdirectory().FullName;

@@ -188,6 +188,9 @@ object HomeScreen : Screen() {
                             )
                         }
                     }
+                    // KMK -->
+                    dev.errnolink.tsuzuki.ui.shell.StatusPill(Modifier.align(Alignment.BottomCenter))
+                    // KMK <--
                 }
             }
             // Leaving Library/Browse (or opening another screen on top) closes the dock search.

@@ -21,7 +21,7 @@ public sealed class ReaderSessionViewModel
 
     public ChapterRow? Chapter { get; set; }
 
-    public void SetChapters(IReadOnlyList<ChapterRow> rows) => Ascending = ChapterGrouping.Group(rows).Reverse().ToList();
+    public void SetChapters(IReadOnlyList<ChapterRow> rows, long mangaId) => Ascending = ChapterGrouping.Group(rows, mangaId).Reverse().ToList();
 
     public ChapterRow? Neighbour(int delta)
     {

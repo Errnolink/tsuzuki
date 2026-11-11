@@ -56,6 +56,8 @@ public sealed partial class ReaderPage : UserControl
     private bool pointerOverChrome;
     private double wheelAccumulator;
     private DateTime lastWheelTurn;
+    private double stripWheelTarget;
+    private DateTimeOffset lastStripWheelAt;
     private long lastTurnMs;
     private int pendingSaveIndex = -1;
     private long pendingSaveChapter = -1;
@@ -157,6 +159,7 @@ public sealed partial class ReaderPage : UserControl
             }
         };
         StripScroll.AddHandler(PointerWheelChangedEvent, new PointerEventHandler(OnStripWheel), true);
+        UpdateStripWheelOwnership();
     }
 
     public static Task CloseCurrentAsync() => current?.CloseAsync(animate: false) ?? Task.CompletedTask;
@@ -211,6 +214,7 @@ public sealed partial class ReaderPage : UserControl
         fit = profile.Fit;
         spreadOffset = profile.SpreadOffset;
         spreadPlanner = null;
+        UpdateStripWheelOwnership();
         ApplyNextState();
     }
 
@@ -294,7 +298,7 @@ public sealed partial class ReaderPage : UserControl
             store = await ProfilesAsync();
             manga = await engine.Library.GetMangaAsync(mangaId);
             var rows = await engine.Library.GetChaptersAsync(mangaId);
-            session.SetChapters(rows);
+            session.SetChapters(rows, mangaId);
         }
         catch (Exception e)
         {
@@ -1048,7 +1052,7 @@ public sealed partial class ReaderPage : UserControl
         {
             await engine.Refresher.RefreshQueuedAsync(mangaId);
             var rows = await engine.Library.GetChaptersAsync(mangaId);
-            session.SetChapters(rows);
+            session.SetChapters(rows, mangaId);
             if (EndCard.Visibility != Visibility.Visible)
             {
                 return;
@@ -1178,6 +1182,8 @@ public sealed partial class ReaderPage : UserControl
         var keep = index;
         var fromStrip = layout == ReaderLayout.Strip;
         layout = next;
+        stripWheelTarget = StripScroll.VerticalOffset;
+        UpdateStripWheelOwnership();
         spreadPlanner = null;
         ApplyNextState();
         RememberProfile();
@@ -1646,15 +1652,40 @@ public sealed partial class ReaderPage : UserControl
         {
             return;
         }
-        var delta = e.GetCurrentPoint(StripScroll).Properties.MouseWheelDelta;
+        var point = e.GetCurrentPoint(StripScroll);
+        var delta = point.Properties.MouseWheelDelta;
         if (delta == 0)
         {
             return;
         }
+        if (e.KeyModifiers.HasFlag(VirtualKeyModifiers.Control))
+        {
+            e.Handled = true;
+            var zoom = (float)Math.Clamp(StripScroll.ZoomFactor * Math.Pow(1.1, delta / 120.0), StripScroll.MinZoomFactor, StripScroll.MaxZoomFactor);
+            StripScroll.ZoomTo(zoom, new Vector2((float)point.Position.X, (float)point.Position.Y), new ScrollingZoomOptions(Motion.Reduced ? ScrollingAnimationMode.Disabled : ScrollingAnimationMode.Enabled));
+            stripWheelTarget = StripScroll.VerticalOffset;
+            return;
+        }
+        var now = DateTimeOffset.UtcNow;
+        if (now - lastStripWheelAt > TimeSpan.FromMilliseconds(400))
+        {
+            stripWheelTarget = StripScroll.VerticalOffset;
+        }
+        lastStripWheelAt = now;
+        var (target, handled) = Tsuzuki.Presentation.StripWheel.Next(stripWheelTarget, step, delta, StripScroll.ViewportHeight, StripScroll.ScrollableHeight);
+        if (!handled)
+        {
+            return;
+        }
         e.Handled = true;
-        var fraction = step switch { 1 => 0.25, 2 => 0.5, _ => 1.0 };
-        var amount = StripScroll.ViewportHeight * fraction * (delta / 120.0);
-        _ = StripScroll.ScrollBy(0, -amount);
+        stripWheelTarget = target;
+        StripScroll.ScrollTo(0, target, new ScrollingScrollOptions(Motion.Reduced ? ScrollingAnimationMode.Disabled : ScrollingAnimationMode.Enabled));
+    }
+
+    private void UpdateStripWheelOwnership()
+    {
+        var own = Services.Settings.ReaderWheelScroll > 0 && layout == ReaderLayout.Strip;
+        StripScroll.IgnoredInputKinds = own ? ScrollingInputKinds.MouseWheel : ScrollingInputKinds.None;
     }
 
     private void ToggleAutoScroll(Windows.Foundation.Point at)

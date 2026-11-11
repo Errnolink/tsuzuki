@@ -168,7 +168,7 @@ public sealed partial class LibraryListRow : Button
         }
         _ = Log.Guard("next-library-row", async () =>
         {
-            var groups = ChapterGrouping.Group(await engine.Library.GetChaptersAsync(mangaId));
+            var groups = ChapterGrouping.Group(await engine.Library.GetChaptersAsync(mangaId), mangaId);
             if (my != version)
             {
                 return;

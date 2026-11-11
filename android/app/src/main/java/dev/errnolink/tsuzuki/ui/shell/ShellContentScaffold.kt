@@ -86,7 +86,7 @@ fun ShellContentScaffold(
             header()
             Box(Modifier.weight(1f).glassSource(glass)) {
                 content(PaddingValues(top = 8.dp, bottom = clearance.value + 24.dp))
-                ShellSnackbar(snackbar, Modifier.align(Alignment.BottomCenter).padding(bottom = clearance.value + 12.dp))
+                ShellSnackbar(snackbar, Modifier.align(Alignment.BottomCenter).statusSnackbarPadding())
             }
         }
         ShellScrollEdge(

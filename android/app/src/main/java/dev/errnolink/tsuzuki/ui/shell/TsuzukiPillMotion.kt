@@ -374,6 +374,9 @@ class TsuzukiPillMotion(scope: CoroutineScope?, initialIndex: Int) {
     val isLifted: Boolean
         get() = liftedState.value
 
+    val dragging: Boolean
+        get() = physics.dragging
+
     fun animateTo(index: Int) {
         physics.animateTo(index)
         sync()

@@ -45,7 +45,7 @@ class SettingsIaTest {
             "Trackers" to TsuzukiSettingsTrackingScreen.prefKeys,
             "Browse & sources" to TsuzukiSettingsBrowseScreen.prefKeys,
             "Backup & sync" to TsuzukiSettingsDataScreen.prefKeys,
-            "Privacy & security" to TsuzukiSettingsSecurityScreen.prefKeys,
+            "Security & privacy" to TsuzukiSettingsSecurityScreen.prefKeys,
             "Advanced" to TsuzukiSettingsAdvancedScreen.prefKeys,
         )
 
@@ -81,7 +81,7 @@ class SettingsIaTest {
         assertEquals("Backup & sync", TsuzukiSettingsDataScreen.displayName)
         assertEquals("Browse & sources", TsuzukiSettingsBrowseScreen.displayName)
         assertEquals("Trackers", TsuzukiSettingsTrackingScreen.displayName)
-        assertEquals("Privacy & security", TsuzukiSettingsSecurityScreen.displayName)
+        assertEquals("Security & privacy", TsuzukiSettingsSecurityScreen.displayName)
         assertEquals(null, TsuzukiSettingsAppearanceScreen.displayName)
     }
 

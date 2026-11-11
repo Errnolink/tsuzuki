@@ -64,6 +64,8 @@ import uy.kohesive.injekt.api.get
 import uy.kohesive.injekt.injectLazy
 import java.time.Instant
 import java.time.LocalDate
+import dev.errnolink.tsuzuki.data.library.PageTotals
+import dev.errnolink.tsuzuki.data.library.chapterPageProgress
 data class UpNextCard(
     val mangaId: Long,
     val chapterId: Long,
@@ -118,6 +120,7 @@ class UnifiedFeedScreenModel : StateScreenModel<UnifiedFeedState>(UnifiedFeedSta
     private val chapterRepository: ChapterRepository by injectLazy()
     private val downloadManager: DownloadManager by injectLazy()
     private val sourcePreferences: SourcePreferences by injectLazy()
+    private val pageTotals = PageTotals()
     private val chipPref: Preference<FeedChip> =
         preferenceStore.getEnum("pref_feed_selected_chip", FeedChip.ALL)
 
@@ -149,30 +152,30 @@ class UnifiedFeedScreenModel : StateScreenModel<UnifiedFeedState>(UnifiedFeedSta
                 }
                 .collectLatest { histories ->
                     try {
-                        val cards = coroutineScope {
+                        val targets = coroutineScope {
                             histories.map { entry ->
                                 async {
                                     val next = getNextChapters.await(entry.mangaId, entry.chapterId, onlyUnread = false)
                                     val target = next.firstOrNull() ?: return@async null
-                                    val isCurrent = target.id == entry.chapterId && !entry.read
-                                    val lastPage = if (isCurrent) entry.lastPageRead else 0L
-                                    val totalPages = target.lastPageRead.takeIf { it > 0 }?.toInt()
-                                    val fraction = if (isCurrent && totalPages != null && totalPages > 0) {
-                                        ((lastPage + 1).toFloat() / totalPages).coerceIn(0f, 1f)
-                                    } else null
-                                    UpNextCard(
-                                        mangaId = entry.mangaId,
-                                        chapterId = target.id,
-                                        mangaTitle = entry.title,
-                                        chapterName = if (target.chapterNumber >= 0) "Ch. ${eu.kanade.presentation.util.formatChapterNumber(target.chapterNumber)}" else target.name,
-                                        lastPageRead = lastPage,
-                                        pageTotal = totalPages,
-                                        progressFraction = fraction,
-                                        coverData = entry.coverData,
-                                        isResume = isCurrent,
-                                    )
+                                    Triple(entry, target, target.id == entry.chapterId && !entry.read)
                                 }
                             }.awaitAll().filterNotNull()
+                        }
+                        val totals = pageTotals.totals(targets.map { it.second.id })
+                        val cards = targets.map { (entry, target, isCurrent) ->
+                            val lastPage = if (isCurrent) entry.lastPageRead else 0L
+                            val totalPages = totals[target.id]
+                            UpNextCard(
+                                mangaId = entry.mangaId,
+                                chapterId = target.id,
+                                mangaTitle = entry.title,
+                                chapterName = if (target.chapterNumber >= 0) "Ch. ${eu.kanade.presentation.util.formatChapterNumber(target.chapterNumber)}" else target.name,
+                                lastPageRead = lastPage,
+                                pageTotal = totalPages,
+                                progressFraction = chapterPageProgress(lastPage, totalPages, read = false),
+                                coverData = entry.coverData,
+                                isResume = isCurrent,
+                            )
                         }
                         mutableState.update { it.copy(upNext = cards.toImmutableList(), upNextLoaded = true) }
                     } catch (e: CancellationException) {

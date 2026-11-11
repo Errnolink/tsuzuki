@@ -36,18 +36,16 @@ import androidx.compose.foundation.lazy.staggeredgrid.LazyStaggeredGridState
 import androidx.compose.foundation.lazy.staggeredgrid.LazyVerticalStaggeredGrid
 import androidx.compose.foundation.lazy.staggeredgrid.StaggeredGridCells
 import androidx.compose.foundation.lazy.staggeredgrid.rememberLazyStaggeredGridState
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.outlined.Check
 import androidx.compose.material.icons.outlined.MenuBook
 import androidx.compose.material3.Icon
-import androidx.compose.material3.SnackbarData
-import androidx.compose.material3.SnackbarDuration
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
@@ -62,9 +60,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawWithCache
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
 import androidx.compose.ui.input.nestedscroll.NestedScrollSource
@@ -84,28 +80,25 @@ import androidx.compose.ui.platform.LocalContext
 import coil3.decode.DataSource
 import coil3.toBitmap
 import androidx.compose.ui.graphics.asImageBitmap
-import dev.errnolink.tsuzuki.designsystem.Banner
 import dev.errnolink.tsuzuki.designsystem.CoverArrivalState
 import dev.errnolink.tsuzuki.designsystem.CoverImage
 import dev.errnolink.tsuzuki.designsystem.DetentSheet
 import dev.errnolink.tsuzuki.designsystem.EmptyState
 import dev.errnolink.tsuzuki.designsystem.tsuzukiFlingBehavior
 import dev.errnolink.tsuzuki.designsystem.GlassContext
-import dev.errnolink.tsuzuki.designsystem.M3Motion
 import dev.errnolink.tsuzuki.designsystem.floatingNavigationScroll
 import dev.errnolink.tsuzuki.designsystem.TsuzukiIcons
 import dev.errnolink.tsuzuki.designsystem.IconButton
 import dev.errnolink.tsuzuki.designsystem.LargeTitleScaffold
 import dev.errnolink.tsuzuki.designsystem.TopBarSearch
 import dev.errnolink.tsuzuki.designsystem.ProgressRing
-import dev.errnolink.tsuzuki.designsystem.Play
 import dev.errnolink.tsuzuki.designsystem.TsuzukiText
 import dev.errnolink.tsuzuki.designsystem.TsuzukiTheme
 import dev.errnolink.tsuzuki.designsystem.glassSource
 import dev.errnolink.tsuzuki.designsystem.rememberCoverArrivalState
 import dev.errnolink.tsuzuki.designsystem.rememberGlassContext
+import dev.errnolink.tsuzuki.data.library.PageTotals
 import eu.kanade.tachiyomi.ui.home.HomeScreen
-import kotlinx.coroutines.delay
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.asPaddingValues
@@ -124,7 +117,7 @@ class ShellSheetAction(val label: String, val destructive: Boolean = false, val 
 fun shellBottomPadding(): androidx.compose.ui.unit.Dp = maxOf(
     LocalShellBottomPadding.current,
     WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding(),
-) + LocalAppStateBottomPadding.current
+)
 
 @Composable
 fun ShellAction(label: String, icon: ImageVector, onClick: () -> Unit, active: Boolean = false) {
@@ -173,48 +166,7 @@ fun ShellList(
             itemSpacing = itemSpacing,
             content = content,
         )
-        ShellSnackbar(snackbar, Modifier.align(Alignment.BottomCenter).padding(bottom = clearance + 12.dp))
-    }
-}
-
-@Composable
-fun ShellSnackbar(state: SnackbarHostState?, modifier: Modifier = Modifier) {
-    val motion = TsuzukiTheme.motion
-    val data = state?.currentSnackbarData
-    var held by remember { mutableStateOf<SnackbarData?>(null) }
-    if (data != null) held = data
-    LaunchedEffect(data) {
-        if (data != null && data.visuals.duration != SnackbarDuration.Indefinite) {
-            delay(if (data.visuals.actionLabel == null) 4000L else 10000L)
-            data.dismiss()
-        }
-    }
-    AnimatedVisibility(
-        visible = data != null,
-        modifier = modifier.padding(horizontal = TsuzukiTheme.spacing.gutter),
-        enter = if (motion.reduced) {
-            fadeIn(M3Motion.reducedFade())
-        } else {
-            scaleIn(
-                M3Motion.enter(M3Motion.Medium1),
-                initialScale = 0.92f,
-                transformOrigin = TransformOrigin(0.5f, 1f),
-            ) + fadeIn(tween(M3Motion.Short3, easing = M3Motion.EmphasizedDecelerate))
-        },
-        exit = if (motion.reduced) {
-            fadeOut(M3Motion.reducedFade())
-        } else {
-            fadeOut(M3Motion.exit(M3Motion.Short3))
-        },
-    ) {
-        held?.let { current ->
-            Banner(
-                current.visuals.message,
-                actionLabel = current.visuals.actionLabel,
-                onAction = current.visuals.actionLabel?.let { { current.performAction() } },
-                onDismiss = current::dismiss,
-            )
-        }
+        ShellSnackbar(snackbar, Modifier.align(Alignment.BottomCenter).statusSnackbarPadding())
     }
 }
 
@@ -262,34 +214,8 @@ private fun ShellSheetRow(label: String, destructive: Boolean, divider: Boolean,
 }
 
 @Composable
-fun ShellContinueButton(progress: Float?, modifier: Modifier = Modifier, onClick: () -> Unit) {
-    val colors = TsuzukiTheme.colors
-    Box(
-        modifier
-            .readerOrigin()
-            .size(46.dp)
-            .clip(CircleShape)
-            .clickable(role = androidx.compose.ui.semantics.Role.Button, onClickLabel = "Continue reading", onClick = onClick),
-        contentAlignment = Alignment.Center,
-    ) {
-        if (progress != null) {
-            androidx.compose.foundation.Canvas(Modifier.size(46.dp)) {
-                val w = 2.5.dp.toPx()
-                val inset = w / 2
-                val arcSize = androidx.compose.ui.geometry.Size(size.width - w, size.height - w)
-                val tl = Offset(inset, inset)
-                drawArc(colors.separator, 0f, 360f, false, tl, arcSize, style = Stroke(w))
-                drawArc(colors.accent, -90f, 360f * progress.coerceIn(0f, 1f), false, tl, arcSize, style = Stroke(w, cap = androidx.compose.ui.graphics.StrokeCap.Round))
-            }
-        }
-        Box(
-            Modifier.size(36.dp).background(colors.text, CircleShape),
-            contentAlignment = Alignment.Center,
-        ) {
-            Icon(TsuzukiIcons.Play, null, Modifier.size(20.dp), tint = colors.background)
-        }
-    }
-}
+fun rememberPageTotals(): Map<Long, Int> =
+    remember { PageTotals() }.inProgressTotals().collectAsState(initial = emptyMap()).value
 
 @Composable
 fun ShellScrollEdge(alpha: Float, modifier: Modifier = Modifier) {
@@ -312,18 +238,6 @@ fun ShellScrollEdge(alpha: Float, modifier: Modifier = Modifier) {
             }
         },
     )
-}
-
-object NowReadingPreferences {
-    fun encodePageTotal(chapterId: Long, totalPages: Int): String = "$chapterId:$totalPages"
-
-    fun decodePageTotal(prefValue: String, targetChapterId: Long): Int? {
-        val parts = prefValue.split(':')
-        if (parts.size != 2) return null
-        val chapterId = parts[0].toLongOrNull() ?: return null
-        if (chapterId != targetChapterId) return null
-        return parts[1].toIntOrNull()?.takeIf { it > 0 }
-    }
 }
 
 @Composable

@@ -70,6 +70,7 @@ public sealed class AppSettings
     public int WindowWidth { get; set; }
     public int WindowHeight { get; set; }
     public bool WindowMaximized { get; set; }
+    public Dictionary<long, string> PreferredGroups { get; set; } = [];
 
     [JsonIgnore]
     public string? FilePath { get; private set; }

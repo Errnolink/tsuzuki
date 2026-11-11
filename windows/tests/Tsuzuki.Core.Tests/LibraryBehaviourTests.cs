@@ -48,6 +48,30 @@ public class LibraryBehaviourTests
     }
 
     [Fact]
+    public void PreferredGroupWinsOverProgressAndChapterCount()
+    {
+        var rows = new[]
+        {
+            Row("/p/1", 1, "MangaPlus"),
+            Row("/p/2", 2, "MangaPlus"),
+            Row("/p/3", 3, "MangaPlus", page: 5),
+            Row("/f/3", 3, "Fan TL"),
+            Row("/p/4", 4, "MangaPlus"),
+        };
+        ChapterGrouping.PreferredFor = id => id == 42 ? "fan tl" : null;
+        try
+        {
+            Assert.Equal("Fan TL", ChapterGrouping.Group(rows, 42).First(g => g.Number == 3).Primary.Scanlator);
+            Assert.Equal("MangaPlus", ChapterGrouping.Group(rows, 7).First(g => g.Number == 3).Primary.Scanlator);
+            Assert.Equal("MangaPlus", ChapterGrouping.Group(rows, 42).First(g => g.Number == 4).Primary.Scanlator);
+        }
+        finally
+        {
+            ChapterGrouping.PreferredFor = null;
+        }
+    }
+
+    [Fact]
     public void NextToReadResumesTheUnfinishedChapter()
     {
         var groups = ChapterGrouping.Group(new[]

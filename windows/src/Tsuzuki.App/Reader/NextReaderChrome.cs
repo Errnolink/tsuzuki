@@ -397,6 +397,7 @@ public sealed partial class ReaderPage
             {
                 Services.Settings.ReaderWheelScroll = wheelChoice.SelectedIndex;
                 Services.Settings.Save();
+                UpdateStripWheelOwnership();
             }
         };
 

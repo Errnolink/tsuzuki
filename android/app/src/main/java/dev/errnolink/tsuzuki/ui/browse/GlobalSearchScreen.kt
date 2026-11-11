@@ -361,7 +361,7 @@ internal fun GlobalSearchContent(
                                     overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
                                 )
                             }
-                            dev.errnolink.tsuzuki.designsystem.PillButton("Retry", { onRetrySource(source) })
+                            dev.errnolink.tsuzuki.designsystem.PillButton("Retry", { onRetrySource(source) }, prominent = false, tinted = true)
                         }
                     }
                 }

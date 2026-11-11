@@ -1,7 +1,12 @@
 package dev.errnolink.tsuzuki.designsystem
 
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.AnimationSpec
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
@@ -10,17 +15,28 @@ import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.sizeIn
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.launch
 
 @Composable
 fun PillButton(
@@ -44,8 +60,48 @@ fun PillButton(
     val interaction = androidx.compose.runtime.remember { androidx.compose.foundation.interaction.MutableInteractionSource() }
     val minHeight = if (large) 52.dp else TsuzukiSpacing.touchTarget
     val verticalPadding = if (large) 13.dp else 11.dp
-    val press = Modifier.pressScale(interaction)
-        .clickable(interactionSource = interaction, indication = null, enabled = enabled, role = Role.Button, onClick = onClick)
+    val shapeMorph = LocalPressShape.current && !TsuzukiTheme.motion.reduced
+    val pressed by interaction.collectIsPressedAsState()
+    val density = LocalDensity.current
+    var minDimPx by remember { mutableIntStateOf(0) }
+    val scale = remember { Animatable(1f) }
+    val squareness = remember { Animatable(1f) }
+    LaunchedEffect(shapeMorph, pressed) {
+        if (!shapeMorph) {
+            scale.snapTo(1f)
+            squareness.snapTo(1f)
+            return@LaunchedEffect
+        }
+        val spec: AnimationSpec<Float> = if (pressed) {
+            tween(durationMillis = 90)
+        } else {
+            spring(dampingRatio = 0.7f, stiffness = 700f)
+        }
+        val scaleTarget = if (pressed) 0.96f else 1f
+        val squareTarget = if (pressed) 0f else 1f
+        coroutineScope {
+            launch { scale.animateTo(scaleTarget, spec) }
+            launch { squareness.animateTo(squareTarget, spec) }
+        }
+    }
+    val capsuleRadius = with(density) { (minDimPx / 2f).toDp() }
+    val shape = if (shapeMorph && minDimPx > 0) {
+        RoundedCornerShape(16.dp + (capsuleRadius - 16.dp) * squareness.value)
+    } else {
+        CircleShape
+    }
+    val press = if (shapeMorph) {
+        Modifier
+            .graphicsLayer {
+                scaleX = scale.value
+                scaleY = scale.value
+            }
+            .onSizeChanged { minDimPx = minOf(it.width, it.height) }
+            .clickable(interactionSource = interaction, indication = null, enabled = enabled, role = Role.Button, onClick = onClick)
+    } else {
+        Modifier.pressScale(interaction)
+            .clickable(interactionSource = interaction, indication = null, enabled = enabled, role = Role.Button, onClick = onClick)
+    }
     val content: @Composable androidx.compose.foundation.layout.BoxScope.() -> Unit = {
         Box(
             Modifier.align(Alignment.Center)
@@ -60,12 +116,12 @@ fun PillButton(
     if (filled) {
         val fill = if (tinted) tint.copy(alpha = if (colors.isDark) 0.22f else 0.14f) else tint
         Box(
-            modifier.then(press).clip(CircleShape)
+            modifier.then(press).clip(shape)
                 .background(fill),
             content = content,
         )
     } else {
-        GlassSurface(context = null, modifier = modifier.then(press), shape = CircleShape, content = content)
+        GlassSurface(context = null, modifier = modifier.then(press), shape = shape, content = content)
     }
 }
 

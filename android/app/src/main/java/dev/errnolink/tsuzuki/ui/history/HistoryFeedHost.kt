@@ -14,9 +14,7 @@ import androidx.compose.material3.SnackbarHostState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.collectAsState
 import androidx.compose.ui.Modifier
@@ -29,11 +27,13 @@ import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.core.FiniteAnimationSpec
 import kotlinx.coroutines.flow.collectLatest
 import dev.errnolink.tsuzuki.designsystem.PillButton
-import dev.errnolink.tsuzuki.designsystem.SearchField
+import dev.errnolink.tsuzuki.designsystem.TopBarSearch
+import dev.errnolink.tsuzuki.designsystem.rememberTopBarSearch
 import dev.errnolink.tsuzuki.designsystem.TsuzukiCorners
 import dev.errnolink.tsuzuki.designsystem.TsuzukiText
 import dev.errnolink.tsuzuki.designsystem.TsuzukiTheme
 import dev.errnolink.tsuzuki.ui.shell.ShellEmpty
+import dev.errnolink.tsuzuki.ui.shell.rememberPageTotals
 import dev.errnolink.tsuzuki.ui.shell.selectionSwapTransform
 import dev.errnolink.tsuzuki.ui.category.ChangeCategoryDialog
 import eu.kanade.presentation.components.relativeDateText
@@ -52,8 +52,14 @@ import tachiyomi.i18n.MR
 import tachiyomi.presentation.core.util.collectAsState
 import java.time.LocalDate
 
+class HistoryFeedContent(
+    val snackbarHostState: SnackbarHostState,
+    val search: TopBarSearch,
+    val content: LazyListScope.() -> Unit,
+)
+
 @Composable
-fun Screen.rememberHistoryFeedContent(): LazyListScope.() -> Unit {
+fun Screen.rememberHistoryFeedContent(): HistoryFeedContent {
     val context = LocalContext.current
     val navigator = LocalNavigator.currentOrThrow
     val screenModel = rememberScreenModel { HistoryScreenModel() }
@@ -64,7 +70,13 @@ fun Screen.rememberHistoryFeedContent(): LazyListScope.() -> Unit {
     val models by produceState(initialValue = emptyList<HistoryUiModel>(), state.list) {
         value = prepareHistoryUiModels(state)
     }
-    var searching by remember { mutableStateOf(false) }
+    val pageTotals = rememberPageTotals()
+    val search = rememberTopBarSearch(
+        query = state.searchQuery.orEmpty(),
+        onQueryChange = screenModel::updateSearchQuery,
+        placeholder = "Search history",
+        onClose = { screenModel.updateSearchQuery(null) },
+    )
 
     BackHandler(enabled = state.selectionMode, onBack = { screenModel.toggleSelectionMode() })
 
@@ -144,7 +156,7 @@ fun Screen.rememberHistoryFeedContent(): LazyListScope.() -> Unit {
         }
     }
 
-    return {
+    return HistoryFeedContent(snackbarHostState, search) {
         item(key = "feed-history-selection") {
             val motion = TsuzukiTheme.motion
             AnimatedContent(
@@ -168,17 +180,6 @@ fun Screen.rememberHistoryFeedContent(): LazyListScope.() -> Unit {
                         PillButton("Done", { screenModel.toggleSelectionMode() }, prominent = false)
                     }
                 }
-            }
-        }
-        if (state.searchQuery != null) {
-            item(key = "feed-history-search") {
-                SearchField(
-                    state.searchQuery.orEmpty(),
-                    screenModel::updateSearchQuery,
-                    {},
-                    Modifier.padding(horizontal = TsuzukiTheme.spacing.gutter),
-                    placeholder = "Search history",
-                )
             }
         }
         when (historyContentState(state.isLoading, state.list.isNotEmpty(), models.isNotEmpty())) {
@@ -211,6 +212,7 @@ fun Screen.rememberHistoryFeedContent(): LazyListScope.() -> Unit {
                     models = models,
                     state = state,
                     usePanoramaCover = usePanoramaCover,
+                    pageTotals = pageTotals,
                     onClickCover = { navigator.push(MangaScreen(it)) },
                     onClickResume = screenModel::getNextChapterForManga,
                     onDialogChange = screenModel::setDialog,
@@ -230,6 +232,7 @@ private fun FeedHistoryRow(
     models: List<HistoryUiModel>,
     state: HistoryScreenModel.State,
     usePanoramaCover: Boolean,
+    pageTotals: Map<Long, Int>,
     onClickCover: (Long) -> Unit,
     onClickResume: (Long, Long) -> Unit,
     onDialogChange: (HistoryScreenModel.Dialog?) -> Unit,
@@ -272,6 +275,7 @@ private fun FeedHistoryRow(
                 selected = selected,
                 readProgress = if (!entry.read) "Page ${entry.lastPageRead + 1}" else null,
                 usePanoramaCover = usePanoramaCover,
+                pageTotal = pageTotals[entry.chapterId],
             )
         }
     }

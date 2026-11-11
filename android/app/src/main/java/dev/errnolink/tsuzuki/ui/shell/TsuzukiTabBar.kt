@@ -60,6 +60,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -226,6 +227,19 @@ fun calculatePillCenter(
 ): Float {
     val x = position * tabStepPx + tabWidthPx / 2f
     return if (isRtl) rowWidthPx - x else x
+}
+
+internal fun tabDragTarget(
+    selectedIndex: Int,
+    dragTotalPx: Float,
+    tabStepPx: Float,
+    releaseVelocityPx: Float,
+    tabCount: Int,
+): Int {
+    val rawPosition = if (tabStepPx > 0f) selectedIndex + dragTotalPx / tabStepPx else selectedIndex.toFloat()
+    val bias = if (tabStepPx > 0f) releaseVelocityPx / (tabStepPx * 18f) else 0f
+    val lastTab = (tabCount - 1).coerceAtLeast(0)
+    return (rawPosition + bias).roundToInt().coerceIn(0, lastTab)
 }
 
 @Immutable
@@ -551,8 +565,20 @@ private fun TabCapsule(
     pill.reduceMotion = reduceAnimation
     pill.stepDp = if (density.density > 0f) tabStepPx / density.density else 0f
 
+    val currentSelected by rememberUpdatedState(selectedIndex)
+    val currentOnSelect by rememberUpdatedState(onSelectTab)
+    var dragTotalPx by remember { mutableFloatStateOf(0f) }
+
     LaunchedEffect(selectedIndex) {
+        if (pill.dragging) {
+            pill.release(selectedIndex)
+            dragTotalPx = 0f
+        }
         pill.animateTo(selectedIndex)
+    }
+
+    LaunchedEffect(tabCount) {
+        pill.snapTo(selectedIndex)
     }
 
     val indicatorInsetPx = with(density) { 4.dp.toPx() }
@@ -571,8 +597,6 @@ private fun TabCapsule(
         )
 
     val dragEdgeResistance = 0.25f
-    val dragBiasDivisor = 18f
-    var dragTotalPx by remember { mutableFloatStateOf(0f) }
     val tracker = remember { VelocityCarryTracker() }
 
     val dragModifier = if (!isInline) {
@@ -586,35 +610,34 @@ private fun TabCapsule(
                 onDragEnd = {
                     val releaseVelocityPx = tracker.resolveReleaseVelocity(0f, dragTotalPx)
                     tracker.reset()
-                    val rawPosition = if (tabStepPx > 0f) {
-                        selectedIndex + dragTotalPx / tabStepPx
-                    } else {
-                        selectedIndex.toFloat()
-                    }
-                    val bias = if (tabStepPx > 0f) releaseVelocityPx / (tabStepPx * dragBiasDivisor) else 0f
-                    val target = (rawPosition + bias).roundToInt().coerceIn(0, tabCount - 1)
-                    pill.release(target, if (tabStepPx > 0f) releaseVelocityPx / tabStepPx else 0f)
-                    if (target != selectedIndex) {
-                        haptics.select()
-                        onSelectTab(target)
+                    if (pill.dragging) {
+                        val target = tabDragTarget(currentSelected, dragTotalPx, tabStepPx, releaseVelocityPx, tabCount)
+                        pill.release(target, if (tabStepPx > 0f) releaseVelocityPx / tabStepPx else 0f)
+                        if (target != currentSelected) {
+                            haptics.select()
+                            currentOnSelect(target)
+                        }
                     }
                     dragTotalPx = 0f
                 },
                 onDragCancel = {
                     tracker.reset()
-                    pill.release(selectedIndex)
+                    if (pill.dragging) {
+                        pill.release(currentSelected)
+                    }
                     dragTotalPx = 0f
                 },
             ) { change, dragAmount ->
                 change.consume()
+                if (!pill.dragging) return@detectHorizontalDragGestures
                 val stepDelta = if (isRtl) -dragAmount else dragAmount
                 dragTotalPx += stepDelta
                 tracker.onMove(dragTotalPx)
                 val lastTab = (tabCount - 1).coerceAtLeast(0)
                 val rawPosition = if (tabStepPx > 0f) {
-                    selectedIndex + dragTotalPx / tabStepPx
+                    currentSelected + dragTotalPx / tabStepPx
                 } else {
-                    selectedIndex.toFloat()
+                    currentSelected.toFloat()
                 }
                 val resisted = when {
                     rawPosition < 0f -> rawPosition * dragEdgeResistance

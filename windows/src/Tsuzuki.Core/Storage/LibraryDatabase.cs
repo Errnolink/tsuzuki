@@ -4,6 +4,8 @@ namespace Tsuzuki.Core.Storage;
 
 public sealed class LibraryDatabase : IDisposable
 {
+    public const int SchemaVersion = 1;
+
     private readonly SemaphoreSlim _writeGate = new(1, 1);
     private readonly string _connectionString;
 
@@ -36,7 +38,15 @@ public sealed class LibraryDatabase : IDisposable
         db.ExecuteNonQuery("PRAGMA synchronous = NORMAL");
         db.ExecuteNonQuery("PRAGMA foreign_keys = ON");
         db.ExecuteNonQuery(Schema);
-        db.ExecuteNonQuery("INSERT INTO meta(key, value) VALUES ('schema_version','1') ON CONFLICT(key) DO NOTHING");
+        var storedSchema = db.Scalar<string?>("SELECT value FROM meta WHERE key = 'schema_version'");
+        if (storedSchema is null)
+        {
+            db.ExecuteNonQuery("INSERT INTO meta(key, value) VALUES ('schema_version','1')");
+        }
+        else if (long.TryParse(storedSchema, out var schemaVersion) && schemaVersion > SchemaVersion)
+        {
+            throw new InvalidOperationException("library was written by a newer app version");
+        }
         if (db.Scalar<string?>("SELECT value FROM meta WHERE key = 'read_stamp_repair'") is null)
         {
             db.ExecuteNonQuery(

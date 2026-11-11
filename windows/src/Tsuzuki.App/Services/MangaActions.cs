@@ -24,7 +24,7 @@ public static class MangaActions
         {
             return;
         }
-        var groups = ChapterGrouping.Group(await engine.Library.GetChaptersAsync(mangaId));
+        var groups = ChapterGrouping.Group(await engine.Library.GetChaptersAsync(mangaId), mangaId);
         if (ChapterGrouping.NextToRead(groups) is { } next)
         {
             await OpenGroupAsync(mangaId, next, from);
@@ -60,7 +60,7 @@ public static class MangaActions
         {
             return;
         }
-        var groups = ChapterGrouping.Group(await engine.Library.GetChaptersAsync(mangaId));
+        var groups = ChapterGrouping.Group(await engine.Library.GetChaptersAsync(mangaId), mangaId);
         if (ChapterGrouping.NextToRead(groups) is not { Read: false } next)
         {
             Toasts.Show("You're caught up", null, Icons.CircleCheck, seconds: 3);

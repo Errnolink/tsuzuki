@@ -15,12 +15,9 @@ import androidx.activity.SystemBarStyle
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.statusBarsPadding
-import androidx.compose.foundation.layout.widthIn
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -28,7 +25,6 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
@@ -47,7 +43,6 @@ import cafe.adriel.voyager.navigator.currentOrThrow
 import eu.kanade.domain.base.BasePreferences
 import eu.kanade.domain.source.interactor.GetIncognitoState
 import eu.kanade.domain.sync.SyncPreferences
-import dev.errnolink.tsuzuki.ui.shell.AppStateBanners
 import eu.kanade.presentation.more.settings.screen.browse.ExtensionStoresScreen
 import eu.kanade.presentation.more.settings.screen.data.RestoreBackupScreen
 import eu.kanade.presentation.util.AssistContentScreen
@@ -172,9 +167,9 @@ class MainActivity : BaseActivity() {
             val downloadOnly by preferences.downloadedOnly().collectAsState()
             val indexing by downloadCache.isInitializing.collectAsState()
             // KMK -->
-            val restoringState by backupRestoreStatus.isRunning.collectAsState()
-            val syncingState by syncStatus.isRunning.collectAsState()
-            val updatingState by libraryUpdateStatus.isRunning.collectAsState()
+            val restoringState by backupRestoreStatus.isActive.collectAsState()
+            val syncingState by syncStatus.isActive.collectAsState()
+            val updatingState by libraryUpdateStatus.isActive.collectAsState()
             val restoringProgressBanner by backupPreferences.showRestoringProgressBanner().collectAsState()
             val syncingProgressBanner by syncPreferences.showSyncingProgressBanner().collectAsState()
             val updatingProgressBanner by libraryPreferences.showUpdatingProgressBanner().collectAsState()
@@ -223,28 +218,25 @@ class MainActivity : BaseActivity() {
                         .collectLatest { incognito = it }
                 }
 
-                val bannerOnHome = navigator.lastItem == HomeScreen
+                val statusLayer = remember { dev.errnolink.tsuzuki.ui.shell.StatusLayerState() }
                 androidx.compose.runtime.CompositionLocalProvider(
-                    dev.errnolink.tsuzuki.ui.shell.LocalAppStateBottomPadding provides
-                        if (downloadOnly || incognito || (bannerOnHome && (indexing || restoring || syncing || updating))) 40.dp else 0.dp,
+                    dev.errnolink.tsuzuki.ui.shell.LocalStatusLayer provides statusLayer,
                 ) {
                 Box(
                     Modifier.fillMaxSize().background(dev.errnolink.tsuzuki.designsystem.TsuzukiTheme.colors.background),
                 ) {
                     TsuzukiScreenTransition(navigator = navigator, modifier = Modifier.fillMaxSize())
-                    val onHome = bannerOnHome
-                    AppStateBanners(
+                    dev.errnolink.tsuzuki.ui.shell.StatusLayerHost(
+                        state = statusLayer,
                         downloadedOnlyMode = downloadOnly,
                         incognitoMode = incognito,
-                        indexing = indexing && onHome,
-                        restoring = restoring && onHome,
-                        syncing = syncing && onHome,
-                        updating = updating && onHome,
+                        indexing = indexing,
+                        restoring = restoring,
+                        syncing = syncing,
+                        updating = updating,
                         progress = updatingProgress.takeIf { updating }
                             ?: syncingProgress.takeIf { syncing }
                             ?: restoringProgress.takeIf { restoring },
-                        modifier = Modifier.align(Alignment.BottomCenter).navigationBarsPadding()
-                            .padding(bottom = if (navigator.lastItem == HomeScreen) 88.dp else 16.dp).widthIn(max = 280.dp),
                     )
                 }
                 }

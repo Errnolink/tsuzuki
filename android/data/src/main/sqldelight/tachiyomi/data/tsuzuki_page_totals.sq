@@ -1,0 +1,26 @@
+CREATE TABLE tsuzuki_page_totals(
+    chapter_id INTEGER NOT NULL PRIMARY KEY,
+    total_pages INTEGER NOT NULL,
+    FOREIGN KEY(chapter_id) REFERENCES chapters (_id)
+    ON DELETE CASCADE
+);
+
+upsert:
+INSERT INTO tsuzuki_page_totals(chapter_id, total_pages)
+VALUES (:chapterId, :totalPages)
+ON CONFLICT(chapter_id)
+DO UPDATE
+SET total_pages = :totalPages;
+
+totalsByChapterIds:
+SELECT chapter_id, total_pages
+FROM tsuzuki_page_totals
+WHERE chapter_id IN :chapterIds;
+
+totalsForInProgress:
+SELECT T.chapter_id, T.total_pages
+FROM tsuzuki_page_totals T
+JOIN chapters C
+ON C._id = T.chapter_id
+WHERE C.read = 0
+AND C.last_page_read > 0;

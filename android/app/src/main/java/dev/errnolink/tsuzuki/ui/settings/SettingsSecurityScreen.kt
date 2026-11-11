@@ -44,7 +44,7 @@ import uy.kohesive.injekt.api.get
 object TsuzukiSettingsSecurityScreen : SearchableSettings {
     private fun readResolve(): Any = TsuzukiSettingsSecurityScreen
 
-    override val displayName = "Privacy & security"
+    override val displayName = "Security & privacy"
 
     @ReadOnlyComposable
     @Composable

@@ -143,7 +143,7 @@ internal static class BackupFiles
     public static async Task<string> WriteAsync(string folder, string fileName, Stream data, CancellationToken ct)
     {
         Directory.CreateDirectory(folder);
-        var full = System.IO.Path.Combine(folder, fileName);
+        var full = UniquePath(Path.Combine(folder, fileName));
         var temp = full + ".tmp";
         try
         {
@@ -168,6 +168,17 @@ internal static class BackupFiles
             throw;
         }
         return full;
+    }
+
+    private static string UniquePath(string full)
+    {
+        if (!File.Exists(full)) return full;
+        var stem = full[..^Extension.Length];
+        for (var n = 2; ; n++)
+        {
+            var candidate = stem + "-" + n + Extension;
+            if (!File.Exists(candidate)) return candidate;
+        }
     }
 
     public static void Prune(string folder, int keep, CancellationToken ct)

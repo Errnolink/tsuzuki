@@ -1,7 +1,6 @@
 package dev.errnolink.tsuzuki.data.library
 
 import kotlinx.serialization.json.JsonObject
-import dev.errnolink.tsuzuki.ui.shell.NowReadingPreferences
 import eu.kanade.tachiyomi.data.download.DownloadCache
 import eu.kanade.tachiyomi.data.download.DownloadManager
 import eu.kanade.tachiyomi.util.chapter.getNextUnread
@@ -122,11 +121,6 @@ class ContinueTargetsResolver(
             result[candidate.libraryItemId] = TargetRow(chapter.id, chapter.lastPageRead)
         }
         return result
-    }
-
-    fun progressOf(row: TargetRow, pagesPref: String): Float? {
-        val total = NowReadingPreferences.decodePageTotal(pagesPref, row.chapterId) ?: return null
-        return ((row.lastPageRead + 1).coerceAtMost(total.toLong())) / total.toFloat()
     }
 
     companion object {

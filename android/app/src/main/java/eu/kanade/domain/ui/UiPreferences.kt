@@ -55,7 +55,6 @@ class UiPreferences(
 
     fun showNavHistory() = preferenceStore.getBoolean("pref_show_history_button", true)
 
-    fun betaNowReadingPages() = preferenceStore.getString("pref_beta_now_reading_pages", "")
     // SY <--
 
     companion object {
