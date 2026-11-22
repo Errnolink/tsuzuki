@@ -1,37 +1,21 @@
 package dev.errnolink.tsuzuki.ui.reader
 
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.core.FiniteAnimationSpec
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.slideInHorizontally
-import androidx.compose.animation.slideInVertically
-import androidx.compose.animation.slideOutHorizontally
-import androidx.compose.animation.slideOutVertically
+import android.graphics.Bitmap
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.heightIn
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.systemBarsIgnoringVisibility
-import androidx.compose.foundation.layout.windowInsetsPadding
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.key
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.semantics.clearAndSetSemantics
-import androidx.compose.ui.unit.IntOffset
-import androidx.compose.ui.unit.dp
 import dev.errnolink.tsuzuki.designsystem.GlassContext
-import dev.errnolink.tsuzuki.designsystem.GlassSurface
-import dev.errnolink.tsuzuki.designsystem.M3Motion
-import dev.errnolink.tsuzuki.designsystem.TsuzukiTheme
+import eu.kanade.tachiyomi.ui.reader.model.ReaderPage
 import eu.kanade.tachiyomi.ui.reader.setting.ReaderOrientation
 import eu.kanade.tachiyomi.ui.reader.setting.ReadingMode
-import eu.kanade.tachiyomi.ui.reader.viewer.Viewer
-import eu.kanade.tachiyomi.ui.reader.viewer.pager.R2LPagerViewer
 import kotlinx.collections.immutable.ImmutableSet
+import kotlinx.coroutines.flow.StateFlow
 
 // SY -->
 enum class NavBarType {
@@ -56,7 +40,6 @@ fun ReaderAppBars(
     onOpenInBrowser: (() -> Unit)?,
     onShare: (() -> Unit)?,
 
-    viewer: Viewer?,
     onNextChapter: () -> Unit,
     enabledNext: Boolean,
     onPreviousChapter: () -> Unit,
@@ -99,173 +82,85 @@ fun ReaderAppBars(
     nextChapterShortName: String? = null,
     currentChapterShortName: String? = null,
     // SY <--
+    pageProvider: (Int) -> ReaderPage? = { null },
+    isWebtoon: Boolean = false,
+    webtoonProgressFlow: StateFlow<WebtoonProgressState>? = null,
+    onScrubWebtoonFraction: ((Float) -> Unit)? = null,
+    onSaveCapturedPng: (ReaderPage, ByteArray) -> Unit = { _, _ -> },
+    onShareCapturedPng: (ReaderPage, ByteArray) -> Unit = { _, _ -> },
+    onCaptureViewport: (((Bitmap?) -> Unit) -> Unit)? = null,
 ) {
-    val isRtl = viewer is R2LPagerViewer
-    val motion = TsuzukiTheme.motion
-    val moveEnter: FiniteAnimationSpec<IntOffset> =
-        if (motion.reduced) M3Motion.reducedFade() else androidx.compose.animation.core.tween(M3Motion.Short4, easing = M3Motion.StandardDecelerate)
-    val moveExit: FiniteAnimationSpec<IntOffset> =
-        if (motion.reduced) M3Motion.reducedFade() else androidx.compose.animation.core.tween(M3Motion.Short3, easing = M3Motion.StandardAccelerate)
-    val fadeSpec: FiniteAnimationSpec<Float> = M3Motion.reducedFade()
-    val effectiveBarStyle = resolveEffectiveBarStyle(barStyle, navBarType)
-    val readerMenuActions = rememberReaderMenuActions(
-        enabledButtons = enabledButtons,
-        onClickWebView = onOpenInWebView,
-        onClickBrowser = onOpenInBrowser,
-        onClickShare = onShare,
-        onClickReadingMode = onClickReadingMode,
-        orientation = orientation,
-        onClickOrientation = onClickOrientation,
-        cropEnabled = cropEnabled,
-        onClickCropBorder = onClickCropBorder,
-        currentReadingMode = currentReadingMode,
-        dualPageSplitEnabled = dualPageSplitEnabled,
-        onClickPageLayout = onClickPageLayout,
-        doublePages = doublePages,
-        onClickShiftPage = onClickShiftPage,
-    )
-    Box(
-        Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.systemBarsIgnoringVisibility)
-            .padding(horizontal = 16.dp, vertical = 8.dp)
-            .then(if (visible) Modifier else Modifier.clearAndSetSemantics {}),
-    ) {
-        AnimatedVisibility(
-            visible,
-            modifier = Modifier.align(Alignment.TopCenter),
-            enter = if (motion.reduced) fadeIn(fadeSpec) else slideInVertically(moveEnter) { -it },
-            exit = if (motion.reduced) fadeOut(fadeSpec) else slideOutVertically(moveExit) { -it },
-        ) {
-            Box {
-                ReaderTopBar(
-                    enabled = visible,
-                    mangaTitle = mangaTitle,
-                    chapterTitle = chapterTitle,
-                    navigateUp = navigateUp,
-                    onTitleClick = onClickTopAppBar,
-                    bookmarked = bookmarked,
-                    onToggleBookmarked = onToggleBookmarked,
-                    onToolsClick = { onSetExhUtilsVisibility(true) },
-                    compactTools = effectiveBarStyle == ReaderBarStyle.Capsule,
-                    onClickChapterList = onClickChapterList,
-                    onClickSettings = onClickSettings,
-                    moreActions = readerMenuActions,
-                    pagesLeft = pagesLeftInChapter(currentPage, totalPages),
-                )
-            }
-        }
-        if (navBarType != NavBarType.Bottom) {
-            val sideSign = if (navBarType == NavBarType.VerticalLeft) -1 else 1
-            AnimatedVisibility(
-                visible,
-                modifier = Modifier.align(if (sideSign > 0) Alignment.CenterEnd else Alignment.CenterStart)
-                    .padding(top = 76.dp, bottom = 64.dp),
-                enter = if (motion.reduced) fadeIn(fadeSpec) else slideInHorizontally(moveEnter) { sideSign * it },
-                exit = if (motion.reduced) fadeOut(fadeSpec) else slideOutHorizontally(moveExit) { sideSign * it },
-            ) {
-                GlassSurface(null, Modifier.heightIn(max = 480.dp), shape = RoundedCornerShape(28.dp)) {
-                    key(chapterTitle, viewer) {
-                        ChapterNavigator(
-                            onNextChapter, enabledNext, onPreviousChapter, enabledPrevious,
-                            currentPage, currentPageText, totalPages, onPageIndexChange, enabled = visible,
-                        )
-                    }
-                }
-            }
-        }
-        AnimatedVisibility(
-            visible,
-            modifier = Modifier.align(Alignment.BottomCenter),
-            enter = if (motion.reduced) fadeIn(fadeSpec) else slideInVertically(moveEnter) { it },
-            exit = if (motion.reduced) fadeOut(fadeSpec) else slideOutVertically(moveExit) { it },
-        ) {
-            when (effectiveBarStyle) {
-                ReaderBarStyle.Classic -> {
-                    if (navBarType == NavBarType.Bottom) {
-                        key(chapterTitle, viewer) {
-                            ClassicReaderBar(
-                                glass = null,
-                                enabled = visible,
-                                isRtl = isRtl,
-                                onPreviousChapter = onPreviousChapter,
-                                enabledPrevious = enabledPrevious,
-                                onNextChapter = onNextChapter,
-                                enabledNext = enabledNext,
-                                currentPage = currentPage,
-                                totalPages = totalPages,
-                                onPageIndexChange = onPageIndexChange,
-                                onClickChapterList = onClickChapterList,
-                                onClickReadingMode = onClickReadingMode,
-                                onClickOrientation = onClickOrientation,
-                                orientation = orientation,
-                                onClickSettings = onClickSettings,
-                                bookmarked = bookmarked,
-                                onToggleBookmarked = onToggleBookmarked,
-                                moreActions = readerMenuActions,
-                            )
-                        }
-                    } else {
-                        ClassicReaderButtons(
-                            glass = null,
-                            enabled = visible,
-                            onClickChapterList = onClickChapterList,
-                            onClickReadingMode = onClickReadingMode,
-                            onClickOrientation = onClickOrientation,
-                            orientation = orientation,
-                            onClickSettings = onClickSettings,
-                            bookmarked = bookmarked,
-                            onToggleBookmarked = onToggleBookmarked,
-                            moreActions = readerMenuActions,
-                        )
-                    }
-                }
-                ReaderBarStyle.Scrubber -> key(chapterTitle, viewer) {
-                    ScrubberReaderBar(
-                        glass = null,
-                        enabled = visible,
-                        isRtl = isRtl,
-                        onPreviousChapter = onPreviousChapter,
-                        enabledPrevious = enabledPrevious,
-                        onNextChapter = onNextChapter,
-                        enabledNext = enabledNext,
-                        currentPage = currentPage,
-                        totalPages = totalPages,
-                        onPageIndexChange = onPageIndexChange,
-                        onClickChapterList = onClickChapterList,
-                        onClickReadingMode = onClickReadingMode,
-                        onClickSettings = onClickSettings,
-                        moreActions = readerMenuActions,
-                    )
-                }
-                ReaderBarStyle.Capsule -> key(chapterTitle, viewer) {
-                    CapsuleReaderBar(
-                        glass = null,
-                        enabled = visible,
-                        isRtl = isRtl,
-                        chapterTitle = chapterTitle.orEmpty(),
-                        onPreviousChapter = onPreviousChapter,
-                        enabledPrevious = enabledPrevious,
-                        onNextChapter = onNextChapter,
-                        enabledNext = enabledNext,
-                        currentPage = currentPage,
-                        totalPages = totalPages,
-                        onPageIndexChange = onPageIndexChange,
-                    )
-                }
-            }
-        }
+    var suppressStatusLine by remember { mutableStateOf(false) }
+    Box(Modifier.fillMaxSize()) {
+        // edge glow rides over the page, under the chrome
+        ReaderTurnGlow()
+        ReaderAppBarsCurrent(
+                visible = visible,
+                glass = glass,
+                mangaTitle = mangaTitle,
+                chapterTitle = chapterTitle,
+                navigateUp = navigateUp,
+                onClickTopAppBar = onClickTopAppBar,
+                bookmarked = bookmarked,
+                onToggleBookmarked = onToggleBookmarked,
+                onOpenInWebView = onOpenInWebView,
+                onOpenInBrowser = onOpenInBrowser,
+                onShare = onShare,
+                onNextChapter = onNextChapter,
+                enabledNext = enabledNext,
+                onPreviousChapter = onPreviousChapter,
+                enabledPrevious = enabledPrevious,
+                currentPage = currentPage,
+                totalPages = totalPages,
+                onPageIndexChange = onPageIndexChange,
+                readingMode = readingMode,
+                onClickReadingMode = onClickReadingMode,
+                orientation = orientation,
+                onClickOrientation = onClickOrientation,
+                cropEnabled = cropEnabled,
+                onClickCropBorder = onClickCropBorder,
+                onClickSettings = onClickSettings,
+                isExhToolsVisible = isExhToolsVisible,
+                onSetExhUtilsVisibility = onSetExhUtilsVisibility,
+                isAutoScroll = isAutoScroll,
+                isAutoScrollEnabled = isAutoScrollEnabled,
+                onToggleAutoscroll = onToggleAutoscroll,
+                autoScrollFrequency = autoScrollFrequency,
+                onSetAutoScrollFrequency = onSetAutoScrollFrequency,
+                onClickAutoScrollHelp = onClickAutoScrollHelp,
+                onClickRetryAll = onClickRetryAll,
+                onClickRetryAllHelp = onClickRetryAllHelp,
+                onClickBoostPage = onClickBoostPage,
+                onClickBoostPageHelp = onClickBoostPageHelp,
+                navBarType = navBarType,
+                currentPageText = currentPageText,
+                enabledButtons = enabledButtons,
+                currentReadingMode = currentReadingMode,
+                dualPageSplitEnabled = dualPageSplitEnabled,
+                doublePages = doublePages,
+                onClickChapterList = onClickChapterList,
+                onClickPageLayout = onClickPageLayout,
+                onClickShiftPage = onClickShiftPage,
+                barStyle = barStyle,
+                prevChapterShortName = prevChapterShortName,
+                nextChapterShortName = nextChapterShortName,
+                currentChapterShortName = currentChapterShortName,
+                pageProvider = pageProvider,
+                isWebtoon = isWebtoon,
+                webtoonProgressFlow = webtoonProgressFlow,
+                onScrubWebtoonFraction = onScrubWebtoonFraction,
+                onSaveCapturedPng = onSaveCapturedPng,
+                onShareCapturedPng = onShareCapturedPng,
+                onCaptureViewport = onCaptureViewport,
+                onSuppressStatusLineChange = { suppressStatusLine = it },
+            )
+            // the status line takes the chrome's place while it is away (Kasane reader shell)
+            ReaderStatusLine(
+                visible = visible || suppressStatusLine,
+                chapterTitle = chapterTitle,
+                currentPage = currentPage,
+                totalPages = totalPages,
+                modifier = Modifier.align(Alignment.BottomCenter),
+            )
     }
-    ExhUtils(
-        isVisible = isExhToolsVisible,
-        onSetExhUtilsVisibility = onSetExhUtilsVisibility,
-        isAutoScroll = isAutoScroll,
-        isAutoScrollEnabled = isAutoScrollEnabled,
-        onToggleAutoscroll = onToggleAutoscroll,
-        autoScrollFrequency = autoScrollFrequency,
-        onSetAutoScrollFrequency = onSetAutoScrollFrequency,
-        onClickAutoScrollHelp = onClickAutoScrollHelp,
-        onClickRetryAll = onClickRetryAll,
-        onClickRetryAllHelp = onClickRetryAllHelp,
-        onClickBoostPage = onClickBoostPage,
-        onClickBoostPageHelp = onClickBoostPageHelp,
-    )
 }

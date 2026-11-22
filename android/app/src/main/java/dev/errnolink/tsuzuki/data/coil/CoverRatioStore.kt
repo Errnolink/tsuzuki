@@ -11,6 +11,11 @@ internal class CoverRatioStore(context: Context) : SQLiteOpenHelper(
     null,
     1,
 ) {
+    override fun onConfigure(db: SQLiteDatabase) {
+        super.onConfigure(db)
+        db.enableWriteAheadLogging()
+    }
+
     override fun onCreate(db: SQLiteDatabase) {
         db.execSQL("CREATE TABLE ratios (manga_id INTEGER PRIMARY KEY, cover_key TEXT NOT NULL, ratio REAL NOT NULL)")
     }

@@ -35,15 +35,11 @@ import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.unit.dp
 import androidx.core.graphics.ColorUtils
-import cafe.adriel.voyager.navigator.LocalNavigator
-import cafe.adriel.voyager.navigator.Navigator
-import cafe.adriel.voyager.navigator.currentOrThrow
 import dev.icerock.moko.resources.StringResource
 import eu.kanade.presentation.components.AppBar
 import eu.kanade.presentation.components.AppBarActions
 import eu.kanade.presentation.more.settings.screen.about.AboutScreen
 import eu.kanade.presentation.more.settings.widget.TextPreferenceWidget
-import eu.kanade.presentation.util.LocalBackPress
 import eu.kanade.presentation.util.Screen
 import exh.assets.EhAssets
 import exh.assets.ehassets.MangadexLogo
@@ -59,11 +55,6 @@ import dev.errnolink.tsuzuki.ui.settings.TsuzukiSettingsMainScreen
 object SettingsMainScreen : Screen() {
     @Suppress("unused")
     private fun readResolve(): Any = SettingsMainScreen
-
-    @Composable
-    override fun Content() {
-        Content(twoPane = false)
-    }
 
     @Composable
     private fun getPalerSurface(): Color {
@@ -82,12 +73,8 @@ object SettingsMainScreen : Screen() {
     }
 
     @Composable
-    fun Content(twoPane: Boolean) {
-        TsuzukiSettingsMainScreen.Content(twoPane)
-    }
-
-    private fun Navigator.navigate(screen: VoyagerScreen, twoPane: Boolean) {
-        if (twoPane) replaceAll(screen) else push(screen)
+    override fun Content() {
+        TsuzukiSettingsMainScreen.Content()
     }
 
     private data class Item(

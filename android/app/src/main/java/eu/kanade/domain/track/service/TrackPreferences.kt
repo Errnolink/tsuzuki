@@ -26,6 +26,13 @@ class TrackPreferences(
         false,
     )
 
+    // KMK -->
+    fun trackDisplayUsername(tracker: Tracker) = preferenceStore.getString(
+        Preference.privateKey("track_display_username_${tracker.id}"),
+        "",
+    )
+    // KMK <--
+
     fun setCredentials(tracker: Tracker, username: String, password: String) {
         trackUsername(tracker).set(username)
         trackPassword(tracker).set(password)

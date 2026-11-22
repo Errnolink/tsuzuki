@@ -8,6 +8,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import dev.errnolink.tsuzuki.designsystem.DetentSheet
+import dev.errnolink.tsuzuki.designsystem.SheetKind
 import dev.errnolink.tsuzuki.designsystem.PillButton
 import dev.errnolink.tsuzuki.designsystem.TsuzukiText
 import dev.errnolink.tsuzuki.designsystem.TsuzukiTheme
@@ -27,6 +28,7 @@ fun PairPromptHost() {
         visible = true,
         title = "Pair with ${current.name?.takeIf { it.isNotBlank() } ?: "this PC"}?",
         onDismissRequest = { PairDeepLink.dismiss() },
+        kind = SheetKind.Picker,
     ) {
         TsuzukiText(
             "Your library and reading progress will sync with this PC over Wi-Fi.",

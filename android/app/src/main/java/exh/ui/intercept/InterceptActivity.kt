@@ -21,7 +21,6 @@ import androidx.core.net.toUri
 import androidx.lifecycle.lifecycleScope
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import eu.kanade.presentation.components.AppBar
-import eu.kanade.domain.manga.interactor.UpdateManga
 import eu.kanade.domain.source.service.SourcePreferences
 import eu.kanade.tachiyomi.R
 import eu.kanade.tachiyomi.source.online.UrlImportableSource
@@ -41,7 +40,6 @@ import mihon.domain.source.interactor.UpdateMangaFromRemote
 import tachiyomi.core.common.Constants
 import tachiyomi.core.common.i18n.stringResource
 import tachiyomi.core.common.util.lang.launchIO
-import tachiyomi.core.common.util.lang.withUIContext
 import tachiyomi.domain.chapter.interactor.GetChapter
 import tachiyomi.domain.chapter.model.Chapter
 import tachiyomi.domain.manga.interactor.NetworkToLocalManga
@@ -120,9 +118,12 @@ class InterceptActivity : BaseActivity() {
     private fun processLink() {
         if (Intent.ACTION_VIEW == intent.action) {
             lifecycleScope.launchIO {
-                // wait for sources to load
-                Injekt.get<SourceManager>().isInitialized.first { it }
-                loadGallery(intent.dataString!!)
+                val gallery = intent.dataString!!
+                Injekt.get<eu.kanade.tachiyomi.extension.ExtensionManager>().isInitialized.first { it }
+                kotlinx.coroutines.withTimeoutOrNull(SourcesTimeoutMillis) {
+                    sourceManager.sources.first { pickSource(gallery).isNotEmpty() }
+                }
+                loadGallery(gallery)
             }
         }
     }
@@ -185,7 +186,6 @@ class InterceptActivity : BaseActivity() {
 
     private val sourceManager: SourceManager = Injekt.get()
     private val sourcePreferences: SourcePreferences = Injekt.get()
-    private val updateManga: UpdateManga = Injekt.get()
     private val updateMangaFromRemote: UpdateMangaFromRemote = Injekt.get()
     private val networkToLocalManga: NetworkToLocalManga = Injekt.get()
     private val getChapter: GetChapter = Injekt.get()
@@ -204,21 +204,13 @@ class InterceptActivity : BaseActivity() {
         if (status.value is InterceptResult.Idle) {
             status.value = InterceptResult.Loading
             val sources = pickSource(gallery)
-            if (sources.size > 1) {
-                withUIContext {
-                    MaterialAlertDialogBuilder(this@InterceptActivity)
-                        .setTitle(MR.strings.label_sources.getString(this@InterceptActivity))
-                        .setSingleChoiceItems(sources.map { it.toString() }.toTypedArray(), 0) { dialog, index ->
-                            dialog.dismiss()
-                            lifecycleScope.launchIO {
-                                loadGalleryEnd(gallery, sources[index])
-                            }
-                        }
-                        .show()
-                }
+            val source = if (sources.size > 1) {
+                val preferred = exh.md.utils.MdUtil.getEnabledMangaDex(sourcePreferences, sourceManager)
+                sources.firstOrNull { it.id == preferred?.id } ?: sources.first()
             } else {
-                loadGalleryEnd(gallery, sources.firstOrNull())
+                sources.firstOrNull()
             }
+            loadGalleryEnd(gallery, source)
         }
     }
 
@@ -237,13 +229,13 @@ class InterceptActivity : BaseActivity() {
             var manga = networkToLocalManga(
                 Manga.create().copy(source = source.id, url = source.cleanMangaUrl(mangaUrl)),
             )
-            manga = updateMangaFromRemote(
-                manga = manga,
-                fetchDetails = true,
-                fetchChapters = true,
-            ).getOrThrow().manga
-            updateManga.awaitUpdateFavorite(manga.id, true)
-            manga = manga.copy(favorite = true)
+            if (cleanedChapterUrl != null) {
+                manga = updateMangaFromRemote(
+                    manga = manga,
+                    fetchDetails = !manga.initialized,
+                    fetchChapters = true,
+                ).getOrThrow().manga
+            }
             val chapter = cleanedChapterUrl?.let {
                 getChapter.await(it, manga.id)
                     ?: error(stringResource(SYMR.strings.gallery_adder_could_not_identify_chapter, gallery))
@@ -258,6 +250,10 @@ class InterceptActivity : BaseActivity() {
 
     init {
         registerSecureActivity(this)
+    }
+
+    private companion object {
+        const val SourcesTimeoutMillis = 10_000L
     }
 }
 

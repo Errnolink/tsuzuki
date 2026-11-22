@@ -1,52 +1,46 @@
 package dev.errnolink.tsuzuki.ui.feed
 
+import android.app.Application
 import androidx.compose.runtime.Immutable
 import cafe.adriel.voyager.core.model.StateScreenModel
-import java.time.ZonedDateTime
 import cafe.adriel.voyager.core.model.screenModelScope
+import dev.errnolink.tsuzuki.data.library.PageTotals
+import dev.errnolink.tsuzuki.data.library.chapterPageProgress
 import eu.kanade.domain.chapter.interactor.SetReadStatus
-import eu.kanade.domain.track.service.TrackPreferences
 import eu.kanade.domain.source.service.SourcePreferences
 import eu.kanade.tachiyomi.data.download.DownloadManager
-import eu.kanade.tachiyomi.data.download.model.Download
 import eu.kanade.tachiyomi.data.library.LibraryUpdateJob
-import eu.kanade.tachiyomi.data.track.TrackerManager
-import eu.kanade.tachiyomi.data.track.mdlist.MdList
 import eu.kanade.tachiyomi.source.online.all.MangaDex
-import eu.kanade.tachiyomi.ui.reader.setting.ReaderPreferences
-import exh.md.dto.ChapterDataDto
 import exh.md.handlers.MangaDexFeatures
 import exh.md.handlers.MangaDexFeedEntry
 import exh.md.utils.MdUtil
-import exh.source.getMainSource
 import kotlinx.collections.immutable.ImmutableList
 import kotlinx.collections.immutable.persistentListOf
 import kotlinx.collections.immutable.toImmutableList
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.flow.update
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.async
-import kotlinx.coroutines.awaitAll
-import kotlinx.coroutines.coroutineScope
 import logcat.LogPriority
+import mihon.domain.manga.model.toDomainManga
+import mihon.domain.source.interactor.UpdateMangaFromRemote
 import tachiyomi.core.common.preference.Preference
 import tachiyomi.core.common.preference.PreferenceStore
 import tachiyomi.core.common.preference.getEnum
+import tachiyomi.core.common.util.lang.launchNonCancellable
 import tachiyomi.core.common.util.lang.launchIO
 import tachiyomi.core.common.util.system.logcat
 import tachiyomi.domain.chapter.interactor.GetChapter
-import tachiyomi.domain.chapter.interactor.GetChaptersByMangaId
-import tachiyomi.domain.chapter.model.Chapter
-import tachiyomi.domain.chapter.model.ChapterUpdate
 import tachiyomi.domain.chapter.repository.ChapterRepository
 import tachiyomi.domain.history.interactor.GetHistory
 import tachiyomi.domain.history.interactor.GetNextChapters
@@ -57,15 +51,13 @@ import tachiyomi.domain.manga.repository.MangaRepository
 import tachiyomi.domain.source.service.SourceManager
 import tachiyomi.domain.updates.interactor.GetUpdates
 import tachiyomi.domain.updates.model.UpdatesWithRelations
-import mihon.domain.manga.model.toDomainManga
-import mihon.domain.source.interactor.UpdateMangaFromRemote
 import uy.kohesive.injekt.Injekt
 import uy.kohesive.injekt.api.get
 import uy.kohesive.injekt.injectLazy
 import java.time.Instant
 import java.time.LocalDate
-import dev.errnolink.tsuzuki.data.library.PageTotals
-import dev.errnolink.tsuzuki.data.library.chapterPageProgress
+import java.time.ZonedDateTime
+
 data class UpNextCard(
     val mangaId: Long,
     val chapterId: Long,
@@ -87,10 +79,12 @@ data class UnifiedFeedState(
     val dayGroups: Map<LocalDate, List<FeedTitleGroup>> = emptyMap(),
     val totalUnreadCount: Int = 0,
     val selectedChip: FeedChip = FeedChip.ALL,
+    val searchQuery: String? = null,
     val isMangaDexLoggedIn: Boolean = false,
     val mangaDexUsername: String? = null,
     val mangaDexLastChecked: Instant? = null,
     val followsError: Boolean = false,
+    val loadError: Boolean = false,
 )
 
 sealed interface FeedNavigation {
@@ -129,17 +123,28 @@ class UnifiedFeedScreenModel : StateScreenModel<UnifiedFeedState>(UnifiedFeedSta
     private val followsSource = MutableStateFlow<List<MangaDexFeedEntry>>(emptyList())
     private var mangaDexSource: MangaDex? = null
     @Volatile private var latestSources: FeedSources? = null
+    private var upNextJob: Job? = null
+    private var feedJob: Job? = null
+
     init {
         val savedChip = chipPref.get()
         mutableState.update { it.copy(selectedChip = savedChip) }
 
-        observeUpNext()
-        observeFeed()
+        upNextJob = observeUpNext()
+        feedJob = observeFeed()
         refreshMangaDexState()
     }
 
-    private fun observeUpNext() {
-        screenModelScope.launchIO {
+    fun retryObservations() {
+        upNextJob?.cancel()
+        feedJob?.cancel()
+        mutableState.update { it.copy(loadError = false, isLoading = true) }
+        upNextJob = observeUpNext()
+        feedJob = observeFeed()
+    }
+
+    private fun observeUpNext(): Job {
+        return screenModelScope.launchIO {
             getHistory.subscribeRecent(
                 limit = 6,
                 unfinishedChapter = null,
@@ -149,6 +154,9 @@ class UnifiedFeedScreenModel : StateScreenModel<UnifiedFeedState>(UnifiedFeedSta
                 .catch { e ->
                     if (e is CancellationException) throw e
                     logcat(LogPriority.ERROR, e) { "Feed up-next flow failed" }
+                    mutableState.update {
+                        it.copy(upNext = persistentListOf(), upNextLoaded = true, loadError = true)
+                    }
                 }
                 .collectLatest { histories ->
                     try {
@@ -188,8 +196,8 @@ class UnifiedFeedScreenModel : StateScreenModel<UnifiedFeedState>(UnifiedFeedSta
         }
     }
 
-    private fun observeFeed() {
-        screenModelScope.launchIO {
+    private fun observeFeed(): Job {
+        return screenModelScope.launchIO {
             val updatesFlow = getUpdates.subscribe(
                 ZonedDateTime.now().minusMonths(3).toInstant(),
                 unread = null,
@@ -204,6 +212,9 @@ class UnifiedFeedScreenModel : StateScreenModel<UnifiedFeedState>(UnifiedFeedSta
                 .catch { e ->
                     if (e is CancellationException) throw e
                     logcat(LogPriority.ERROR, e) { "Feed sources flow failed" }
+                    mutableState.update {
+                        it.copy(isLoading = false, isRefreshing = false, loadError = true)
+                    }
                 }
                 .collectLatest { sources ->
                     latestSources = sources
@@ -234,11 +245,22 @@ class UnifiedFeedScreenModel : StateScreenModel<UnifiedFeedState>(UnifiedFeedSta
             val loggedIn = current?.isLogged() == true
             val username = if (loggedIn) current?.getUsername()?.takeIf { it.isNotBlank() } else null
 
-            mutableState.update {
-                it.copy(
-                    isMangaDexLoggedIn = loggedIn,
-                    mangaDexUsername = username,
-                )
+            if (!loggedIn && state.value.selectedChip == FeedChip.MANGADEX) {
+                chipPref.set(FeedChip.ALL)
+                mutableState.update {
+                    it.copy(
+                        selectedChip = FeedChip.ALL,
+                        isMangaDexLoggedIn = false,
+                        mangaDexUsername = null,
+                    )
+                }
+            } else {
+                mutableState.update {
+                    it.copy(
+                        isMangaDexLoggedIn = loggedIn,
+                        mangaDexUsername = username,
+                    )
+                }
             }
 
             if (loggedIn && current != null) {
@@ -248,6 +270,8 @@ class UnifiedFeedScreenModel : StateScreenModel<UnifiedFeedState>(UnifiedFeedSta
                     val feedPage = features.feed(0)
                     followsSource.value = feedPage.entries
                     mutableState.update { it.copy(mangaDexLastChecked = Instant.now()) }
+                } catch (e: CancellationException) {
+                    throw e
                 } catch (e: Exception) {
                     logcat(LogPriority.WARN, e) { "Failed to fetch follows feed" }
                     mutableState.update { it.copy(followsError = true) }
@@ -255,7 +279,12 @@ class UnifiedFeedScreenModel : StateScreenModel<UnifiedFeedState>(UnifiedFeedSta
             } else {
                 followsSource.value = emptyList()
             }
-            latestSources?.let { rebuildFeed(it.copy(follows = followsSource.value)) }
+            val currentSources = latestSources
+            if (currentSources != null) {
+                rebuildFeed(currentSources.copy(follows = followsSource.value))
+            } else {
+                mutableState.update { it.copy(isRefreshing = false) }
+            }
         }
     }
 
@@ -306,7 +335,8 @@ class UnifiedFeedScreenModel : StateScreenModel<UnifiedFeedState>(UnifiedFeedSta
         val favMangaIds = sources.favorites.map { it.id }.toSet()
 
         val merged = FeedMerger.merge(libItems, followsItems, favMangaIds, favUuids)
-        val filtered = FeedMerger.filter(merged, state.value.selectedChip, state.value.isMangaDexLoggedIn, sourcePreferences.hideInLibraryFeedItems().get())
+        val chipped = FeedMerger.filter(merged, state.value.selectedChip, state.value.isMangaDexLoggedIn, sourcePreferences.hideInLibraryFeedItems().get())
+        val filtered = FeedMerger.filterByQuery(chipped, state.value.searchQuery)
         val groups = FeedMerger.groupByDayAndTitle(filtered, java.time.ZoneId.systemDefault())
 
         mutableState.update {
@@ -325,19 +355,38 @@ class UnifiedFeedScreenModel : StateScreenModel<UnifiedFeedState>(UnifiedFeedSta
         latestSources?.let { rebuildFeed(it) }
     }
 
+    fun setQuery(query: String?) {
+        if (state.value.searchQuery == query) return
+        mutableState.update { it.copy(searchQuery = query) }
+        latestSources?.let { rebuildFeed(it) }
+    }
+
     fun refreshAll() {
         mutableState.update { it.copy(isRefreshing = true) }
-        LibraryUpdateJob.startNow(Injekt.get())
+        screenModelScope.launchNonCancellable {
+            LibraryUpdateJob.startNow(Injekt.get<Application>())
+        }
         refreshMangaDexState()
     }
 
     fun markGroupAsRead(group: FeedTitleGroup) {
         screenModelScope.launchIO {
-            val chapterIds = group.chapters.mapNotNull { it.chapterId }
+            val chapterIds = group.chapters.filter(::canMarkChapterRead).mapNotNull { it.chapterId }
             if (chapterIds.isNotEmpty()) {
                 val domainChapters = chapterIds.mapNotNull { getChapter.await(it) }
-                setReadStatus.await(read = true, chapters = domainChapters.toTypedArray())
+                if (domainChapters.isNotEmpty()) {
+                    setReadStatus.await(read = true, chapters = domainChapters.toTypedArray())
+                }
             }
+        }
+    }
+
+    fun markChapterAsRead(chapter: FeedChapterItem) {
+        val chapterId = chapter.chapterId ?: return
+        if (chapter.isRead) return
+        screenModelScope.launchIO {
+            val domainChapter = getChapter.await(chapterId) ?: return@launchIO
+            setReadStatus.await(read = true, chapters = arrayOf(domainChapter))
         }
     }
 

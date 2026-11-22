@@ -2,6 +2,7 @@ package exh.recs
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.material3.SnackbarHostState
+import dev.errnolink.tsuzuki.designsystem.ToastHostState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Checklist
 import androidx.compose.material.icons.outlined.Close
@@ -76,7 +77,7 @@ class BrowseRecommendsScreen(
         }
         // KMK <--
 
-        val snackbarHostState = remember { SnackbarHostState() }
+        val toasts = remember { ToastHostState() }
 
         val onClickItem = { manga: Manga ->
             navigator.push(
@@ -122,7 +123,7 @@ class BrowseRecommendsScreen(
         ShellContentScaffold(
             title = title,
             navigateUp = navigator::pop,
-            snackbar = snackbarHostState,
+            toasts = toasts,
             actions = if (bulkFavoriteState.selectionMode) {
                 listOf(
                     ShellTopAction(
@@ -158,7 +159,7 @@ class BrowseRecommendsScreen(
                 columns = screenModel.getColumnsPreference(LocalConfiguration.current.orientation),
 
                 displayMode = screenModel.displayMode,
-                snackbarHostState = snackbarHostState,
+                toasts = toasts,
                 contentPadding = paddingValues,
                 onWebViewClick = null,
                 onHelpClick = null,

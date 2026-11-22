@@ -42,7 +42,14 @@ object NekoMergeReconciler {
 
 
     suspend fun reconcileOnce(): Summary {
-        val repaired = repairMergeDuplicates()
+        val repaired = try {
+            repairMergeDuplicates()
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            logcat(LogPriority.ERROR, e) { "Neko merge duplicate repair failed" }
+            0
+        }
         val candidates = handler.awaitList { mangasQueries.getAll(MangaMapper::mapManga) }
             .filter { NekoBackupMapper.UNRESOLVED_CHAPTERS in it.memo.keys }
         if (candidates.isEmpty()) return Summary(0, repaired)
@@ -101,6 +108,7 @@ object NekoMergeReconciler {
         }
         val references = handler.awaitList { mergedQueries.selectByMergeUrl(manga.url, MergedMangaMapper::map) }
         val parent = references.firstOrNull() ?: return 0
+        val mergeId = parent.mergeId ?: return 0
 
         var linked = 0
         var remaining = unresolved.toList()
@@ -135,7 +143,7 @@ object NekoMergeReconciler {
                     chapterSortMode = 0,
                     chapterPriority = 0,
                     downloadChapters = true,
-                    mergeId = parent.mergeId ?: 0L,
+                    mergeId = mergeId,
                     mergeUrl = parent.mergeUrl,
                     mangaId = getMangaByUrlAndSourceId.await(childUrl, source.id)?.id,
                     mangaUrl = childUrl,

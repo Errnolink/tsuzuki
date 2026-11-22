@@ -38,8 +38,8 @@ fun TextPreferenceWidget(
         leading = icon?.let {
             {
                 when (it) {
-                    is ImageVector -> Icon(it, null, Modifier.size(24.dp), tint = TsuzukiTheme.colors.secondary)
-                    is Painter -> Icon(it, null, Modifier.size(24.dp), tint = TsuzukiTheme.colors.secondary)
+                    is ImageVector -> Icon(it, null, Modifier.size(PreferenceLeadingIconWidth), tint = TsuzukiTheme.colors.secondary)
+                    is Painter -> Icon(it, null, Modifier.size(PreferenceLeadingIconWidth), tint = TsuzukiTheme.colors.secondary)
                 }
             }
         },

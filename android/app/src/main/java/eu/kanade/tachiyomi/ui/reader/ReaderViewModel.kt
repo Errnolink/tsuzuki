@@ -44,9 +44,8 @@ import eu.kanade.tachiyomi.ui.reader.model.ViewerChapters
 import eu.kanade.tachiyomi.ui.reader.setting.ReaderOrientation
 import eu.kanade.tachiyomi.ui.reader.setting.ReaderPreferences
 import eu.kanade.tachiyomi.ui.reader.setting.ReadingMode
-import eu.kanade.tachiyomi.ui.reader.viewer.Viewer
-import eu.kanade.tachiyomi.ui.reader.viewer.pager.PagerViewer
-import eu.kanade.tachiyomi.ui.reader.viewer.pager.R2LPagerViewer
+import dev.errnolink.tsuzuki.reader.readerCanvasArgb
+import eu.kanade.tachiyomi.util.system.isNightMode
 import eu.kanade.tachiyomi.util.chapter.filterDownloaded
 import eu.kanade.tachiyomi.util.chapter.removeDuplicates
 import eu.kanade.tachiyomi.util.editCover
@@ -268,6 +267,13 @@ class ReaderViewModel @JvmOverloads constructor(
     private var chapterReadStartTime: Long? = null
 
     private var chapterToDownload: Download? = null
+
+    /**
+     * The chapter currently being asynchronously loaded in [onPageSelected]; repeated selection
+     * events for the same chapter (rapid page settles around a transition) are ignored until the
+     * load settles.
+     */
+    private var loadingChapterId: Long? = null
 
     private var unfilteredChapterList: List<Chapter> = emptyList()
 
@@ -607,6 +613,10 @@ class ReaderViewModel @JvmOverloads constructor(
                     throw e
                 }
                 logcat(LogPriority.ERROR, e)
+            } finally {
+                if (loadingChapterId == chapter.chapter.id) {
+                    loadingChapterId = null
+                }
             }
         }
     }
@@ -690,12 +700,6 @@ class ReaderViewModel @JvmOverloads constructor(
         eventChannel.trySend(Event.ReloadViewerChapters)
     }
 
-    fun onViewerLoaded(viewer: Viewer?) {
-        mutableState.update {
-            it.copy(viewer = viewer)
-        }
-    }
-
     /**
      * Called every time a page changes on the reader. Used to mark the flag of chapters being
      * read, update tracking services, enqueue downloaded chapter deletion, and updating the active chapter if this
@@ -722,7 +726,8 @@ class ReaderViewModel @JvmOverloads constructor(
             updateChapterProgress(selectedChapter, page/* SY --> */, hasExtraPage/* SY <-- */)
         }
 
-        if (selectedChapter != getCurrentChapter()) {
+        if (selectedChapter != getCurrentChapter() && loadingChapterId != selectedChapter.chapter.id) {
+            loadingChapterId = selectedChapter.chapter.id
             logcat { "Setting ${selectedChapter.chapter.url} as active" }
             loadNewChapter(selectedChapter)
         }
@@ -898,7 +903,7 @@ class ReaderViewModel @JvmOverloads constructor(
         if (!syncPreferences.isSyncEnabled()) return
         pageSyncDebounce?.cancel()
         pageSyncDebounce = null
-        SyncDataJob.startNow(Injekt.get<Application>())
+        viewModelScope.launchIO { SyncDataJob.startNow(Injekt.get<Application>()) }
     }
 
     /**
@@ -1307,16 +1312,16 @@ class ReaderViewModel @JvmOverloads constructor(
     // SY -->
     fun saveImages() {
         val (firstPage, secondPage) = (state.value.dialog as? Dialog.PageActions ?: return)
-        val viewer = state.value.viewer as? PagerViewer ?: return
-        val isLTR = (viewer !is R2LPagerViewer) xor (viewer.config.invertDoublePages)
-        val bg = viewer.config.pageCanvasColor
+        val isRtl = ReadingMode.fromPreference(getMangaReadingMode()) == ReadingMode.RIGHT_TO_LEFT
+        val isLTR = (!isRtl) xor readerPreferences.invertDoublePages().get()
+        val context = Injekt.get<Application>()
+        val bg = readerCanvasArgb(readerPreferences.readerTheme().get(), context.isNightMode())
 
         if (firstPage.status != Page.State.Ready) return
         if (secondPage?.status != Page.State.Ready) return
 
         val manga = manga ?: return
 
-        val context = Injekt.get<Application>()
         val notifier = SaveImageNotifier(context)
         notifier.onClear()
 
@@ -1421,15 +1426,15 @@ class ReaderViewModel @JvmOverloads constructor(
     // SY -->
     fun shareImages(copyToClipboard: Boolean) {
         val (firstPage, secondPage) = (state.value.dialog as? Dialog.PageActions ?: return)
-        val viewer = state.value.viewer as? PagerViewer ?: return
-        val isLTR = (viewer !is R2LPagerViewer) xor (viewer.config.invertDoublePages)
-        val bg = viewer.config.pageCanvasColor
+        val isRtl = ReadingMode.fromPreference(getMangaReadingMode()) == ReadingMode.RIGHT_TO_LEFT
+        val isLTR = (!isRtl) xor readerPreferences.invertDoublePages().get()
+        val context = Injekt.get<Application>()
+        val bg = readerCanvasArgb(readerPreferences.readerTheme().get(), context.isNightMode())
 
         if (firstPage.status != Page.State.Ready) return
         if (secondPage?.status != Page.State.Ready) return
         val manga = manga ?: return
 
-        val context = Injekt.get<Application>()
         val destDir = context.cacheImageDir
 
         try {
@@ -1450,6 +1455,64 @@ class ReaderViewModel @JvmOverloads constructor(
         }
     }
     // SY <--
+
+    /** Saves a captured PNG region or full page from ReaderCaptureOverlay to Pictures. */
+    fun saveCapturedBitmap(page: ReaderPage, pngBytes: ByteArray) {
+        val manga = manga ?: return
+        val context = Injekt.get<Application>()
+        val notifier = SaveImageNotifier(context)
+        notifier.onClear()
+
+        val filename = "${generateFilename(manga, page)}-capture"
+        val relativePath = if (readerPreferences.folderPerManga().get()) {
+            DiskUtil.buildValidFilename(manga.title)
+        } else {
+            ""
+        }
+
+        viewModelScope.launchNonCancellable {
+            try {
+                val uri = imageSaver.save(
+                    image = Image.Page(
+                        inputStream = { pngBytes.inputStream() },
+                        name = filename,
+                        location = Location.Pictures.create(relativePath),
+                    ),
+                )
+                withUIContext {
+                    notifier.onComplete(uri)
+                    eventChannel.send(Event.SavedImage(SaveImageResult.Success(uri)))
+                }
+            } catch (e: Throwable) {
+                notifier.onError(e.message)
+                eventChannel.send(Event.SavedImage(SaveImageResult.Error(e)))
+            }
+        }
+    }
+
+    /** Writes a captured PNG region or full page to cache and opens the system share sheet. */
+    fun shareCapturedBitmap(page: ReaderPage, pngBytes: ByteArray) {
+        val manga = manga ?: return
+        val context = Injekt.get<Application>()
+        val destDir = context.cacheImageDir
+        val filename = "${generateFilename(manga, page)}-capture"
+
+        try {
+            viewModelScope.launchNonCancellable {
+                destDir.deleteRecursively()
+                val uri = imageSaver.save(
+                    image = Image.Page(
+                        inputStream = { pngBytes.inputStream() },
+                        name = filename,
+                        location = Location.Cache,
+                    ),
+                )
+                eventChannel.send(Event.ShareImage(uri, page))
+            }
+        } catch (e: Throwable) {
+            logcat(LogPriority.ERROR, e)
+        }
+    }
 
     /**
      * Sets the image of the selected page as cover and notifies the UI of the result.
@@ -1546,11 +1609,6 @@ class ReaderViewModel @JvmOverloads constructor(
         val bookmarked: Boolean = false,
         val isLoadingAdjacentChapter: Boolean = false,
         val currentPage: Int = -1,
-
-        /**
-         * Viewer used to display the pages (pager, webtoon, ...).
-         */
-        val viewer: Viewer? = null,
         val dialog: Dialog? = null,
         val menuVisible: Boolean = false,
         @field:IntRange(from = -100, to = 100) val brightnessOverlayValue: Int = 0,

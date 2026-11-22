@@ -6,6 +6,7 @@ import eu.kanade.presentation.more.settings.screen.SearchableSettings
 import android.annotation.SuppressLint
 import android.content.ActivityNotFoundException
 import android.content.Intent
+import android.provider.OpenableColumns
 import android.provider.Settings
 import android.webkit.WebStorage
 import android.webkit.WebView
@@ -132,7 +133,7 @@ val prefKeys: Set<String> = setOf(
 
         val troubleshooting = newGroup(
             title = "Troubleshoot",
-            items = listOf(
+            items = listOfNotNull(
                 Preference.PreferenceItem.TextPreference(
                     title = stringResource(MR.strings.pref_dump_crash_logs),
                     subtitle = stringResource(MR.strings.pref_dump_crash_logs_summary),
@@ -142,13 +143,26 @@ val prefKeys: Set<String> = setOf(
                         }
                     },
                 ),
-                Preference.PreferenceItem.TextPreference(
-                    title = "Share performance log",
-                    subtitle = "Share the latest startup and scroll timeline trace",
-                    onClick = {
-                        scope.launch {
-                            dev.errnolink.tsuzuki.perf.PerfTimelineTracer.shareLatestLog(context)
-                        }
+                if (!isReleaseBuildType) {
+                    Preference.PreferenceItem.TextPreference(
+                        title = "Share performance log",
+                        subtitle = "Share the latest startup and scroll timeline trace",
+                        onClick = {
+                            scope.launch {
+                                dev.errnolink.tsuzuki.perf.PerfTimelineTracer.shareLatestLog(context)
+                            }
+                        },
+                    )
+                } else {
+                    null
+                },
+                Preference.PreferenceItem.SwitchPreference(
+                    preference = networkPreferences.redactSensitiveHeaders(),
+                    title = stringResource(MR.strings.tsuzuki_redact_sensitive_headers),
+                    subtitle = stringResource(MR.strings.tsuzuki_redact_sensitive_headers_summary),
+                    onValueChanged = {
+                        context.toast(MR.strings.requires_app_restart)
+                        true
                     },
                 ),
                 Preference.PreferenceItem.TextPreference(
@@ -171,6 +185,10 @@ val prefKeys: Set<String> = setOf(
             ),
         )
 
+        val debugOnlyGroups =
+            // SY -->
+            if (!isReleaseBuildType) listOf(getDeveloperToolsGroup()) else emptyList()
+        // SY <--
         return listOf(
             troubleshooting,
             getBackgroundActivityGroup(),
@@ -182,10 +200,7 @@ val prefKeys: Set<String> = setOf(
                 downloadPreferences = downloadPreferences,
             ),
             getExtensionsGroup(basePreferences = basePreferences),
-            // SY -->
-            getDeveloperToolsGroup(),
-            // SY <--
-        )
+        ) + debugOnlyGroups
     }
 
     // SY ->
@@ -203,6 +218,18 @@ val prefKeys: Set<String> = setOf(
                 val flags = Intent.FLAG_GRANT_READ_URI_PERMISSION
                 context.contentResolver.takePersistableUriPermission(uri, flags)
                 basePreferences.displayProfile().set(uri.toString())
+            }
+        }
+        val displayProfileName = remember {
+            val uri = basePreferences.displayProfile().get()
+            when {
+                uri.isBlank() -> null
+                else ->
+                    runCatching {
+                        context.contentResolver
+                            .query(uri.toUri(), arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)
+                            ?.use { cursor -> if (cursor.moveToFirst()) cursor.getString(0) else null }
+                    }.getOrNull() ?: "Custom profile"
             }
         }
         return Preference.PreferenceGroup(
@@ -235,7 +262,7 @@ val prefKeys: Set<String> = setOf(
                 ),
                 Preference.PreferenceItem.TextPreference(
                     title = stringResource(MR.strings.pref_display_profile),
-                    subtitle = basePreferences.displayProfile().get(),
+                    subtitle = displayProfileName,
                     onClick = {
                         chooseColorProfile.launch(arrayOf("*/*"))
                     },
@@ -418,7 +445,7 @@ val prefKeys: Set<String> = setOf(
             preferenceItems = persistentListOf(
                 Preference.PreferenceItem.TextPreference(
                     title = stringResource(MR.strings.pref_refresh_library_covers),
-                    onClick = { MetadataUpdateJob.startNow(context) },
+                    onClick = { scope.launchNonCancellable { MetadataUpdateJob.startNow(context) } },
                 ),
                 Preference.PreferenceItem.TextPreference(
                     title = stringResource(MR.strings.pref_reset_viewer_flags),
@@ -475,45 +502,50 @@ val prefKeys: Set<String> = setOf(
                 onDismissRequest = dismiss,
             )
         }
-        return Preference.PreferenceGroup(
-            title = stringResource(MR.strings.label_extensions),
-            preferenceItems = persistentListOf(
-                Preference.PreferenceItem.ListPreference(
-                    preference = extensionInstallerPref,
-                    entries = extensionInstallerPref.entries
-                        .filter {
-                            // TODO: allow private option in stable versions once URL handling is more fleshed out
-                            if (isReleaseBuildType) {
-                                it != BasePreferences.ExtensionInstaller.PRIVATE
-                            } else {
-                                true
-                            }
-                        }
-                        .associateWith { stringResource(it.titleRes) }
-                        .toImmutableMap(),
-                    title = stringResource(MR.strings.ext_installer_pref),
-                    onValueChanged = {
-                        if (it == BasePreferences.ExtensionInstaller.SHIZUKU &&
-                            !context.isShizukuInstalled
-                        ) {
-                            shizukuMissing = true
-                            false
+        val extensionRows = listOfNotNull(
+            Preference.PreferenceItem.ListPreference(
+                preference = extensionInstallerPref,
+                entries = extensionInstallerPref.entries
+                    .filter {
+                        // TODO: allow private option in stable versions once URL handling is more fleshed out
+                        if (isReleaseBuildType) {
+                            it != BasePreferences.ExtensionInstaller.PRIVATE
                         } else {
                             true
                         }
-                    },
-                ),
-                // KMK -->
-                Preference.PreferenceItem.InfoPreference(stringResource(KMR.strings.pref_private_installer_warning)),
-                // KMK <--
-                Preference.PreferenceItem.TextPreference(
-                    title = stringResource(MR.strings.ext_revoke_trust),
-                    onClick = {
-                        trustExtension.revokeAll()
-                        context.toast(MR.strings.requires_app_restart)
-                    },
-                ),
+                    }
+                    .associateWith { stringResource(it.titleRes) }
+                    .toImmutableMap(),
+                title = stringResource(MR.strings.ext_installer_pref),
+                onValueChanged = {
+                    if (it == BasePreferences.ExtensionInstaller.SHIZUKU &&
+                        !context.isShizukuInstalled
+                    ) {
+                        shizukuMissing = true
+                        false
+                    } else {
+                        true
+                    }
+                },
             ),
+            // KMK -->
+            if (!isReleaseBuildType) {
+                Preference.PreferenceItem.InfoPreference(stringResource(KMR.strings.pref_private_installer_warning))
+            } else {
+                null
+            },
+            // KMK <--
+            Preference.PreferenceItem.TextPreference(
+                title = stringResource(MR.strings.ext_revoke_trust),
+                onClick = {
+                    trustExtension.revokeAll()
+                    context.toast(MR.strings.requires_app_restart)
+                },
+            ),
+        )
+        return newGroup(
+            title = stringResource(MR.strings.label_extensions),
+            items = extensionRows,
         )
     }
 
@@ -525,7 +557,7 @@ val prefKeys: Set<String> = setOf(
         val exhPreferences = remember { Injekt.get<ExhPreferences>() }
         val delegateSourcePreferences = remember { Injekt.get<DelegateSourcePreferences>() }
         return Preference.PreferenceGroup(
-            title = "Developer & EH tools",
+            title = "Developer tools",
             preferenceItems = persistentListOf(
                 Preference.PreferenceItem.SwitchPreference(
                     preference = sourcePreferences.enableSourceBlacklist(),

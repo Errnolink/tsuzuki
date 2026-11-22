@@ -59,6 +59,28 @@ class HoldingSubscriptionsTest {
         }
     }
 
+    @Test
+    fun `during a library update an open screen re-runs its query a few times, not once per title, and ends current`() = runBlocking {
+        val seen = CopyOnWriteArrayList<Int>()
+        val screen = launch(Dispatchers.IO) {
+            handler.subscribeToList { mangasQueries.getAllMangaSourceAndUrl() }.collect { seen += it.size }
+        }
+        withTimeout(5_000) { while (seen.isEmpty()) kotlinx.coroutines.delay(10) }
+
+        handler.pacingSubscriptions {
+            repeat(40) { id ->
+                handler.await(inTransaction = true) { insertManga(id.toLong()) }
+                kotlinx.coroutines.delay(25)
+            }
+            // The screen keeps moving while the update runs.
+            assertTrue(seen.size >= 2, "screen frozen during the update: $seen")
+        }
+
+        withTimeout(5_000) { while (seen.last() != 40) kotlinx.coroutines.delay(10) }
+        screen.cancel()
+        assertTrue(seen.size <= 4, "screen re-ran ${seen.size} times: $seen")
+    }
+
     private fun Database.insertManga(id: Long) {
         mangasQueries.insert(
             source = 1L,

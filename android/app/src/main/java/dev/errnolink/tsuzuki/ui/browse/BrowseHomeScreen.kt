@@ -20,14 +20,17 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Icon
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -44,8 +47,9 @@ import cafe.adriel.voyager.navigator.LocalNavigator
 import cafe.adriel.voyager.navigator.currentOrThrow
 import dev.errnolink.tsuzuki.designsystem.Bookmark
 import dev.errnolink.tsuzuki.designsystem.Check
-import dev.errnolink.tsuzuki.designsystem.ChevronDown
+import dev.errnolink.tsuzuki.designsystem.Chip
 import dev.errnolink.tsuzuki.designsystem.ChevronRight
+import dev.errnolink.tsuzuki.designsystem.MenuButton
 import dev.errnolink.tsuzuki.designsystem.House
 import dev.errnolink.tsuzuki.designsystem.IconButton
 import dev.errnolink.tsuzuki.designsystem.Layers
@@ -54,13 +58,21 @@ import dev.errnolink.tsuzuki.designsystem.Pin
 import dev.errnolink.tsuzuki.designsystem.Plus
 import dev.errnolink.tsuzuki.designsystem.Rss
 import dev.errnolink.tsuzuki.designsystem.RefreshCw
+import dev.errnolink.tsuzuki.designsystem.rememberMorphingSearchState
+import dev.errnolink.tsuzuki.designsystem.TopBarSearch
 import dev.errnolink.tsuzuki.designsystem.Search
 import dev.errnolink.tsuzuki.designsystem.TsuzukiIcons
+import dev.errnolink.tsuzuki.designsystem.SectionHeader
+import dev.errnolink.tsuzuki.designsystem.TsuzukiCorners
+import dev.errnolink.tsuzuki.designsystem.TsuzukiSize
+import dev.errnolink.tsuzuki.ui.shell.CoverTile
+import dev.errnolink.tsuzuki.ui.shell.ShellError
 import dev.errnolink.tsuzuki.designsystem.TsuzukiText
 import dev.errnolink.tsuzuki.designsystem.TsuzukiTheme
 import dev.errnolink.tsuzuki.mangadex.MangaDexDestination
 import dev.errnolink.tsuzuki.mangadex.openMangaDexDestination
 import dev.errnolink.tsuzuki.ui.shell.ShellList
+import dev.errnolink.tsuzuki.ui.shell.ShellRefresh
 import dev.errnolink.tsuzuki.ui.shell.ShellTopAction
 import dev.errnolink.tsuzuki.ui.shell.ShellCover
 import eu.kanade.presentation.browse.components.SourceIcon
@@ -73,7 +85,8 @@ import eu.kanade.tachiyomi.source.online.all.MangaDex
 import eu.kanade.tachiyomi.ui.browse.source.browse.BrowseSourceScreen
 import eu.kanade.tachiyomi.ui.browse.source.browse.BrowseSourceScreenModel.Listing
 import eu.kanade.tachiyomi.ui.browse.source.globalsearch.GlobalSearchScreen
-import eu.kanade.tachiyomi.ui.manga.MangaScreen
+import eu.kanade.tachiyomi.ui.home.HomeScreen
+import dev.errnolink.tsuzuki.ui.motion.openTitle
 import eu.kanade.tachiyomi.util.system.LocaleHelper
 import exh.source.MANGADEX_IDS
 import kotlinx.collections.immutable.ImmutableList
@@ -82,6 +95,12 @@ import tachiyomi.domain.manga.model.asMangaCover
 import tachiyomi.domain.source.model.Source as DomainSource
 import tachiyomi.i18n.MR
 import tachiyomi.presentation.core.i18n.stringResource
+
+internal fun browseShelfCardWidthDp(maxWidthDp: Float, spacingDp: Float = 12f): Float =
+    ((maxWidthDp - 20f) / 2.2f - spacingDp).coerceIn(112f, 180f)
+
+internal fun browseListColumnWidthDp(maxWidthDp: Float, spacingDp: Float = 12f): Float =
+    ((maxWidthDp - 20f) / 1.45f - spacingDp).coerceIn(200f, 320f)
 
 @Composable
 fun BrowseHomeScreen(tab: Tab) {
@@ -92,29 +111,46 @@ fun BrowseHomeScreen(tab: Tab) {
     val feedState by feedScreenModel.state.collectAsState()
 
     var showSourcesSheet by remember { mutableStateOf(false) }
+    val chipsState = rememberLazyListState()
 
+    // N14: every tab root carries the tab bar's search circle (the collapsed bar keeps two
+    // controls). Browse's field submits into Global search (round-10 pattern).
+    var browseQuery by rememberSaveable { mutableStateOf("") }
+    val browseSearchState = rememberMorphingSearchState()
+    val browseSearch = TopBarSearch(
+        state = browseSearchState,
+        query = browseQuery,
+        onQueryChange = { browseQuery = it },
+        placeholder = "Search every source",
+        onSearch = {
+            if (browseQuery.isNotBlank()) {
+                navigator.push(GlobalSearchScreen(browseQuery))
+                // Kasane clears the field on search: the pushed page owns the query now.
+                browseSearchState.collapse()
+                browseQuery = ""
+            }
+        },
+        onClose = { browseQuery = "" },
+    )
+    // BRW-01: the inline field is gone; reselecting the Browse tab is the keyboard path to the
+    // bottom search field.
+    LaunchedEffect(tab.key) {
+        HomeScreen.reselectEvents.collect { if (it == tab.key) browseSearch.state.expand() }
+    }
+
+    ShellRefresh(
+        refreshing = state.isRefreshing,
+        enabled = state.selectedSourceId != null && !state.isLoadingSources,
+        onRefresh = screenModel::refreshShelves,
+    ) {
     ShellList(
         title = "Browse",
         itemSpacing = 0.dp,
+        capContent = false,
+        search = browseSearch,
         actions = listOf(ShellTopAction("Sources", TsuzukiIcons.Layers, { showSourcesSheet = true })),
     ) {
-        item(key = "search-bar") {
-            val sourceNames = remember(state.pinnedSources) {
-                if (state.pinnedSources.isEmpty()) {
-                    "every source"
-                } else {
-                    state.pinnedSources.take(3).joinToString(", ") { it.name }
-                }
-            }
-            BrowseFakeSearchBar(
-                placeholder = "Search $sourceNames",
-                onClick = { navigator.push(GlobalSearchScreen()) },
-                modifier = Modifier.padding(horizontal = 20.dp, vertical = 6.dp),
-            )
-        }
-
         item(key = "source-chips") {
-            val chipsState = remember(state.pinnedSources) { LazyListState() }
             LazyRow(
                 state = chipsState,
                 modifier = Modifier.fillMaxWidth().padding(top = 4.dp, bottom = 10.dp),
@@ -131,7 +167,7 @@ fun BrowseHomeScreen(tab: Tab) {
                     )
                 }
                 item(key = "all-sources-chip") {
-                    BrowseAllSourcesChip(onClick = { showSourcesSheet = true })
+                    BrowseAllSourcesButton(onClick = { showSourcesSheet = true })
                 }
             }
         }
@@ -168,7 +204,7 @@ fun BrowseHomeScreen(tab: Tab) {
                     },
                     shelfKey = state.selectedSourceId,
                     items = state.popularManga,
-                    onClick = { navigator.push(MangaScreen(it.id, true)) },
+                    onClick = { openTitle(navigator, it.id, fromSource = true) },
                 )
             }
         }
@@ -188,23 +224,20 @@ fun BrowseHomeScreen(tab: Tab) {
                     },
                     shelfKey = state.selectedSourceId,
                     items = state.recentManga,
-                    onClick = { navigator.push(MangaScreen(it.id, true)) },
+                    onClick = { openTitle(navigator, it.id, fromSource = true) },
                 )
             }
         }
 
         if (state.loadError && !state.isLoadingPopular && !state.isLoadingRecent && state.popularManga.isEmpty() && state.recentManga.isEmpty()) {
             item(key = "browse-error") {
-                EmptyState(
+                ShellError(
                     title = "Could not load titles",
                     description = "Check your connection and try again.",
-                    icon = { Icon(TsuzukiIcons.RefreshCw, null, Modifier.size(36.dp), tint = TsuzukiTheme.colors.secondary) },
-                    action = {
-                        PillButton("Retry", { screenModel.retryShelves() })
-                    },
+                    onRetry = { screenModel.retryShelves() },
                 )
             }
-        } else if (!state.isLoadingPopular && !state.isLoadingRecent && state.popularManga.isEmpty() && state.recentManga.isEmpty() && !isMangaDex) {
+        } else if (!state.isLoadingSources && !state.isLoadingPopular && !state.isLoadingRecent && state.popularManga.isEmpty() && state.recentManga.isEmpty() && !isMangaDex) {
             item(key = "browse-empty") {
                 if (selectedSource == null) {
                     EmptyState(
@@ -257,7 +290,7 @@ fun BrowseHomeScreen(tab: Tab) {
                         BrowseShelfRow(
                             shelfKey = "${feedItem.feed.id}:${state.selectedSourceId}",
                             items = results,
-                            onClick = { navigator.push(MangaScreen(it.id, true)) },
+                            onClick = { openTitle(navigator, it.id, fromSource = true) },
                         )
                     }
                 }
@@ -288,6 +321,7 @@ fun BrowseHomeScreen(tab: Tab) {
             Spacer(Modifier.height(16.dp))
         }
     }
+    }
 
     if (showSourcesSheet) {
         SourcesSheet(
@@ -312,138 +346,47 @@ fun BrowseHomeScreen(tab: Tab) {
 }
 
 @Composable
-private fun BrowseFakeSearchBar(
-    placeholder: String,
-    onClick: () -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    val colors = TsuzukiTheme.colors
-    Row(
-        modifier = modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(12.dp))
-            .background(colors.grouped)
-            .clickable(onClick = onClick)
-            .padding(horizontal = 14.dp, vertical = 12.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(10.dp),
-    ) {
-        Icon(
-            TsuzukiIcons.Search,
-            null,
-            Modifier.size(18.dp),
-            tint = colors.secondary,
-        )
-        TsuzukiText(
-            placeholder,
-            style = TsuzukiTheme.typography.body,
-            color = colors.secondary,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-            modifier = Modifier.weight(1f),
-        )
-    }
-}
-
-@Composable
 private fun BrowseSourceChip(
     source: DomainSource,
     selected: Boolean,
     onClick: () -> Unit,
 ) {
-    val colors = TsuzukiTheme.colors
-    val bg = if (selected) colors.text else colors.grouped
-    val fg = if (selected) colors.background else colors.secondary
-
     Box(
-        modifier = Modifier
-            .heightIn(min = 48.dp)
-            .clickable(role = androidx.compose.ui.semantics.Role.Button, onClick = onClick),
+        modifier = Modifier.heightIn(min = 48.dp),
         contentAlignment = Alignment.Center,
     ) {
-        Row(
-            modifier = Modifier
-                .clip(CircleShape)
-                .background(bg)
-                .heightIn(min = 40.dp)
-                .padding(horizontal = 12.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(6.dp),
-        ) {
-            SourceIcon(source = source, modifier = Modifier.size(16.dp))
-            TsuzukiText(
-                source.visualName,
-                style = TsuzukiTheme.typography.subhead.copy(fontWeight = FontWeight.SemiBold),
-                color = fg,
-            )
-        }
+        Chip(
+            label = source.visualName,
+            selected = selected,
+            onClick = onClick,
+            leading = {
+                SourceIcon(source = source, modifier = Modifier.size(16.dp))
+            },
+        )
     }
 }
 
 @Composable
-private fun BrowseAllSourcesChip(
+private fun BrowseAllSourcesButton(
     onClick: () -> Unit,
 ) {
-    val colors = TsuzukiTheme.colors
-    Box(
-        modifier = Modifier
-            .heightIn(min = 48.dp)
-            .clickable(role = androidx.compose.ui.semantics.Role.Button, onClick = onClick),
-        contentAlignment = Alignment.Center,
-    ) {
-        Row(
-            modifier = Modifier
-                .clip(CircleShape)
-                .background(colors.grouped)
-                .heightIn(min = 40.dp)
-                .padding(horizontal = 12.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(4.dp),
-        ) {
-            TsuzukiText(
-                "All sources",
-                style = TsuzukiTheme.typography.subhead.copy(fontWeight = FontWeight.SemiBold),
-                color = colors.secondary,
-            )
-            Icon(
-                TsuzukiIcons.ChevronDown,
-                null,
-                Modifier.size(14.dp),
-                tint = colors.secondary,
-            )
-        }
-    }
+    MenuButton(label = "All sources", onClick = onClick)
 }
 
+
 @Composable
-private fun BrowseSectionHeader(
-    title: String,
-    onSeeAll: (() -> Unit)? = null,
-) {
-    val colors = TsuzukiTheme.colors
-    Row(
-        modifier = Modifier
+private fun BrowseSectionHeader(title: String, onSeeAll: (() -> Unit)? = null) {
+    SectionHeader(
+        title,
+        Modifier
             .fillMaxWidth()
             .heightIn(min = 48.dp)
             .clickable(enabled = onSeeAll != null) { onSeeAll?.invoke() }
             .padding(horizontal = 20.dp, vertical = 10.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(2.dp),
-    ) {
-        TsuzukiText(
-            title,
-            style = TsuzukiTheme.typography.footnote.copy(fontWeight = FontWeight.Bold, letterSpacing = 0.5.sp),
-            color = colors.secondary,
-        )
-        if (onSeeAll != null) {
-            Icon(
-                TsuzukiIcons.ChevronRight,
-                null,
-                Modifier.size(14.dp),
-                tint = colors.secondary,
-            )
-        }
-    }
+        titleStyle = TsuzukiTheme.typography.footnote.copy(fontWeight = FontWeight.Bold, letterSpacing = 0.5.sp),
+        onAction = onSeeAll,
+        actionChevron = onSeeAll != null,
+    )
 }
 
 @Composable
@@ -476,7 +419,7 @@ private fun BrowseListShelf(
         BrowseSectionHeader(title, onSeeAll)
         BoxWithConstraints(Modifier.fillMaxWidth()) {
             val spacing = 12.dp
-            val columnWidth = (maxWidth - 20.dp) / 1.45f - spacing
+            val columnWidth = browseListColumnWidthDp(maxWidth.value, spacing.value).dp
             val state = remember(shelfKey) { LazyListState() }
             LazyRow(
                 state = state,
@@ -513,19 +456,12 @@ private fun BrowseListShelfRow(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(10.dp),
     ) {
-        Box(
-            modifier = Modifier
-                .width(44.dp)
-                .height(66.dp)
-                .clip(RoundedCornerShape(8.dp)),
-        ) {
-            ShellCover(
-                cover = manga.asMangaCover(),
-                title = manga.title,
-                fixedRatio = 2f / 3f,
-                modifier = Modifier.fillMaxSize(),
-            )
-        }
+        CoverTile(
+            cover = manga.asMangaCover(),
+            title = manga.title,
+            modifier = Modifier.width(44.dp).height(66.dp),
+            shape = RoundedCornerShape(8.dp),
+        )
         TsuzukiText(
             manga.title,
             style = TsuzukiTheme.typography.subhead.copy(fontWeight = FontWeight.SemiBold),
@@ -543,7 +479,7 @@ private fun BrowseShelfRow(
 ) {
     BoxWithConstraints(Modifier.fillMaxWidth()) {
         val spacing = 12.dp
-        val cardWidth = (maxWidth - 20.dp) / 2.2f - spacing
+        val cardWidth = browseShelfCardWidthDp(maxWidth.value, spacing.value).dp
         val state = remember(shelfKey) { LazyListState() }
         LazyRow(
             state = state,
@@ -575,37 +511,13 @@ private fun BrowseShelfCard(
             .clickable(onClick = onClick),
         verticalArrangement = Arrangement.spacedBy(4.dp),
     ) {
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(width * 1.5f)
-                .clip(RoundedCornerShape(10.dp)),
-        ) {
-            ShellCover(
-                cover = manga.asMangaCover(),
-                title = manga.title,
-                fixedRatio = 2f / 3f,
-                modifier = Modifier.fillMaxSize(),
-            )
-            if (manga.favorite) {
-                Box(
-                    Modifier
-                        .align(Alignment.TopEnd)
-                        .padding(5.dp)
-                        .size(20.dp)
-                        .clip(CircleShape)
-                        .background(Color.Black.copy(alpha = 0.78f)),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Icon(
-                        TsuzukiIcons.Check,
-                        null,
-                        Modifier.size(12.dp),
-                        tint = Color(0xFF7EE0A5),
-                    )
-                }
-            }
-        }
+        CoverTile(
+            cover = manga.asMangaCover(),
+            title = manga.title,
+            modifier = Modifier.fillMaxWidth().height(width * 1.5f),
+            shape = RoundedCornerShape(10.dp),
+            inLibraryCheck = manga.favorite,
+        )
         TsuzukiText(
             manga.title,
             style = TsuzukiTheme.typography.caption1.copy(fontWeight = FontWeight.SemiBold),
@@ -660,7 +572,7 @@ private fun BrowseTile(
     val colors = TsuzukiTheme.colors
     Column(
         modifier = modifier
-            .clip(RoundedCornerShape(14.dp))
+            .clip(RoundedCornerShape(TsuzukiCorners.field))
             .background(colors.grouped)
             .clickable(onClick = onClick)
             .padding(vertical = 12.dp, horizontal = 8.dp),
@@ -700,57 +612,36 @@ private fun BrowseInlineSourcesCard(
     ) {
         sorted.forEachIndexed { index, item ->
             val src = item.source
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clickable { onClickSource(src) }
-                    .padding(horizontal = 14.dp, vertical = 10.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(12.dp),
-            ) {
-                SourceIcon(source = src, modifier = Modifier.size(32.dp))
-                Column(Modifier.weight(1f)) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(6.dp),
-                    ) {
-                        TsuzukiText(
-                            src.visualName,
-                            style = TsuzukiTheme.typography.callout.copy(fontWeight = FontWeight.SemiBold),
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                        )
-                        if (item.hasUpdate) {
-                            BrowseUpdateTag()
-                        }
-                    }
-                    TsuzukiText(
-                        LocaleHelper.getSourceDisplayName(src.lang, context),
-                        style = TsuzukiTheme.typography.footnote,
-                        color = colors.secondary,
-                    )
-                }
-                Box(
-                    modifier = Modifier
-                        .size(48.dp)
-                        .clickable { onClickPin(src) },
-                    contentAlignment = Alignment.Center,
-                ) {
+            SourceRow(
+                title = src.visualName,
+                onClick = { onClickSource(src) },
+                titleSemibold = true,
+                subtitle = LocaleHelper.getSourceDisplayName(src.lang, context),
+                leading = { SourceIcon(source = src, modifier = Modifier.size(32.dp)) },
+                titleAccessory = { if (item.hasUpdate) BrowseUpdateTag() },
+                trailing = {
                     Box(
                         modifier = Modifier
-                            .size(36.dp)
-                            .clip(CircleShape),
+                            .size(TsuzukiSize.touch)
+                            .clickable { onClickPin(src) },
                         contentAlignment = Alignment.Center,
                     ) {
-                        Icon(
-                            TsuzukiIcons.Pin,
-                            stringResource(if (item.isPinned) MR.strings.action_unpin else MR.strings.action_pin),
-                            Modifier.size(18.dp),
-                            tint = if (item.isPinned) colors.accent else colors.secondary.copy(alpha = 0.5f),
-                        )
+                        Box(
+                            modifier = Modifier
+                                .size(TsuzukiSize.iconWell)
+                                .clip(CircleShape),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            Icon(
+                                TsuzukiIcons.Pin,
+                                stringResource(if (item.isPinned) MR.strings.action_unpin else MR.strings.action_pin),
+                                Modifier.size(18.dp),
+                                tint = if (item.isPinned) colors.accent else colors.secondary.copy(alpha = 0.5f),
+                            )
+                        }
                     }
-                }
-            }
+                },
+            )
             if (index < sorted.lastIndex) {
                 Spacer(
                     Modifier
@@ -800,6 +691,7 @@ private fun BrowseInlineSourcesCard(
 
 @Composable
 internal fun BrowseUpdateTag() {
+    val tint = if (TsuzukiTheme.colors.isDark) Color(0xFFFFC94A) else Color(0xFF8A5A00)
     Box(
         modifier = Modifier
             .clip(RoundedCornerShape(4.dp))
@@ -809,7 +701,7 @@ internal fun BrowseUpdateTag() {
         TsuzukiText(
             "UPDATE",
             style = TsuzukiTheme.typography.caption2.copy(fontWeight = FontWeight.Bold, fontSize = 9.sp),
-            color = Color(0xFFFFC94A),
+            color = tint,
         )
     }
 }

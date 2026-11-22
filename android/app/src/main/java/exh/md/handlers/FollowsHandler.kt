@@ -161,4 +161,33 @@ class FollowsHandler(
             }
         }
     }
+
+    /**
+     * Tracking info for many titles at once: one `GET /manga/status` for every followed title plus
+     * `GET /rating` in batches of [RATING_BATCH], instead of two requests per title. Keyed by URL.
+     */
+    suspend fun fetchTrackingInfo(urls: List<String>): Map<String, Track> {
+        if (urls.isEmpty()) return emptyMap()
+        return withIOContext {
+            val idToUrl = urls.associateBy { MdUtil.getMangaId(it) }
+            val statusesDef = async { service.readingStatusAllManga().statuses }
+            val ratings = idToUrl.keys.chunked(RATING_BATCH)
+                .map { batch -> async { service.mangasRating(*batch.toTypedArray()).ratings.asMdMap<PersonalRatingDto>() } }
+                .flatMap { it.await().entries }
+                .associate { it.key to it.value }
+            val statuses = statusesDef.await()
+            idToUrl.entries.associate { (id, url) ->
+                url to Track.create(TrackerManager.MDLIST).apply {
+                    title = ""
+                    status = FollowStatus.fromDex(statuses[id]).long
+                    tracking_url = url
+                    score = ratings[id]?.rating?.toDouble() ?: 0.0
+                }
+            }
+        }
+    }
+
+    private companion object {
+        const val RATING_BATCH = 100
+    }
 }

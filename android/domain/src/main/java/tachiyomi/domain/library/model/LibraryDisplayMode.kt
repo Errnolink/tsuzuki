@@ -24,7 +24,8 @@ sealed interface LibraryDisplayMode {
 
     companion object {
         val values by lazy { setOf(CompactGrid, ComfortableGrid, ComfortableGridPanorama, List, CoverOnlyGrid) }
-        val default = CompactGrid
+        val default: LibraryDisplayMode
+            get() = CompactGrid
 
         fun deserialize(serialized: String): LibraryDisplayMode {
             return when (serialized) {

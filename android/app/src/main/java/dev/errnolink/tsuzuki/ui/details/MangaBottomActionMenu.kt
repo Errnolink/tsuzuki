@@ -9,8 +9,12 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -27,6 +31,8 @@ import dev.errnolink.tsuzuki.designsystem.CheckCheck
 import dev.errnolink.tsuzuki.designsystem.Download
 import dev.errnolink.tsuzuki.designsystem.Trash2
 import dev.errnolink.tsuzuki.designsystem.X
+import tachiyomi.i18n.MR
+import tachiyomi.presentation.core.i18n.stringResource
 
 private data class BottomMenuAction(val label: String, val icon: ImageVector, val onClick: () -> Unit)
 
@@ -45,14 +51,19 @@ fun MangaBottomActionMenu(
 ) {
     val motion = TsuzukiTheme.motion
     val actions = buildList {
-        onBookmarkClicked?.let { add(BottomMenuAction("Bookmark", TsuzukiIcons.Bookmark, it)) }
-        onRemoveBookmarkClicked?.let { add(BottomMenuAction("Unbookmark", TsuzukiIcons.BookmarkFilled, it)) }
-        onMarkAsReadClicked?.let { add(BottomMenuAction("Read", TsuzukiIcons.Check, it)) }
-        onMarkAsUnreadClicked?.let { add(BottomMenuAction("Unread", TsuzukiIcons.X, it)) }
-        onMarkPreviousAsReadClicked?.let { add(BottomMenuAction("Prev unread", TsuzukiIcons.CheckCheck, it)) }
-        onDownloadClicked?.let { add(BottomMenuAction("Download", TsuzukiIcons.Download, it)) }
-        onDeleteClicked?.let { add(BottomMenuAction("Delete", TsuzukiIcons.Trash2, it)) }
+        onBookmarkClicked?.let { add(BottomMenuAction(stringResource(MR.strings.tsuzuki_bookmark), TsuzukiIcons.Bookmark, it)) }
+        onRemoveBookmarkClicked?.let { add(BottomMenuAction(stringResource(MR.strings.tsuzuki_unbookmark), TsuzukiIcons.BookmarkFilled, it)) }
+        onMarkAsReadClicked?.let { add(BottomMenuAction(stringResource(MR.strings.tsuzuki_read), TsuzukiIcons.Check, it)) }
+        onMarkAsUnreadClicked?.let { add(BottomMenuAction(stringResource(MR.strings.unread), TsuzukiIcons.X, it)) }
+        onMarkPreviousAsReadClicked?.let { add(BottomMenuAction(stringResource(MR.strings.tsuzuki_prev_unread), TsuzukiIcons.CheckCheck, it)) }
+        onDownloadClicked?.let { add(BottomMenuAction(stringResource(MR.strings.action_download), TsuzukiIcons.Download, it)) }
+        onDeleteClicked?.let { add(BottomMenuAction(stringResource(MR.strings.action_delete), TsuzukiIcons.Trash2, it)) }
     }
+    // SEL-02: the selection empties while the bar is still sliding out; the actions it was
+    // opened with stay frozen so the exit never re-labels or empties it.
+    var frozenActions by remember { mutableStateOf(emptyList<BottomMenuAction>()) }
+    if (actions.isNotEmpty()) frozenActions = actions
+    val shownActions = actions.ifEmpty { frozenActions }
     AnimatedVisibility(
         visible = visible && actions.isNotEmpty(),
         enter = if (motion.reduced) fadeIn(M3Motion.reducedFade()) else slideInVertically(M3Motion.enter()) { it },
@@ -64,7 +75,7 @@ fun MangaBottomActionMenu(
             modifier = Modifier.navigationBarsPadding().padding(horizontal = 16.dp, vertical = 12.dp),
         ) {
             Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                actions.chunked(4).forEach { rowActions ->
+                shownActions.chunked(4).forEach { rowActions ->
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         rowActions.forEach { action ->
                             DetailLabeledAction(action.label, action.icon, action.onClick, Modifier.weight(1f))

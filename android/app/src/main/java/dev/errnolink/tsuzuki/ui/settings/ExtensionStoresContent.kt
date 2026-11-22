@@ -74,7 +74,7 @@ private fun ExtensionStoresListItem(
     GroupedRow(
         title = store.name,
         subtitle = if (isDisabled) "Disabled" else store.indexUrl,
-        divider = true,
+        divider = false,
         leading = {
             Image(
                 painter = painterResource(repoResId(store.signingKey)),

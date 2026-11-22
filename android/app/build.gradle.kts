@@ -32,8 +32,8 @@ android {
     defaultConfig {
         applicationId = "dev.errnolink.tsuzuki"
 
-        versionCode = 36
-        versionName = "0.2.2"
+        versionCode = 48
+        versionName = "0.3.0"
 
         buildConfigField("String", "COMMIT_COUNT", "\"${getCommitCount()}\"")
         buildConfigField("String", "COMMIT_SHA", "\"${getGitSha()}\"")
@@ -296,18 +296,13 @@ dependencies {
     // Image loading
     implementation(platform(libs.coil.bom))
     implementation(libs.bundles.coil)
-    implementation(libs.subsamplingscaleimageview) {
-        exclude(module = "image-decoder")
-    }
+    implementation(libs.telephoto.zoomable)
+    implementation(libs.telephoto.zoomable.image.coil3)
     implementation(libs.image.decoder)
 
     // UI libraries
     implementation(libs.material)
     implementation(libs.flexible.adapter.core)
-    implementation(libs.photoview)
-    implementation(libs.directionalviewpager) {
-        exclude(group = "androidx.viewpager", module = "viewpager")
-    }
     implementation(libs.richeditor.compose)
     implementation(libs.aboutLibraries.compose)
     implementation(libs.bundles.voyager)

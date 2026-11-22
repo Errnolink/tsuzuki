@@ -1,32 +1,30 @@
 package dev.errnolink.tsuzuki.ui.reader
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.layout.size
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
-import dev.errnolink.tsuzuki.designsystem.TsuzukiCorners
-import dev.errnolink.tsuzuki.designsystem.TsuzukiSpacing
+import dev.errnolink.tsuzuki.designsystem.ProgressRing
 import dev.errnolink.tsuzuki.designsystem.TsuzukiTheme
-import dev.errnolink.tsuzuki.ui.details.ShimmerBox
-import dev.errnolink.tsuzuki.ui.details.SkeletonPulseClock
+import tachiyomi.i18n.MR
+import tachiyomi.presentation.core.i18n.stringResource
+
 /**
- * Cold-open loading surface shown while the first chapter's pages are being fetched.
- * Uses the reader's canvas color and the CR-3 shimmer language; the viewer takes over
- * as soon as pages arrive.
+ * Cold-open loading surface shown while the first chapter's pages are being fetched: the reader's
+ * canvas colour (the same colour the transition's veil grew in and the page will sit on) with a
+ * quiet progress ring. The viewer takes over as soon as pages arrive: the ring goes the moment
+ * [loading] turns false, while the surface itself fades out over the decoded page.
  */
 @Composable
 fun ReaderLoadingSurface(
     canvasColor: Color,
     dark: Boolean,
+    loading: Boolean,
     modifier: Modifier = Modifier,
 ) {
     TsuzukiTheme(dark = dark) {
@@ -36,29 +34,7 @@ fun ReaderLoadingSurface(
                 .background(canvasColor),
             contentAlignment = Alignment.Center,
         ) {
-            SkeletonPulseClock {
-                Column(
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.spacedBy(TsuzukiSpacing.small),
-                ) {
-                    ShimmerBox(
-                        modifier = Modifier
-                            .width(126.dp)
-                            .height(189.dp),
-                        shape = RoundedCornerShape(TsuzukiCorners.cover),
-                    )
-                    ShimmerBox(
-                        modifier = Modifier
-                            .width(168.dp)
-                            .height(12.dp),
-                    )
-                    ShimmerBox(
-                        modifier = Modifier
-                            .width(112.dp)
-                            .height(12.dp),
-                    )
-                }
-            }
+            if (loading) ProgressRing(0f, stringResource(MR.strings.loading), Modifier.size(22.dp))
         }
     }
 }

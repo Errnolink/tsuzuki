@@ -31,7 +31,7 @@ import java.net.URI
 object MangaDexIntents {
     const val SETTINGS = "eu.kanade.tachiyomi.MANGADEX_SETTINGS"
     data class Entity(val kind: String, val id: String)
-    data class TrackerLink(val service: String, val serviceName: String, val lookupId: String)
+    data class TrackerLink(val service: String, val serviceName: String, val lookupId: String) : java.io.Serializable
     private val uuid = Regex("[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}")
 
     fun entity(url: String?): Entity? {

@@ -17,6 +17,7 @@ import cafe.adriel.voyager.core.model.screenModelScope
 import cafe.adriel.voyager.navigator.LocalNavigator
 import cafe.adriel.voyager.navigator.currentOrThrow
 import dev.errnolink.tsuzuki.designsystem.DetentSheet
+import dev.errnolink.tsuzuki.designsystem.SheetKind
 import dev.errnolink.tsuzuki.designsystem.GroupedRow
 import dev.errnolink.tsuzuki.designsystem.InsetGroupedList
 import dev.errnolink.tsuzuki.designsystem.PillButton
@@ -54,7 +55,7 @@ data class TrackerRemoveScreen(
         }
         val serviceName = screenModel.getName()
         var removeRemoteTrack by remember { mutableStateOf(false) }
-        DetentSheet(true, stringResource(MR.strings.track_delete_title, serviceName), navigator::pop) {
+        DetentSheet(true, stringResource(MR.strings.track_delete_title, serviceName), navigator::pop, kind = SheetKind.Confirm) {
             TsuzukiText(
                 stringResource(MR.strings.track_delete_text, serviceName),
                 Modifier.padding(horizontal = 16.dp),

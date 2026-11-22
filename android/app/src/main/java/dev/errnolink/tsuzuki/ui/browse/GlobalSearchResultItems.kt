@@ -7,8 +7,6 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowRight
 import androidx.compose.material3.Icon
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
@@ -16,6 +14,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import dev.errnolink.tsuzuki.designsystem.Banner
+import dev.errnolink.tsuzuki.designsystem.ChevronRight
+import dev.errnolink.tsuzuki.designsystem.TsuzukiIcons
 import dev.errnolink.tsuzuki.designsystem.NoticeTone
 import dev.errnolink.tsuzuki.designsystem.TsuzukiText
 import dev.errnolink.tsuzuki.designsystem.TsuzukiTheme
@@ -43,7 +43,7 @@ fun GlobalSearchResultItem(
                 TsuzukiText(title, style = TsuzukiTheme.typography.title3, maxLines = 2, overflow = TextOverflow.Ellipsis)
                 if (!subtitle.isNullOrBlank()) TsuzukiText(subtitle, style = TsuzukiTheme.typography.footnote, color = TsuzukiTheme.colors.secondary)
             }
-            Icon(Icons.AutoMirrored.Outlined.KeyboardArrowRight, null, Modifier.size(22.dp), tint = TsuzukiTheme.colors.secondary)
+            Icon(TsuzukiIcons.ChevronRight, null, Modifier.size(22.dp), tint = TsuzukiTheme.colors.secondary)
         }
         content()
     }

@@ -18,6 +18,7 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -57,19 +58,26 @@ import dev.errnolink.tsuzuki.ui.shell.ShellTopAction
 import dev.errnolink.tsuzuki.ui.shell.ShellLoading
 import dev.errnolink.tsuzuki.ui.shell.ShellRefresh
 import eu.kanade.presentation.components.relativeDateText
+import eu.kanade.tachiyomi.data.LibraryUpdateStatus
 import eu.kanade.tachiyomi.data.library.LibraryUpdateJob
 import kotlinx.coroutines.launch
 import mihon.feature.upcoming.UpcomingScreenModel
 import mihon.feature.upcoming.UpcomingUIModel
 import tachiyomi.core.common.Constants
+import tachiyomi.core.common.util.lang.launchNonCancellable
 import tachiyomi.domain.manga.model.Manga
 import tachiyomi.domain.manga.model.asMangaCover
+import uy.kohesive.injekt.Injekt
+import uy.kohesive.injekt.api.get
 import java.time.LocalDate
 import java.time.YearMonth
 import java.time.format.DateTimeFormatter
 import java.time.format.TextStyle
 import java.time.temporal.WeekFields
 import java.util.Locale
+
+internal fun upcomingDateScrollIndex(headerIndex: Int, largeTitles: Boolean): Int =
+    headerIndex + if (largeTitles) 2 else 1
 
 @Composable
 fun UpcomingScreenContent(
@@ -91,7 +99,9 @@ fun UpcomingScreenContent(
     val loading = if (state.isShowingUpdatingMangas) state.isLoadingUpdating else state.isLoadingUpcoming
     var selectedDay by remember { mutableStateOf(LocalDate.now()) }
     val context = LocalContext.current
-    ShellRefresh(refreshing = false, onRefresh = { LibraryUpdateJob.startNow(context) }) {
+    val refreshing by remember { Injekt.get<LibraryUpdateStatus>().isRunning }.collectAsState()
+    val largeTitles = dev.errnolink.tsuzuki.designsystem.largeTitlesEnabled()
+    ShellRefresh(refreshing = refreshing, onRefresh = { scope.launchNonCancellable { LibraryUpdateJob.startNow(context) } }) {
     ShellList(
         title = "Upcoming",
         modifier = modifier,
@@ -117,7 +127,7 @@ fun UpcomingScreenContent(
         item("calendar") {
             UpcomingCalendar(state.selectedYearMonth, selectedDay, events, setSelectedYearMonth) { date ->
                 selectedDay = date
-                indexes[date]?.let { scope.launch { listState.scrollToItem(it + 2) } }
+                indexes[date]?.let { scope.launch { listState.scrollToItem(upcomingDateScrollIndex(it, largeTitles)) } }
             }
         }
         if (loading) {
@@ -166,7 +176,7 @@ fun UpcomingScreenContent(
                         horizontalArrangement = Arrangement.spacedBy(12.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        ShellCover(item.manga.asMangaCover(), item.manga.title, Modifier.width(40.dp), fixedRatio = 2f / 3f)
+                        ShellCover(item.manga.asMangaCover(), item.manga.title, Modifier.width(40.dp), fixedRatio = 2f / 3f, hero = false)
                         TsuzukiText(item.manga.title, Modifier.weight(1f), TsuzukiTheme.typography.headline, maxLines = 2, overflow = TextOverflow.Ellipsis)
                     }
                 }

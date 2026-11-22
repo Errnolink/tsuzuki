@@ -15,6 +15,12 @@ class NetworkPreferences(
         return preferenceStore.getInt("doh_provider", -1)
     }
 
+    // KMK -->
+    fun redactSensitiveHeaders(): Preference<Boolean> {
+        return preferenceStore.getBoolean("redact_sensitive_headers", true)
+    }
+    // KMK <--
+
     fun defaultUserAgent(): Preference<String> {
         return preferenceStore.getString(
             "default_user_agent",

@@ -16,6 +16,8 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.Immutable
+import dev.errnolink.tsuzuki.designsystem.TsuzukiText
+import dev.errnolink.tsuzuki.designsystem.TsuzukiTheme
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
@@ -41,6 +43,7 @@ import tachiyomi.i18n.MR
 import tachiyomi.presentation.core.components.material.Scaffold
 import tachiyomi.presentation.core.components.material.padding
 import tachiyomi.presentation.core.i18n.stringResource
+import tachiyomi.presentation.core.i18n.pluralStringResource
 import cafe.adriel.voyager.core.model.screenModelScope
 import dev.errnolink.tsuzuki.mangadex.backup.NekoBackupMapper
 import eu.kanade.presentation.more.settings.screen.browse.ExtensionStoresScreen
@@ -117,6 +120,34 @@ class TsuzukiRestoreBackupScreen(
                         }
                     }
 
+                    if (state.isKotatsu) {
+                        item("kotatsu") {
+                            SettingsSection {
+                                Column(
+                                    modifier = Modifier.padding(horizontal = MaterialTheme.padding.medium),
+                                    verticalArrangement = Arrangement.spacedBy(MaterialTheme.padding.small),
+                                ) {
+                                    TsuzukiText(
+                                        text = stringResource(MR.strings.tsuzuki_kotatsu_backup),
+                                        style = TsuzukiTheme.typography.subhead,
+                                    )
+                                    TsuzukiText(
+                                        text = stringResource(MR.strings.tsuzuki_kotatsu_backup_summary),
+                                        style = TsuzukiTheme.typography.footnote,
+                                        color = TsuzukiTheme.colors.secondary,
+                                    )
+                                    if (state.kotatsuUnmatched > 0) {
+                                        TsuzukiText(
+                                            text = pluralStringResource(MR.plurals.tsuzuki_kotatsu_backup_unmatched, state.kotatsuUnmatched, state.kotatsuUnmatched),
+                                            style = TsuzukiTheme.typography.footnote,
+                                            color = TsuzukiTheme.colors.secondary,
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+
                     if (state.error != null) {
                         errorMessageItem(state.error)
                     }
@@ -170,7 +201,11 @@ class TsuzukiRestoreBackupScreen(
                     }
 
                     SelectionContainer {
-                        Text(text = msg)
+                        Text(
+                            text = msg,
+                            style = TsuzukiTheme.typography.footnote,
+                            color = TsuzukiTheme.colors.secondary,
+                        )
                     }
                 }
             }
@@ -188,12 +223,14 @@ private class RestoreBackupScreenModel(
     private val installSteps = MutableStateFlow(emptyMap<String, InstallStep>())
 
     init {
-        validate(uri.toUri())
-        screenModelScope.launch(Dispatchers.IO) { loadExtensions() }
+        screenModelScope.launch(Dispatchers.IO) {
+            validate(uri.toUri())
+            loadExtensions()
+        }
     }
 
     private suspend fun loadExtensions() {
-        val backup = runCatching { BackupDecoder(context).decode(uri.toUri()) }.getOrNull() ?: return
+        val backup = decodeForExtensions() ?: return
         fun neededNow(sources: List<Source>) = RestoreExtensions.needed(
             backup,
             sources.map {
@@ -212,6 +249,30 @@ private class RestoreBackupScreenModel(
             val matches = RestoreExtensions.match(neededNow(sources), available)
             if (matches.isEmpty()) RestoreExtensionsState.None else RestoreExtensionsState.Ready(matches, steps)
         }.collect { extensions -> mutableState.update { it.copy(extensions = extensions) } }
+    }
+
+    /**
+     * Kotatsu zips convert through their own reader; the decoded model feeds
+     * the extension-install list and the unmatched-source count. Anything else
+     * decodes as a normal backup (null means "not a backup": offer nothing).
+     */
+    private suspend fun decodeForExtensions(): eu.kanade.tachiyomi.data.backup.models.Backup? {
+        val uri = this.uri.toUri()
+        if (dev.errnolink.tsuzuki.backup.kotatsu.KotatsuRestoreSupport.isKotatsuBackup(context, uri)) {
+            val conversion = runCatching {
+                dev.errnolink.tsuzuki.backup.kotatsu.KotatsuRestoreSupport.convert(
+                    context,
+                    uri,
+                    resolveProgress = false,
+                    requireSources = false,
+                )
+            }.getOrNull() ?: return null
+            mutableState.update {
+                it.copy(isKotatsu = true, kotatsuUnmatched = conversion.unmatchedTitles)
+            }
+            return conversion.backup
+        }
+        return runCatching { BackupDecoder(context).decode(uri) }.getOrNull()
     }
 
     fun install(extension: Extension.Available) {
@@ -297,6 +358,8 @@ private class RestoreBackupScreenModel(
         val canRestore: Boolean = false,
         val options: RestoreOptions = RestoreOptions(),
         val extensions: RestoreExtensionsState = RestoreExtensionsState.None,
+        val isKotatsu: Boolean = false,
+        val kotatsuUnmatched: Int = 0,
     )
 }
 

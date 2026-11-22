@@ -29,7 +29,7 @@ fun <T> ListPreferenceWidget(
         divider = divider,
         leading = icon?.let {
             {
-                Icon(it, null, Modifier.size(24.dp), tint = TsuzukiTheme.colors.secondary)
+                Icon(it, null, Modifier.size(PreferenceLeadingIconWidth), tint = TsuzukiTheme.colors.secondary)
             }
         },
     )

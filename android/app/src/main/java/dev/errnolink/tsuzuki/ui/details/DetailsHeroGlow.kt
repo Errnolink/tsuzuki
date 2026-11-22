@@ -8,7 +8,6 @@ import android.graphics.ColorMatrixColorFilter
 import android.graphics.Paint
 import android.graphics.Rect
 import androidx.compose.animation.core.Animatable
-import androidx.compose.animation.core.spring
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.mutableStateOf
@@ -39,6 +38,7 @@ import coil3.request.crossfade
 import coil3.size.Precision
 import coil3.size.Scale
 import dev.errnolink.tsuzuki.designsystem.TsuzukiTheme
+import dev.errnolink.tsuzuki.designsystem.KasaneSprings
 import eu.kanade.tachiyomi.util.system.getBitmapOrNull
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.Dispatchers
@@ -60,7 +60,7 @@ private val GlowTail = 200.dp
 private const val GlowFadeStartFraction = 0.55f
 private const val GlowAlphaDark = 0.40f
 private const val GlowAlphaLight = 0.28f
-private val GlowPopSpec = spring<Float>(dampingRatio = 0.85f, stiffness = 250f)
+
 
 class DetailsGlow internal constructor() {
     val bitmap = mutableStateOf<ImageBitmap?>(null)
@@ -81,8 +81,8 @@ private fun computeGlow(source: Bitmap): GlowEntry {
 
 private fun adoptCard(mangaId: Long, entry: GlowEntry) {
     val card = entry.card ?: return
-    if (dev.errnolink.tsuzuki.ui.shell.MangaHero.cardColor(mangaId) == null) {
-        dev.errnolink.tsuzuki.ui.shell.MangaHero.reportCardColor(mangaId, card)
+    if (dev.errnolink.tsuzuki.ui.motion.MangaHero.cardColor(mangaId) == null) {
+        dev.errnolink.tsuzuki.ui.motion.MangaHero.reportCardColor(mangaId, card)
     }
 }
 
@@ -106,7 +106,7 @@ fun rememberDetailsGlow(manga: Manga, coverReady: Boolean): DetailsGlow {
     val coverKey = manga.coverLastModified to manga.thumbnailUrl
     LaunchedEffect(manga.id) {
         if (glow.bitmap.value != null) return@LaunchedEffect
-        val hero = dev.errnolink.tsuzuki.ui.shell.MangaHero.source(manga.id)?.image ?: return@LaunchedEffect
+        val hero = dev.errnolink.tsuzuki.ui.motion.MangaHero.source(manga.id)?.image ?: return@LaunchedEffect
         val entry = withContext(Dispatchers.Default) { runCatching { computeGlow(hero.asAndroidBitmap()) }.getOrNull() }
         if (entry != null && glow.bitmap.value == null) {
             glow.settled = true
@@ -150,8 +150,8 @@ fun rememberDetailsGlow(manga: Manga, coverReady: Boolean): DetailsGlow {
         } else {
             glow.scale.snapTo(1.08f)
             glow.popIn.snapTo(0f)
-            launch { glow.popIn.animateTo(1f, GlowPopSpec) }
-            glow.scale.animateTo(1f, GlowPopSpec)
+            launch { glow.popIn.animateTo(1f, KasaneSprings.glowPop()) }
+            glow.scale.animateTo(1f, KasaneSprings.glowPop())
         }
     }
     return glow

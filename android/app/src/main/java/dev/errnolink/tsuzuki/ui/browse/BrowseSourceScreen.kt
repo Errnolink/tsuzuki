@@ -17,12 +17,7 @@ import androidx.compose.foundation.lazy.staggeredgrid.StaggeredGridCells
 import androidx.compose.foundation.lazy.staggeredgrid.StaggeredGridItemSpan
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.Check
 import androidx.compose.material3.Icon
-import androidx.compose.material3.SnackbarDuration
-import androidx.compose.material3.SnackbarHostState
-import androidx.compose.material3.SnackbarResult
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -40,9 +35,15 @@ import androidx.paging.compose.LazyPagingItems
 import dev.errnolink.tsuzuki.designsystem.EmptyTextAction
 import dev.errnolink.tsuzuki.designsystem.Heart
 import dev.errnolink.tsuzuki.designsystem.PillButton
+import dev.errnolink.tsuzuki.designsystem.SelectionMark
 import dev.errnolink.tsuzuki.designsystem.TsuzukiIcons
 import dev.errnolink.tsuzuki.designsystem.TsuzukiText
 import dev.errnolink.tsuzuki.designsystem.TsuzukiTheme
+import dev.errnolink.tsuzuki.designsystem.selectionFill
+import dev.errnolink.tsuzuki.designsystem.TsuzukiCorners
+import dev.errnolink.tsuzuki.ui.shell.ShellError
+import dev.errnolink.tsuzuki.designsystem.ToastAction
+import dev.errnolink.tsuzuki.designsystem.ToastHostState
 
 import dev.errnolink.tsuzuki.ui.shell.MangaCellSkeleton
 import dev.errnolink.tsuzuki.ui.shell.ShellCover
@@ -77,7 +78,7 @@ fun BrowseSourceContent(
     columns: GridCells,
 
     displayMode: LibraryDisplayMode,
-    snackbarHostState: SnackbarHostState,
+    toasts: ToastHostState,
     contentPadding: PaddingValues,
     onWebViewClick: (() -> Unit)?,
     onHelpClick: (() -> Unit)?,
@@ -88,15 +89,14 @@ fun BrowseSourceContent(
 ) {
     val context = LocalContext.current
     val selectedIds = remember(selection) { selection.mapTo(HashSet()) { it.id } }
+    val selectionMode = selection.isNotEmpty()
     val error = (mangaList.loadState.refresh as? LoadState.Error) ?: (mangaList.loadState.append as? LoadState.Error)
     LaunchedEffect(error) {
         if (error != null && mangaList.itemCount > 0) {
-            val result = snackbarHostState.showSnackbar(
-                message = with(context) { error.error.formattedMessage },
-                actionLabel = context.stringResource(MR.strings.action_retry),
-                duration = SnackbarDuration.Indefinite,
+            toasts.show(
+                with(context) { error.error.formattedMessage },
+                action = ToastAction(context.stringResource(MR.strings.action_retry)) { mangaList.retry() },
             )
-            if (result == SnackbarResult.ActionPerformed) mangaList.retry()
         }
     }
 
@@ -146,15 +146,28 @@ fun BrowseSourceContent(
                             }
                         } else {
                             val failed = error?.takeIf { it.error !is NoResultsException }
-                            ShellEmpty(
-                                if (failed != null) "Couldn't load this page" else "No results",
-                                failed?.let { with(context) { it.error.formattedMessage } } ?: "Try another search or catalog filter.",
-                                action = { PillButton("Retry", mangaList::refresh, prominent = false) },
-                                secondaryActions = buildList {
-                                    onWebViewClick?.let { add(EmptyTextAction("Open website", it)) }
-                                    onHelpClick?.let { add(EmptyTextAction("Help", it)) }
-                                },
-                            )
+                            if (failed != null) {
+                                ShellError(
+                                    "Couldn't load this page",
+                                    with(context) { failed.error.formattedMessage },
+                                    onRetry = { mangaList.refresh() },
+                                    retryProminent = false,
+                                    secondaryActions = buildList {
+                                        onWebViewClick?.let { add(EmptyTextAction("Open website", it)) }
+                                        onHelpClick?.let { add(EmptyTextAction("Help", it)) }
+                                    },
+                                )
+                            } else {
+                                ShellEmpty(
+                                    "No results",
+                                    "Try another search or catalog filter.",
+                                    action = { PillButton("Retry", mangaList::refresh, prominent = false) },
+                                    secondaryActions = buildList {
+                                        onWebViewClick?.let { add(EmptyTextAction("Open website", it)) }
+                                        onHelpClick?.let { add(EmptyTextAction("Help", it)) }
+                                    },
+                                )
+                            }
                         }
                     }
                 }
@@ -172,17 +185,27 @@ fun BrowseSourceContent(
                 Column(Modifier.combinedClickable(onClick = { onMangaClick(manga) }, onLongClick = { onMangaLongClick(manga) })) {
                     when (displayMode) {
                         LibraryDisplayMode.List -> Row(
-                            Modifier.clip(RoundedCornerShape(14.dp))
-                                .background(if (selected) colors.selectedFill else colors.grouped, RoundedCornerShape(14.dp))
+                            Modifier.clip(RoundedCornerShape(TsuzukiCorners.field))
+                                .background(colors.grouped, RoundedCornerShape(TsuzukiCorners.field))
+                                .selectionFill(selected)
                                 .padding(12.dp),
                             horizontalArrangement = Arrangement.spacedBy(12.dp),
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
-                            ShellCover(manga.asMangaCover(), manga.title, Modifier.width(48.dp), fixedRatio = 2f / 3f)
+                            if (selectionMode) {
+                                SelectionMark(selected, Modifier.size(24.dp))
+                            }
+                            ShellCover(manga.asMangaCover(), manga.title, Modifier.width(48.dp), fixedRatio = 2f / 3f, hero = false)
                             TsuzukiText(manga.title, Modifier.weight(1f), maxLines = 2, overflow = TextOverflow.Ellipsis)
                         }
                         LibraryDisplayMode.CoverOnlyGrid -> Box {
                             ShellCover(manga.asMangaCover(), manga.title)
+                            if (selectionMode) {
+                                SelectionMark(
+                                    selected = selected,
+                                    modifier = Modifier.align(Alignment.TopStart).padding(8.dp),
+                                )
+                            }
                             if (manga.favorite) {
                                 Box(
                                     Modifier.align(Alignment.TopEnd).padding(7.dp).size(24.dp)
@@ -190,19 +213,6 @@ fun BrowseSourceContent(
                                     contentAlignment = Alignment.Center,
                                 ) {
                                     Icon(TsuzukiIcons.Heart, "In library", Modifier.size(14.dp), tint = colors.accent)
-                                }
-                            }
-                            if (selected) {
-                                Box(
-                                    Modifier.matchParentSize().background(colors.accent.copy(alpha = 0.3f)),
-                                    contentAlignment = Alignment.Center,
-                                ) {
-                                    Box(
-                                        Modifier.size(26.dp).background(colors.accent, CircleShape),
-                                        contentAlignment = Alignment.Center,
-                                    ) {
-                                        Icon(Icons.Outlined.Check, "Selected", Modifier.size(17.dp), tint = colors.onAccent)
-                                    }
                                 }
                             }
                         }
@@ -219,7 +229,7 @@ fun BrowseSourceContent(
 
 @Composable
 internal fun MissingSourceScreen(source: StubSource, navigateUp: () -> Unit) {
-    ShellList(source.name, navigateUp = navigateUp) {
+    ShellList(source.name, navigateUp = navigateUp, capContent = false) {
         item("missing-source") {
             ShellEmpty("Source unavailable", stringResource(MR.strings.source_not_installed, source.toString()))
         }

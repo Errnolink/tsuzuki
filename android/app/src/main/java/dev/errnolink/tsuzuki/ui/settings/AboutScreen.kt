@@ -35,7 +35,7 @@ import cafe.adriel.voyager.navigator.LocalNavigator
 import cafe.adriel.voyager.navigator.currentOrThrow
 import dev.errnolink.tsuzuki.designsystem.GroupedRow
 import dev.errnolink.tsuzuki.designsystem.InsetGroupedList
-import dev.errnolink.tsuzuki.designsystem.ProgressRing
+import dev.errnolink.tsuzuki.designsystem.ProgressMark
 import dev.errnolink.tsuzuki.designsystem.TsuzukiCorners
 import dev.errnolink.tsuzuki.designsystem.TsuzukiSpacing
 import dev.errnolink.tsuzuki.designsystem.TsuzukiText
@@ -74,7 +74,11 @@ object TsuzukiAboutScreen : Screen() {
         val updatePreferences = remember { Injekt.get<UpdatePreferences>() }
         val autoUpdatePref = updatePreferences.autoUpdate()
         val autoUpdateEnabled by autoUpdatePref.collectAsState()
-        val canInstall = remember(autoUpdateEnabled) { AppUpdatePermission.canInstallPackages(context) }
+        var canInstall by remember { mutableStateOf(AppUpdatePermission.canInstallPackages(context)) }
+        androidx.lifecycle.compose.LifecycleResumeEffect(Unit) {
+            canInstall = AppUpdatePermission.canInstallPackages(context)
+            onPauseOrDispose { }
+        }
         val coroutineScope = rememberCoroutineScope()
         var isCheckingUpdate by remember { mutableStateOf(false) }
         var updateStatus by remember { mutableStateOf<String?>(null) }
@@ -119,7 +123,6 @@ object TsuzukiAboutScreen : Screen() {
                 InsetGroupedList {
                     GroupedRow(
                         title = stringResource(MR.strings.version),
-                        subtitle = updateStatus,
                         value = BuildConfig.VERSION_NAME,
                         chevron = false,
                         divider = true,
@@ -132,7 +135,7 @@ object TsuzukiAboutScreen : Screen() {
                         value = if (isCheckingUpdate) null else updateStatus,
                         divider = true,
                         leading = if (isCheckingUpdate) {
-                            { ProgressRing(progress = 0f, label = stringResource(MR.strings.check_for_updates)) }
+                            { ProgressMark(progress = 0f, label = stringResource(MR.strings.check_for_updates)) }
                         } else {
                             null
                         },

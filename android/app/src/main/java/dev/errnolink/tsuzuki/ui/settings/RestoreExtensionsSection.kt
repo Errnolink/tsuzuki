@@ -15,11 +15,12 @@ import dev.errnolink.tsuzuki.designsystem.Check
 import dev.errnolink.tsuzuki.designsystem.GroupedRow
 import dev.errnolink.tsuzuki.designsystem.InsetGroupedList
 import dev.errnolink.tsuzuki.designsystem.PillButton
-import dev.errnolink.tsuzuki.designsystem.ProgressRing
+import dev.errnolink.tsuzuki.designsystem.ProgressMark
 import dev.errnolink.tsuzuki.designsystem.TsuzukiIcons
 import dev.errnolink.tsuzuki.designsystem.TsuzukiSpacing
 import dev.errnolink.tsuzuki.designsystem.TsuzukiText
 import dev.errnolink.tsuzuki.designsystem.TsuzukiTheme
+import dev.errnolink.tsuzuki.designsystem.TsuzukiSize
 import eu.kanade.tachiyomi.extension.model.Extension
 import eu.kanade.tachiyomi.extension.model.InstallStep
 
@@ -43,7 +44,7 @@ fun RestoreExtensionsSection(
                 GroupedRow(
                     title = "Checking your extension repos…",
                     divider = false,
-                    leading = { ProgressRing(0f, "Checking extension repos") },
+                    leading = { ProgressMark(0f, "Checking extension repos") },
                 )
             }
             is RestoreExtensionsState.Ready -> {
@@ -96,9 +97,9 @@ fun RestoreExtensionsSection(
 private fun InstallAccessory(step: InstallStep?, onInstall: () -> Unit) {
     when (step) {
         InstallStep.Pending, InstallStep.Downloading, InstallStep.Installing ->
-            Box(Modifier.size(44.dp), contentAlignment = Alignment.Center) { ProgressRing(0f, "Installing") }
+            Box(Modifier.size(TsuzukiSize.control), contentAlignment = Alignment.Center) { ProgressMark(0f, "Installing") }
         InstallStep.Installed ->
-            Box(Modifier.size(44.dp), contentAlignment = Alignment.Center) {
+            Box(Modifier.size(TsuzukiSize.control), contentAlignment = Alignment.Center) {
                 Icon(TsuzukiIcons.Check, "Installed", Modifier.size(20.dp), tint = TsuzukiTheme.colors.accent)
             }
         InstallStep.Error -> PillButton("Retry", onInstall, prominent = false, tinted = true)

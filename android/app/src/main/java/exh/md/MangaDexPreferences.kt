@@ -2,6 +2,12 @@
 package exh.md
 
 import exh.md.utils.FollowStatus
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.stateIn
+import tachiyomi.core.common.preference.Preference
 import tachiyomi.core.common.preference.PreferenceStore
 import uy.kohesive.injekt.Injekt
 import uy.kohesive.injekt.api.get
@@ -20,7 +26,17 @@ class MangaDexPreferences(private val store: PreferenceStore = Injekt.get()) {
     fun blockedGroups() = store.getStringSet("blocked_scanlators", emptySet())
     fun blockedUploaders() = store.getStringSet("blocked_uploaders", emptySet())
     fun blockName(id: String) = store.getString("mangadex_block_name_$id", id)
-    fun autoTrackServices() = store.getStringSet("mangadex_auto_track_services", emptySet())
+    fun autoTrackDisabled() = store.getStringSet("mangadex_auto_track_disabled", emptySet())
+
+    fun autoTrackEnabledServices(): Preference<Set<String>> = AutoTrackEnabledPreference(autoTrackDisabled())
+
+    fun migrateAutoTrackSelection() {
+        val previous = store.getStringSet("mangadex_auto_track_services", emptySet())
+        if (previous.get().isEmpty()) return
+        autoTrackDisabled().set(serviceCodes - previous.get())
+        previous.delete()
+    }
+
     fun autoTrackRatings() = store.getStringSet("mangadex_auto_track_ratings", setOf("safe", "suggestive"))
     fun dynamicCovers() = store.getBoolean("mangadex_dynamic_covers", false)
     fun manualCover(mangaId: Long) = store.getBoolean("mangadex_manual_cover_$mangaId", false)
@@ -36,6 +52,16 @@ class MangaDexPreferences(private val store: PreferenceStore = Injekt.get()) {
 
     companion object {
         val ratings = listOf("safe", "suggestive", "erotica", "pornographic")
+        val serviceCodes = setOf("al", "mal", "kt", "mu")
+        val serviceNames = mapOf(
+            "al" to "AniList",
+            "mal" to "MyAnimeList",
+            "kt" to "Kitsu",
+            "mu" to "MangaUpdates",
+        )
+
+        fun effectiveServices(signedIn: Set<String>, disabled: Set<String>): Set<String> =
+            serviceCodes.intersect(signedIn) - disabled
 
         fun autoFollowStatus(value: Int): FollowStatus? = when (value) {
             1 -> FollowStatus.PLAN_TO_READ
@@ -44,4 +70,25 @@ class MangaDexPreferences(private val store: PreferenceStore = Injekt.get()) {
             else -> null
         }
     }
+}
+
+private class AutoTrackEnabledPreference(private val disabled: Preference<Set<String>>) : Preference<Set<String>> {
+    override fun key() = disabled.key()
+
+    override fun get(): Set<String> = MangaDexPreferences.serviceCodes - disabled.get()
+
+    override fun set(value: Set<String>) {
+        disabled.set(MangaDexPreferences.serviceCodes - value)
+    }
+
+    override fun isSet() = disabled.isSet()
+
+    override fun delete() = disabled.delete()
+
+    override fun defaultValue(): Set<String> = MangaDexPreferences.serviceCodes
+
+    override fun changes() = disabled.changes().map { MangaDexPreferences.serviceCodes - it }
+
+    override fun stateIn(scope: CoroutineScope): StateFlow<Set<String>> =
+        changes().stateIn(scope, SharingStarted.Eagerly, get())
 }

@@ -10,6 +10,7 @@ voyager = "1.1.0-beta03"
 spotless = "8.8.0"
 ktlint-core = "1.8.0"
 markdown = "0.39.2"
+telephoto = "0.19.0"
 junit = "6.0.3"
 androidxTestExtJunit = "1.2.1"
 androidxTestRunner = "1.6.2"
@@ -51,8 +52,10 @@ coil-gif = { module = "io.coil-kt.coil3:coil-gif" }
 coil-compose = { module = "io.coil-kt.coil3:coil-compose" }
 coil-network-okhttp = { module = "io.coil-kt.coil3:coil-network-okhttp" }
 
-subsamplingscaleimageview = "com.github.tachiyomiorg:subsampling-scale-image-view:66e0db195d"
 image-decoder = "com.github.tachiyomiorg:image-decoder:41c059e540"
+
+telephoto-zoomable = { module = "me.saket.telephoto:zoomable", version.ref = "telephoto" }
+telephoto-zoomable-image-coil3 = { module = "me.saket.telephoto:zoomable-image-coil3", version.ref = "telephoto" }
 
 natural-comparator = "com.github.gpanther:java-nat-sort:natural-comparator-1.1"
 
@@ -60,8 +63,6 @@ richeditor-compose = "com.mohamedrejeb.richeditor:richeditor-compose:1.0.0-rc13"
 
 material = "com.google.android.material:material:1.13.0"
 flexible-adapter-core = "com.github.arkon:FlexibleAdapter:844a07002c"
-photoview = "com.github.chrisbanes:PhotoView:2.3.0"
-directionalviewpager = "com.github.tachiyomiorg:DirectionalViewPager:1.0.0"
 compose-materialmotion = "io.github.fornewid:material-motion-compose-core:2.0.1"
 compose-webview = "io.github.kevinnzou:compose-webview:0.33.6"
 compose-grid = "io.woong.compose.grid:grid:1.2.2"

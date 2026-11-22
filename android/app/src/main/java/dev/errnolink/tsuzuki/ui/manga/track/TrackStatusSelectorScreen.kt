@@ -21,6 +21,7 @@ import cafe.adriel.voyager.core.model.screenModelScope
 import cafe.adriel.voyager.navigator.LocalNavigator
 import cafe.adriel.voyager.navigator.currentOrThrow
 import dev.errnolink.tsuzuki.designsystem.DetentSheet
+import dev.errnolink.tsuzuki.designsystem.SheetKind
 import dev.errnolink.tsuzuki.designsystem.InsetGroupedList
 import dev.errnolink.tsuzuki.designsystem.PillButton
 import dev.errnolink.tsuzuki.designsystem.TsuzukiText
@@ -54,7 +55,7 @@ data class TrackStatusSelectorScreen(
         }
         val state by screenModel.state.collectAsState()
         val selections = remember { screenModel.getSelections() }
-        DetentSheet(true, stringResource(MR.strings.status), navigator::pop) {
+        DetentSheet(true, stringResource(MR.strings.status), navigator::pop, kind = SheetKind.Picker) {
             InsetGroupedList {
                 selections.entries.forEachIndexed { index, (key, value) ->
                     if (index > 0) GroupDivider()

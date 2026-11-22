@@ -8,10 +8,14 @@ import android.os.VibrationEffect
 import android.os.Vibrator
 import android.os.VibratorManager
 import android.provider.Settings
+import android.view.View
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalView
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicBoolean
 
@@ -21,7 +25,11 @@ enum class TsuzukiHaptic {
     ToggleOff,
     PageTurn,
     ChapterArm,
+    Detent,
+    Lift,
+    Warning,
 }
+
 
 internal enum class PulseKind(val milliseconds: Long, val nominalAmplitude: Int) {
     Tick(7L, 95),
@@ -52,6 +60,17 @@ internal fun rhythmOf(haptic: TsuzukiHaptic): List<Pulse> = when (haptic) {
     TsuzukiHaptic.ChapterArm -> listOf(
         Pulse(PulseKind.Tick, 0.55f, 20),
         Pulse(PulseKind.Thump, 1.00f, 0),
+    )
+    TsuzukiHaptic.Detent -> listOf(
+        Pulse(PulseKind.Tick, 0.30f, 0),
+    )
+    TsuzukiHaptic.Lift -> listOf(
+        Pulse(PulseKind.Tick, 0.35f, 14),
+        Pulse(PulseKind.Press, 0.80f, 0),
+    )
+    TsuzukiHaptic.Warning -> listOf(
+        Pulse(PulseKind.Thump, 0.70f, 70),
+        Pulse(PulseKind.Thump, 0.50f, 0),
     )
 }
 
@@ -249,6 +268,7 @@ private class AndroidVibratorGateway(context: Context) : VibratorGateway {
 class Haptics internal constructor(
     private val gateway: VibratorGateway,
     private val gate: HapticGate,
+    private val view: View? = null,
 ) {
     private val disabled = AtomicBoolean(false)
     private val primitiveProbeAllowed = gateway.sdkInt >= 31
@@ -274,6 +294,7 @@ class Haptics internal constructor(
         if (disabled.get()) return
         if (!gate.enabled()) return
         if (!gateway.available) return
+        if (haptic == TsuzukiHaptic.Lift || haptic == TsuzukiHaptic.Warning) return
         val pattern = cache.getOrRender(haptic, tier, lowTick, thud)
         try {
             gateway.vibrate(pattern)
@@ -292,6 +313,12 @@ class Haptics internal constructor(
 
     fun chapterArm() = play(TsuzukiHaptic.ChapterArm)
 
+    fun detent() = play(TsuzukiHaptic.Detent)
+
+    fun lift() = play(TsuzukiHaptic.Lift)
+
+    fun warning() = play(TsuzukiHaptic.Warning)
+
     internal val renderCount: Int
         get() = cache.compileCount
 
@@ -302,7 +329,8 @@ class Haptics internal constructor(
         get() = disabled.get()
 
     companion object {
-        fun of(context: Context): Haptics = Haptics(AndroidVibratorGateway(context), SystemHapticGate(context))
+        fun of(context: Context, view: View? = null): Haptics =
+            Haptics(AndroidVibratorGateway(context), SystemHapticGate(context), view)
     }
 }
 
@@ -311,5 +339,6 @@ val LocalHaptics = staticCompositionLocalOf<Haptics?> { null }
 @Composable
 fun rememberHaptics(): Haptics {
     val context = LocalContext.current
-    return remember { Haptics.of(context) }
+    val view = LocalView.current
+    return remember(context, view) { Haptics.of(context, view) }
 }

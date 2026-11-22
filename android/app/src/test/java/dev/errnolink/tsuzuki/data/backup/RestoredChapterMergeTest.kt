@@ -49,6 +49,28 @@ class RestoredChapterMergeTest {
     }
 
     @Test
+    fun `restoring keeps the furthest page when both sides read the chapter`() {
+        val local = chapter(read = true, page = 31)
+        val backup = chapter(read = true, page = 12)
+
+        val merged = RestoredChapterMerge.merge(backup, local, isSync = false)
+
+        assertTrue(merged.read)
+        assertEquals(31, merged.lastPageRead)
+    }
+
+    @Test
+    fun `restoring a read chapter keeps a further unread page of the library copy`() {
+        val local = chapter(read = false, page = 30)
+        val backup = chapter(read = true, page = 5)
+
+        val merged = RestoredChapterMerge.merge(backup, local, isSync = false)
+
+        assertTrue(merged.read)
+        assertEquals(30, merged.lastPageRead)
+    }
+
+    @Test
     fun `restoring a backup never unreads a chapter and keeps bookmarks from either side`() {
         val local = chapter(read = true, page = 20, bookmark = true)
         val backup = chapter(read = false, page = 2)

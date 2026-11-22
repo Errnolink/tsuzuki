@@ -19,6 +19,7 @@ fun SwitchPreferenceWidget(
     /** Can be either [ImageVector] or [Painter] */
     icon: Any? = null,
     checked: Boolean = false,
+    enabled: Boolean = true,
     onCheckedChanged: (Boolean) -> Unit,
     divider: Boolean = true,
 ) {
@@ -33,12 +34,13 @@ fun SwitchPreferenceWidget(
         subtitle = subtitleText,
         checked = checked,
         onCheckedChange = onCheckedChanged,
+        enabled = enabled,
         divider = divider,
         leading = icon?.let {
             {
                 when (it) {
-                    is ImageVector -> Icon(it, null, Modifier.size(24.dp), tint = TsuzukiTheme.colors.secondary)
-                    is Painter -> Icon(it, null, Modifier.size(24.dp), tint = TsuzukiTheme.colors.secondary)
+                    is ImageVector -> Icon(it, null, Modifier.size(PreferenceLeadingIconWidth), tint = TsuzukiTheme.colors.secondary)
+                    is Painter -> Icon(it, null, Modifier.size(PreferenceLeadingIconWidth), tint = TsuzukiTheme.colors.secondary)
                 }
             }
         },

@@ -5,6 +5,7 @@ import dev.errnolink.tsuzuki.ui.shell.ShellContentScaffold
 import dev.errnolink.tsuzuki.ui.shell.shellToolbarActions
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
+import dev.errnolink.tsuzuki.designsystem.ToastHostState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -36,12 +37,12 @@ class ExtensionsScreen(private val searchSource: String? = null) : Screen() {
         val searchQuery = extensionsState.searchQuery
         val onChangeSearchQuery = extensionsScreenModel::search
 
-        val snackbarHostState = remember { SnackbarHostState() }
+        val toasts = remember { ToastHostState() }
 
         ShellContentScaffold(
             title = stringResource(MR.strings.label_extensions),
             navigateUp = { navigator?.pop() },
-            snackbar = snackbarHostState,
+            toasts = toasts,
             actions = shellToolbarActions(extensionsTab.actions),
             search = rememberTopBarSearch(
                 query = searchQuery.orEmpty(),
@@ -50,7 +51,7 @@ class ExtensionsScreen(private val searchSource: String? = null) : Screen() {
                 onClose = { onChangeSearchQuery(null) },
             ),
         ) { paddingValues ->
-            extensionsTab.content(paddingValues, snackbarHostState)
+            extensionsTab.content(paddingValues, toasts)
         }
 
         LaunchedEffect(Unit) {

@@ -24,6 +24,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import dev.errnolink.tsuzuki.designsystem.Plus
+import dev.errnolink.tsuzuki.designsystem.Skeleton
 import dev.errnolink.tsuzuki.designsystem.TsuzukiChevron
 import dev.errnolink.tsuzuki.designsystem.TsuzukiCorners
 import dev.errnolink.tsuzuki.designsystem.TsuzukiIcons
@@ -39,6 +40,7 @@ import tachiyomi.core.common.util.system.logcat
 import tachiyomi.domain.track.interactor.GetTracks
 import tachiyomi.domain.track.model.Track
 import tachiyomi.presentation.core.i18n.stringResource
+import tachiyomi.i18n.MR
 import uy.kohesive.injekt.Injekt
 import uy.kohesive.injekt.api.get
 
@@ -71,10 +73,14 @@ internal fun trackingPanelRows(items: List<TrackItem>): List<TrackItem> =
     items.filter { it.track != null }
 
 /** "Ch. 12 / 248" style summary; null when the track has no progress data yet. */
-internal fun trackingPanelChapterLabel(track: Track): String? = when {
+internal fun trackingPanelChapterLabel(
+    track: Track,
+    chapterShortPattern: String,
+    chapterOfTotalPattern: String,
+): String? = when {
     track.lastChapterRead <= 0f && track.totalChapters <= 0 -> null
-    track.totalChapters > 0 -> "Ch. ${track.lastChapterRead.toInt()} / ${track.totalChapters}"
-    else -> "Ch. ${track.lastChapterRead.toInt()}"
+    track.totalChapters > 0 -> chapterOfTotalPattern.format(track.lastChapterRead.toInt(), track.totalChapters)
+    else -> chapterShortPattern.format(track.lastChapterRead.toInt())
 }
 
 /**
@@ -90,10 +96,14 @@ fun TrackingPanel(
     modifier: Modifier = Modifier,
 ) {
     val rows = remember(state.trackItems) { trackingPanelRows(state.trackItems) }
+    val chapterShortPattern = stringResource(MR.strings.tsuzuki_ch_short)
+    val chapterOfTotalPattern = stringResource(MR.strings.tsuzuki_ch_of_total)
+    val notStartedLabel = stringResource(MR.strings.tsuzuki_not_started)
+    val notLinkedLabel = stringResource(MR.strings.tsuzuki_not_linked)
     Column(modifier, verticalArrangement = Arrangement.spacedBy(2.dp)) {
         if (state.loading) {
             repeat(2) {
-                ShimmerBox(
+                Skeleton(
                     Modifier
                         .fillMaxWidth()
                         .height(44.dp)
@@ -104,7 +114,7 @@ fun TrackingPanel(
         }
         if (rows.none { it.track != null }) {
             TsuzukiText(
-                "No linked trackers yet",
+                stringResource(MR.strings.tsuzuki_no_linked_trackers),
                 Modifier.padding(horizontal = 4.dp, vertical = 6.dp),
                 TsuzukiTheme.typography.subhead,
                 TsuzukiTheme.colors.secondary,
@@ -127,11 +137,11 @@ fun TrackingPanel(
                     TsuzukiText(item.tracker.name, style = TsuzukiTheme.typography.callout, maxLines = 1, overflow = TextOverflow.Ellipsis)
                     TsuzukiText(
                         if (track != null) {
-                            val chapter = trackingPanelChapterLabel(track)
+                            val chapter = trackingPanelChapterLabel(track, chapterShortPattern, chapterOfTotalPattern)
                             val status = item.tracker.getStatus(track.status)?.let { stringResource(it) }
-                            listOfNotNull(chapter, status).joinToString(" · ").ifEmpty { "Not started" }
+                            listOfNotNull(chapter, status).joinToString(" · ").ifEmpty { notStartedLabel }
                         } else {
-                            "Not linked"
+                            notLinkedLabel
                         },
                         style = TsuzukiTheme.typography.caption1,
                         color = TsuzukiTheme.colors.secondary,
@@ -158,7 +168,7 @@ fun TrackingPanel(
             ) {
                 androidx.compose.material3.Icon(TsuzukiIcons.Plus, null, Modifier.size(16.dp), tint = TsuzukiTheme.colors.text)
             }
-            TsuzukiText("Add tracker", style = TsuzukiTheme.typography.callout, modifier = Modifier.weight(1f))
+            TsuzukiText(stringResource(MR.strings.tsuzuki_add_tracker), style = TsuzukiTheme.typography.callout, modifier = Modifier.weight(1f))
         }
     }
 }

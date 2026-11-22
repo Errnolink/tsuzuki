@@ -9,8 +9,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.Refresh
+import dev.errnolink.tsuzuki.designsystem.RefreshCw
+import dev.errnolink.tsuzuki.designsystem.TsuzukiIcons
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -48,7 +48,7 @@ class MangaDexHomeScreen : Screen() {
         ShellList(
             title = "MangaDex",
             navigateUp = navigator::pop,
-            actions = listOf(ShellTopAction("Refresh discover", Icons.Outlined.Refresh, model::refresh)),
+            actions = listOf(ShellTopAction("Refresh discover", TsuzukiIcons.RefreshCw, model::refresh)),
         ) {
             item {
                 InsetGroupedList {

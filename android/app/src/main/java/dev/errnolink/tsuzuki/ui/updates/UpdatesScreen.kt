@@ -4,7 +4,8 @@ import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyListScope
-import androidx.compose.material3.SnackbarHostState
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -24,6 +25,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.withContext
 import dev.errnolink.tsuzuki.designsystem.PillButton
+import dev.errnolink.tsuzuki.designsystem.TsuzukiCorners
 import dev.errnolink.tsuzuki.designsystem.TsuzukiIcons
 import dev.errnolink.tsuzuki.designsystem.ArrowUpDown
 import dev.errnolink.tsuzuki.designsystem.Calendar
@@ -38,6 +40,8 @@ import eu.kanade.tachiyomi.ui.home.HomeScreen
 import eu.kanade.tachiyomi.ui.manga.MangaScreen
 import eu.kanade.tachiyomi.ui.reader.ReaderActivity
 import eu.kanade.tachiyomi.ui.updates.UpdatesItem
+import dev.errnolink.tsuzuki.ui.shell.selectionActions
+import dev.errnolink.tsuzuki.designsystem.ToastHostState
 import eu.kanade.tachiyomi.ui.updates.UpdatesSettingsScreenModel
 import eu.kanade.tachiyomi.data.LibraryUpdateStatus
 import uy.kohesive.injekt.Injekt
@@ -47,6 +51,8 @@ import dev.errnolink.tsuzuki.ui.shell.ShellCaption
 import dev.errnolink.tsuzuki.ui.shell.ShellEmpty
 import dev.errnolink.tsuzuki.ui.shell.ShellList
 import dev.errnolink.tsuzuki.ui.shell.ShellTopAction
+import dev.errnolink.tsuzuki.ui.shell.SkeletonCaption
+import dev.errnolink.tsuzuki.ui.shell.UpdateRowSkeleton
 import dev.errnolink.tsuzuki.ui.shell.SkeletonCrossfade
 import dev.errnolink.tsuzuki.ui.shell.ShellRefresh
 import eu.kanade.tachiyomi.ui.updates.UpdatesScreenModel
@@ -78,14 +84,14 @@ suspend fun prepareUpdatesUiModels(state: UpdatesScreenModel.State): List<Update
 @Composable
 fun UpdateScreen(
     state: UpdatesScreenModel.State,
-    snackbarHostState: SnackbarHostState,
+    toasts: ToastHostState,
     lastUpdated: Long,
     preserveReadingPosition: Boolean,
     onClickCover: (UpdatesItem) -> Unit,
     onSelectAll: (Boolean) -> Unit,
     onInvertSelection: () -> Unit,
     onCalendarClicked: () -> Unit,
-    onUpdateLibrary: () -> Boolean,
+    onUpdateLibrary: () -> Unit,
     onDownloadChapter: (List<UpdatesItem>, ChapterDownloadAction) -> Unit,
     onMultiBookmarkClicked: (List<UpdatesItem>, bookmark: Boolean) -> Unit,
     onMultiMarkAsReadClicked: (List<UpdatesItem>, read: Boolean) -> Unit,
@@ -128,7 +134,7 @@ fun UpdateScreen(
             ShellList(
                 if (state.selectionMode) "${state.selected.size} selected" else "Updates",
                 reselectKey = "eu.kanade.tachiyomi.ui.updates.UpdatesTab",
-                snackbar = snackbarHostState,
+                toasts = toasts,
                 navigateUp = if (navigator?.canPop == true) { { navigator.pop() } } else null,
                 itemSpacing = 0.dp,
                 content = content,
@@ -152,11 +158,11 @@ fun UpdateScreen(
             skeleton = { UpdatesShellList { updatesLoadingSkeleton() } },
             content = {
                 UpdatesShellList {
-                    if (state.selectionMode) {
-                        item("updates-selection-actions") {
-                            PillButton("Actions", { actionsVisible = true }, Modifier.padding(horizontal = 20.dp))
-                        }
-                    }
+                    selectionActions(
+                        visible = state.selectionMode,
+                        key = "updates-selection-actions",
+                        actions = listOf(ShellSheetAction("Actions") { actionsVisible = true }),
+                    )
                     when (updatesContentState(state.isLoading, state.items.isNotEmpty(), uiModels.isNotEmpty())) {
                         UpdatesContentState.Loading -> updatesLoadingSkeleton()
                         UpdatesContentState.Empty -> item(key = "updates-empty") {
@@ -186,6 +192,36 @@ fun UpdateScreen(
                     }
                 }
             },
+        )
+    }
+}
+
+internal fun LazyListScope.updatesLastUpdatedItem(lastUpdated: Long) {
+    if (lastUpdated <= 0L) return
+    item(key = "updates-last-updated") {
+        ShellCaption(
+            "Updated ${eu.kanade.presentation.util.relativeTimeSpanString(lastUpdated)}",
+            Modifier.padding(start = 32.dp, end = 20.dp, top = 4.dp),
+        )
+    }
+}
+
+internal fun LazyListScope.updatesLoadingSkeleton(rows: Int = 6) {
+    item(key = "updates-skeleton-caption") { SkeletonCaption(32.dp, 0.3f) }
+    items(
+        count = rows,
+        key = { "updates-skeleton-$it" },
+        contentType = { "skeleton" },
+    ) { index ->
+        UpdateRowSkeleton(
+            shape = RoundedCornerShape(
+                topStart = if (index == 0) TsuzukiCorners.group else 0.dp,
+                topEnd = if (index == 0) TsuzukiCorners.group else 0.dp,
+                bottomStart = if (index == rows - 1) TsuzukiCorners.group else 0.dp,
+                bottomEnd = if (index == rows - 1) TsuzukiCorners.group else 0.dp,
+            ),
+            divider = index < rows - 1,
+            index = index,
         )
     }
 }

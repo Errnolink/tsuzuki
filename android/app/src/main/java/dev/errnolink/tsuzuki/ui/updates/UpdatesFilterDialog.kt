@@ -3,6 +3,7 @@ package dev.errnolink.tsuzuki.ui.updates
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import dev.errnolink.tsuzuki.designsystem.DetentSheet
+import dev.errnolink.tsuzuki.designsystem.SheetKind
 import dev.errnolink.tsuzuki.designsystem.GroupedRow
 import dev.errnolink.tsuzuki.ui.shell.ShellFilterRow
 import eu.kanade.tachiyomi.ui.updates.UpdatesSettingsScreenModel
@@ -20,7 +21,7 @@ fun UpdatesFilterDialog(onDismissRequest: () -> Unit, screenModel: UpdatesSettin
     val bookmarked by screenModel.updatesPreferences.filterBookmarked().collectAsState()
     val excluded by screenModel.updatesPreferences.filterExcludedScanlators().collectAsState()
     val panorama by screenModel.updatesPreferences.usePanoramaCover().collectAsState()
-    DetentSheet(true, stringResource(MR.strings.action_filter), onDismissRequest) {
+    DetentSheet(true, stringResource(MR.strings.action_filter), onDismissRequest, kind = SheetKind.Picker) {
         ShellFilterRow(stringResource(MR.strings.label_downloaded), downloaded) {
             screenModel.toggleFilter(UpdatesPreferences::filterDownloaded)
         }

@@ -54,7 +54,10 @@ object ChapterRecognition {
 
         when {
             numberMatch.none() -> {
-                return chapterNumber ?: -1.0
+                return dev.errnolink.tsuzuki.domain.VolumeAwareChapterRecognition
+                    .parseVolumeFallback(mangaTitle, chapterName)
+                    ?: chapterNumber
+                    ?: -1.0
             }
             numberMatch.count() > 1 -> {
                 // Remove unwanted tags.
@@ -65,6 +68,9 @@ object ChapterRecognition {
                     // need to find again first number might already removed
                     number.find(name)?.let { return getChapterNumberFromMatch(it) }
                 }
+                dev.errnolink.tsuzuki.domain.VolumeAwareChapterRecognition
+                    .parseVolumeFallback(mangaTitle, chapterName)
+                    ?.let { return it }
             }
         }
 

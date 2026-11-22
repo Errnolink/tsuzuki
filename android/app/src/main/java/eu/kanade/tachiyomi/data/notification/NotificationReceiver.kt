@@ -19,8 +19,10 @@ import eu.kanade.tachiyomi.util.system.toShareIntent
 import eu.kanade.tachiyomi.util.system.toast
 import kotlinx.coroutines.DelicateCoroutinesApi
 import kotlinx.coroutines.runBlocking
+import logcat.LogPriority
 import tachiyomi.core.common.Constants
 import tachiyomi.core.common.util.lang.launchIO
+import tachiyomi.core.common.util.system.logcat
 import tachiyomi.domain.chapter.interactor.GetChapter
 import tachiyomi.domain.chapter.interactor.UpdateChapter
 import tachiyomi.domain.chapter.model.Chapter
@@ -71,12 +73,11 @@ class NotificationReceiver : BroadcastReceiver() {
                     intent.getParcelableExtraCompat(EXTRA_URI)!!,
                     "application/x-protobuf+gzip",
                 )
-            ACTION_CANCEL_RESTORE -> cancelRestore(context)
+            ACTION_CANCEL_RESTORE -> goAsyncRun { cancelRestore(context) }
 
-            ACTION_CANCEL_SYNC -> cancelSync(context)
+            ACTION_CANCEL_SYNC -> goAsyncRun { cancelSync(context) }
             // Cancel library update and dismiss notification
-            ACTION_CANCEL_LIBRARY_UPDATE -> cancelLibraryUpdate(context)
-
+            ACTION_CANCEL_LIBRARY_UPDATE -> goAsyncRun { cancelLibraryUpdate(context) }
             // Open reader activity
             ACTION_OPEN_CHAPTER -> {
                 openChapter(
@@ -166,7 +167,7 @@ class NotificationReceiver : BroadcastReceiver() {
      *
      * @param context context of application
      */
-    private fun cancelRestore(context: Context) {
+    private suspend fun cancelRestore(context: Context) {
         BackupRestoreJob.stop(context)
     }
 
@@ -175,7 +176,7 @@ class NotificationReceiver : BroadcastReceiver() {
      *
      * @param context context of application
      */
-    private fun cancelLibraryUpdate(context: Context) {
+    private suspend fun cancelLibraryUpdate(context: Context) {
         LibraryUpdateJob.stop(context)
     }
 
@@ -184,8 +185,21 @@ class NotificationReceiver : BroadcastReceiver() {
      *
      * @param context context of application
      */
-    private fun cancelSync(context: Context) {
+    private suspend fun cancelSync(context: Context) {
         SyncDataJob.stop(context)
+    }
+
+    private fun BroadcastReceiver.goAsyncRun(block: suspend () -> Unit) {
+        val pendingResult = goAsync()
+        launchIO {
+            try {
+                block()
+            } catch (e: Exception) {
+                logcat(LogPriority.ERROR, e) { "Failed to cancel job from notification" }
+            } finally {
+                pendingResult.finish()
+            }
+        }
     }
 
     /**

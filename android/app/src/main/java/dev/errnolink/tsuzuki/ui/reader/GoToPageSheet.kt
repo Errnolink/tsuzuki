@@ -8,6 +8,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.text.input.KeyboardType
 import dev.errnolink.tsuzuki.designsystem.DetentSheet
+import dev.errnolink.tsuzuki.designsystem.SheetKind
 import dev.errnolink.tsuzuki.designsystem.PillButton
 import dev.errnolink.tsuzuki.designsystem.TsuzukiText
 import dev.errnolink.tsuzuki.designsystem.TsuzukiTheme
@@ -24,7 +25,7 @@ fun GoToPageSheet(
     onDismiss: () -> Unit,
 ) {
     var pageText by remember(currentPage, visible) { mutableStateOf(currentPage.toString()) }
-    DetentSheet(visible, "Go to page", onDismiss) {
+    DetentSheet(visible, stringResource(MR.strings.tsuzuki_go_to_page), onDismiss, kind = SheetKind.Picker) {
         val target = pageText.toIntOrNull()
         DetailField(
             pageText,
@@ -33,7 +34,7 @@ fun GoToPageSheet(
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
         )
         if (target == null || target !in 1..totalPages) {
-            TsuzukiText("Enter a page from 1 to $totalPages.", color = TsuzukiTheme.colors.destructive)
+            TsuzukiText(stringResource(MR.strings.tsuzuki_enter_page_range, totalPages), color = TsuzukiTheme.colors.destructive)
         }
         PillButton(
             stringResource(MR.strings.action_ok),

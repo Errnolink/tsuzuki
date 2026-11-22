@@ -9,11 +9,14 @@ import eu.kanade.tachiyomi.data.track.kitsu.dto.KitsuListSearchResult
 import eu.kanade.tachiyomi.data.track.kitsu.dto.KitsuMangaMetadata
 import eu.kanade.tachiyomi.data.track.kitsu.dto.KitsuOAuth
 import eu.kanade.tachiyomi.data.track.kitsu.dto.KitsuSearchResult
+import eu.kanade.tachiyomi.data.track.kitsu.dto.KitsuSingleManga
+import eu.kanade.tachiyomi.data.track.kitsu.dto.KitsuUser
 import eu.kanade.tachiyomi.data.track.model.TrackMangaMetadata
 import eu.kanade.tachiyomi.data.track.model.TrackSearch
 import eu.kanade.tachiyomi.network.DELETE
 import eu.kanade.tachiyomi.network.GET
 import eu.kanade.tachiyomi.network.POST
+import eu.kanade.tachiyomi.network.await
 import eu.kanade.tachiyomi.network.awaitSuccess
 import eu.kanade.tachiyomi.network.jsonMime
 import eu.kanade.tachiyomi.network.parseAs
@@ -143,6 +146,21 @@ class KitsuApi(private val client: OkHttpClient, interceptor: KitsuInterceptor) 
         }
     }
 
+    suspend fun getMangaDetails(id: Int): TrackSearch? {
+        return withIOContext {
+            val url = "$BASE_URL/manga/$id"
+            val response = authClient.newCall(GET(url)).await()
+
+            if (response.code == 404) {
+                null
+            } else {
+                with(json) {
+                    response.parseAs<KitsuSingleManga>().toTrackSearch()
+                }
+            }
+        }
+    }
+
     private suspend fun algoliaSearch(key: String, query: String): List<TrackSearch> {
         return withIOContext {
             val jsonObject = buildJsonObject {
@@ -230,7 +248,7 @@ class KitsuApi(private val client: OkHttpClient, interceptor: KitsuInterceptor) 
         }
     }
 
-    suspend fun getCurrentUser(): String {
+    suspend fun getCurrentUser(): KitsuUser {
         return withIOContext {
             val url = "${BASE_URL}users".toUri().buildUpon()
                 .encodedQuery("filter[self]=true")
@@ -240,7 +258,6 @@ class KitsuApi(private val client: OkHttpClient, interceptor: KitsuInterceptor) 
                     .awaitSuccess()
                     .parseAs<KitsuCurrentUserResult>()
                     .data[0]
-                    .id
             }
         }
     }

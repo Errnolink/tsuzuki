@@ -20,12 +20,30 @@ class BackupFileValidator(
      * @return List of missing sources or missing trackers.
      */
     fun validate(uri: Uri): Results {
+        // KMK -->
+        // Kotatsu backup compatibility: a zip with Kotatsu sections validates
+        // through the converter; unmatched sources restore as stubs (the
+        // restore screen offers the extensions), so they are reported, not fatal.
+        if (dev.errnolink.tsuzuki.backup.kotatsu.KotatsuRestoreSupport.isKotatsuBackup(context, uri)) {
+            val conversion = kotlinx.coroutines.runBlocking {
+                dev.errnolink.tsuzuki.backup.kotatsu.KotatsuRestoreSupport.convert(
+                    context,
+                    uri,
+                    resolveProgress = false,
+                    requireSources = false,
+                )
+            }
+            return Results(
+                conversion.unmatchedSources.keys.toList(),
+                emptyList(),
+            )
+        }
+        // KMK <--
         val backup = try {
             BackupDecoder(context).decode(uri)
         } catch (e: Exception) {
             throw IllegalStateException(e)
         }
-
         val sources = backup.backupSources.associate { it.sourceId to it.name }
         val missingSources = sources
             .filter { sourceManager.get(it.key) == null }

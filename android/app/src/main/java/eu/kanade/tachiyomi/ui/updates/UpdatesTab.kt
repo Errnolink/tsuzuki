@@ -17,6 +17,7 @@ import cafe.adriel.voyager.navigator.Navigator
 import cafe.adriel.voyager.navigator.currentOrThrow
 import cafe.adriel.voyager.navigator.tab.LocalTabNavigator
 import cafe.adriel.voyager.navigator.tab.TabOptions
+import dev.errnolink.tsuzuki.designsystem.ToastHostState
 import eu.kanade.core.preference.asState
 import eu.kanade.domain.ui.UiPreferences
 import dev.errnolink.tsuzuki.ui.updates.UpdateScreen
@@ -76,6 +77,7 @@ data object UpdatesTab : Tab {
         val screenModel = rememberScreenModel { UpdatesScreenModel() }
         val settingsScreenModel = rememberScreenModel { UpdatesSettingsScreenModel() }
         val state by screenModel.state.collectAsState()
+        val toasts = remember { ToastHostState() }
 
         // KMK -->
         val usePanoramaCover by settingsScreenModel.updatesPreferences.usePanoramaCover().collectAsState()
@@ -83,7 +85,7 @@ data object UpdatesTab : Tab {
 
         UpdateScreen(
             state = state,
-            snackbarHostState = screenModel.snackbarHostState,
+            toasts = toasts,
             lastUpdated = screenModel.lastUpdated,
             // SY -->
             preserveReadingPosition = screenModel.preserveReadingPosition,
@@ -135,7 +137,7 @@ data object UpdatesTab : Tab {
         LaunchedEffect(Unit) {
             screenModel.events.collectLatest { event ->
                 when (event) {
-                    Event.InternalError -> screenModel.snackbarHostState.showSnackbar(
+                    Event.InternalError -> toasts.show(
                         context.stringResource(MR.strings.internal_error),
                     )
                     is Event.LibraryUpdateTriggered -> {
@@ -144,7 +146,7 @@ data object UpdatesTab : Tab {
                         } else {
                             MR.strings.update_already_running
                         }
-                        screenModel.snackbarHostState.showSnackbar(context.stringResource(msg))
+                        toasts.show(context.stringResource(msg))
                     }
                 }
             }

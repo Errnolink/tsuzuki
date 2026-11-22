@@ -1,0 +1,265 @@
+// Adapted from Neko (nekomangaorg/Neko, Apache-2.0): app/src/test/java/eu/kanade/tachiyomi/ui/reader/domain/CheckTallPageUseCaseTest.kt
+package dev.errnolink.tsuzuki.reader.engine.domain
+
+import dev.errnolink.tsuzuki.reader.engine.GlLimits
+import dev.errnolink.tsuzuki.reader.engine.model.ReaderChapter
+import dev.errnolink.tsuzuki.reader.engine.model.ReaderPage
+import dev.errnolink.tsuzuki.reader.engine.model.ReaderPageSplit
+import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertNotNull
+import org.junit.jupiter.api.Assertions.assertNull
+import org.junit.jupiter.api.Assertions.assertTrue
+import org.junit.jupiter.api.Test
+import tachiyomi.domain.chapter.model.Chapter
+
+class CheckTallPageUseCaseTest {
+
+    private val useCase = CheckTallPageUseCase()
+
+    private fun createPage(): ReaderPage {
+        val dbChapter =
+            Chapter.create().copy(
+                id = 1L,
+                url = "/chapter/1",
+                name = "Chapter 1",
+            )
+        val readerChapter = ReaderChapter(dbChapter)
+        return ReaderPage(0, "url_0", "img_0").apply { chapter = readerChapter }
+    }
+
+    @Test
+    fun `computeSplits returns null for non-positive dimensions`() {
+        val page = createPage()
+        assertNull(useCase.computeSplits(page, outWidth = 0, outHeight = 1000, screenHeight = 1000))
+        assertNull(useCase.computeSplits(page, outWidth = 1000, outHeight = 0, screenHeight = 1000))
+        assertNull(
+            useCase.computeSplits(page, outWidth = -100, outHeight = 1000, screenHeight = 1000)
+        )
+    }
+
+    @Test
+    fun `computeSplits returns null for standard aspect ratio images within texture limits`() {
+        val page = createPage()
+        // 1000 x 1500: aspect ratio = 1.5, well under 3.0 and under maxTextureSize
+        val splits =
+            useCase.computeSplits(
+                page,
+                outWidth = 1000,
+                outHeight = 1500,
+                screenHeight = 1000,
+                maxTextureSize = 4096,
+            )
+        assertNull(splits)
+    }
+
+    @Test
+    fun `computeSplits returns null when height does not exceed displayMaxHeight`() {
+        val page = createPage()
+        // Aspect ratio is 4.0 (> 3.0), but height is 2000, which is <= screenHeight * 2 (2000) or
+        // min (4096)
+        val splits =
+            useCase.computeSplits(
+                page,
+                outWidth = 500,
+                outHeight = 2000,
+                screenHeight = 1000,
+                maxTextureSize = 4096,
+            )
+        assertNull(splits)
+    }
+
+    @Test
+    fun `computeSplits splits tall webtoon strips exceeding displayMaxHeight`() {
+        val page = createPage()
+        // 1000 x 12000 webtoon strip
+        val splits =
+            useCase.computeSplits(
+                page,
+                outWidth = 1000,
+                outHeight = 12000,
+                screenHeight = 1000,
+                maxTextureSize = 4096,
+            )
+        assertNotNull(splits)
+        val nonNullSplits = splits!!
+        assertEquals(3, nonNullSplits.size)
+
+        // Verifying continuous coverage
+        assertEquals(0, nonNullSplits[0].topOffset)
+        assertEquals(4000, nonNullSplits[0].splitHeight)
+
+        assertEquals(4000, nonNullSplits[1].topOffset)
+        assertEquals(4000, nonNullSplits[1].splitHeight)
+
+        assertEquals(8000, nonNullSplits[2].topOffset)
+        assertEquals(4000, nonNullSplits[2].splitHeight)
+
+        val totalHeight = nonNullSplits.sumOf { it.splitHeight }
+        assertEquals(12000, totalHeight)
+
+        nonNullSplits.forEach { split ->
+            assertEquals(1000f / 4000f, split.aspectRatio, 0.001f)
+            assertEquals(page, split.page)
+        }
+    }
+
+    @Test
+    fun `computeSplits splits images exceeding maxTextureSize even if aspect ratio is less than 3`() {
+        val page = createPage()
+        // 3000 x 5000 image (aspect ratio < 3.0), but height 5000 exceeds maxTextureSize 4096
+        val splits =
+            useCase.computeSplits(
+                page,
+                outWidth = 3000,
+                outHeight = 5000,
+                screenHeight = 1000,
+                maxTextureSize = 4096,
+            )
+        assertNotNull(splits)
+        assertTrue(splits!!.size >= 2)
+        assertEquals(5000, splits.sumOf { it.splitHeight })
+    }
+
+    @Test
+    fun `invoke returns null when stream is null`() {
+        val page = createPage()
+        page.stream = null
+        val splits = useCase(page, screenHeight = 1000)
+        assertNull(splits)
+    }
+
+    @Test
+    fun `invoke returns cached precomputed splits without invoking stream`() {
+        val page = createPage()
+        val dummySplits =
+            listOf(
+                ReaderPageSplit(
+                    page = page,
+                    topOffset = 0,
+                    splitHeight = 2000,
+                )
+            )
+        page.precomputedSplits = dummySplits
+        // Stream throws exception if called
+        page.stream = { throw IllegalStateException("Stream should not be called") }
+
+        val result = useCase(page, screenHeight = 1000)
+        assertEquals(dummySplits, result)
+    }
+
+    @Test
+    fun `invoke returns null without invoking stream when precomputedSplits is emptyList`() {
+        val page = createPage()
+        page.precomputedSplits = emptyList()
+        page.stream = { throw IllegalStateException("Stream should not be called") }
+
+        val result = useCase(page, screenHeight = 1000)
+        assertNull(result)
+    }
+
+    @Test
+    fun `computeSplits splits images exceeding canvas byte limit even on high maxTextureSize devices`() {
+        val page = createPage()
+        // 4800 x 10080 image (ratio = 2.1 < 3.0, but uncompressed bytes = 193,536,000 > 100MB)
+        // On modern Adreno devices, maxTextureSize can be 16384.
+        val splits =
+            useCase.computeSplits(
+                page,
+                outWidth = 4800,
+                outHeight = 10080,
+                screenHeight = 2560,
+                maxTextureSize = 16384,
+            )
+        assertNotNull(splits)
+        val nonNullSplits = splits!!
+        assertTrue(nonNullSplits.size >= 2)
+        assertEquals(10080, nonNullSplits.sumOf { it.splitHeight })
+
+        // Ensure every slice's byte count is within MAX_CANVAS_BITMAP_BYTES
+        nonNullSplits.forEach { split ->
+            val sliceBytes = 4800L * split.splitHeight.toLong() * 4L
+            assertTrue(
+                sliceBytes <= GlLimits.MAX_CANVAS_BITMAP_BYTES,
+                "Slice bytes $sliceBytes must not exceed MAX_CANVAS_BITMAP_BYTES",
+            )
+        }
+    }
+
+    @Test
+    fun `computeSplits ensures all generated slices do not exceed maxCanvasTextureSize by default`() {
+        val page = createPage()
+        val splits =
+            useCase.computeSplits(
+                page,
+                outWidth = 3000,
+                outHeight = 15000,
+                screenHeight = 2000,
+            )
+        assertNotNull(splits)
+        val nonNullSplits = splits!!
+        nonNullSplits.forEach { split ->
+            assertTrue(
+                split.splitHeight <= GlLimits.maxCanvasTextureSize,
+                "Slice height ${split.splitHeight} must not exceed maxCanvasTextureSize",
+            )
+        }
+    }
+
+    @Test
+    fun `computeSplits respects configurable bytesPerPixel`() {
+        val page = createPage()
+        // With bytesPerPixel = 4L (ARGB_8888), 6000 x 5000 * 4 = 120 MB > 100 MB -> split required
+        val splits4Bytes =
+            useCase.computeSplits(
+                page,
+                outWidth = 6000,
+                outHeight = 5000,
+                screenHeight = 3000,
+                maxTextureSize = 8192,
+                bytesPerPixel = 4L,
+            )
+        assertNotNull(splits4Bytes)
+
+        // With bytesPerPixel = 2L (RGB_565), 6000 x 5000 * 2 = 60 MB <= 100 MB, aspect ratio = 0.83
+        // <= 2f,
+        // height 5000 <= displayMaxHeight 6000 -> no split required
+        val splits2Bytes =
+            useCase.computeSplits(
+                page,
+                outWidth = 6000,
+                outHeight = 5000,
+                screenHeight = 3000,
+                maxTextureSize = 8192,
+                bytesPerPixel = 2L,
+            )
+        assertNull(splits2Bytes)
+    }
+
+    @Test
+    fun `computeSplits splits ultra-wide panoramic scans that exceed canvas byte limit`() {
+        val page = createPage()
+        // 15000 x 2000 panoramic scan: aspect ratio 2000 / 15000 = 0.133 <= 2f,
+        // but 15000 * 2000 * 4 = 120 MB > 100 MB limit
+        val splits =
+            useCase.computeSplits(
+                page,
+                outWidth = 15000,
+                outHeight = 2000,
+                screenHeight = 3000,
+                maxTextureSize = 16384,
+            )
+        assertNotNull(splits)
+        val nonNullSplits = splits!!
+        assertTrue(nonNullSplits.size >= 2)
+        assertEquals(2000, nonNullSplits.sumOf { it.splitHeight })
+
+        // Ensure each slice's byte count is within MAX_CANVAS_BITMAP_BYTES
+        nonNullSplits.forEach { split ->
+            val sliceBytes = 15000L * split.splitHeight.toLong() * 4L
+            assertTrue(
+                sliceBytes <= GlLimits.MAX_CANVAS_BITMAP_BYTES,
+                "Slice bytes $sliceBytes must not exceed MAX_CANVAS_BITMAP_BYTES",
+            )
+        }
+    }
+}

@@ -6,14 +6,14 @@ import androidx.work.WorkInfo
 import androidx.work.WorkManager
 import kotlinx.coroutines.delay
 import logcat.LogPriority
+import tachiyomi.core.common.util.lang.withIOContext
 import tachiyomi.core.common.util.system.logcat
 
 val Context.workManager: WorkManager
     get() = WorkManager.getInstance(this)
 
-fun WorkManager.isRunning(tag: String): Boolean {
-    val list = this.getWorkInfosByTag(tag).get()
-    return list.any { it.state == WorkInfo.State.RUNNING }
+suspend fun WorkManager.isRunning(tag: String): Boolean = withIOContext {
+    getWorkInfosByTag(tag).get().any { it.state == WorkInfo.State.RUNNING }
 }
 
 /**

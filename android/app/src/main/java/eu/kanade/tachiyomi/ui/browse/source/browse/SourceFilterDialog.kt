@@ -26,6 +26,7 @@ import dev.errnolink.tsuzuki.designsystem.ChevronDown
 import dev.errnolink.tsuzuki.designsystem.ContextMenu
 import dev.errnolink.tsuzuki.designsystem.ContextMenuAction
 import dev.errnolink.tsuzuki.designsystem.DetentSheet
+import dev.errnolink.tsuzuki.designsystem.SheetKind
 import dev.errnolink.tsuzuki.designsystem.GlassMenu
 import dev.errnolink.tsuzuki.designsystem.GroupedRow
 import dev.errnolink.tsuzuki.designsystem.PillButton
@@ -61,7 +62,7 @@ fun SourceFilterDialog(
     openMangaDexRandom: (() -> Unit)?,
     openMangaDexFollows: (() -> Unit)?,
 ) {
-    DetentSheet(true, stringResource(MR.strings.action_filter), onDismissRequest) {
+    DetentSheet(true, stringResource(MR.strings.action_filter), onDismissRequest, kind = SheetKind.Picker) {
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             PillButton(stringResource(MR.strings.action_reset), onReset, Modifier.weight(1f), prominent = false)
             if (shouldShowSavingButton) PillButton(stringResource(MR.strings.action_save), onSave, Modifier.weight(1f), prominent = false)

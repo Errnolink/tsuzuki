@@ -4,7 +4,9 @@ import android.content.Context
 import eu.kanade.domain.sync.SyncPreferences
 import eu.kanade.tachiyomi.data.sync.SyncDataJob
 import eu.kanade.tachiyomi.data.sync.SyncManager
+import kotlinx.coroutines.DelicateCoroutinesApi
 import tachiyomi.core.common.preference.PreferenceStore
+import tachiyomi.core.common.util.lang.launchIO
 import uy.kohesive.injekt.Injekt
 import uy.kohesive.injekt.api.get
 
@@ -27,6 +29,7 @@ object PairWithHub {
      * capabilities), installs a 15-minute schedule when none is set, remembers the PC
      * name, and starts a manual sync immediately.
      */
+    @OptIn(DelicateCoroutinesApi::class)
     fun pair(context: Context, request: PairRequest) {
         val syncPreferences = Injekt.get<SyncPreferences>()
         syncPreferences.syncService().set(SyncManager.SyncService.SYNCYOMI.value)
@@ -40,6 +43,6 @@ object PairWithHub {
         SyncDataJob.setupTask(context)
 
         PairingStore.pairedPcName().set(request.name ?: "")
-        SyncDataJob.startNow(context, manual = true)
+        launchIO { SyncDataJob.startNow(context, manual = true) }
     }
 }

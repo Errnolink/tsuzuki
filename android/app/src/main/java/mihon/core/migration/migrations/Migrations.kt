@@ -50,5 +50,6 @@ val migrations: List<Migration>
         DisabledRepoMigration(),
         SyncPrefKeyMigration(),
         ChapterUrlHashMigration(),
+        dev.errnolink.tsuzuki.mangadex.AutoTrackUpgradeMigration(),
         // KMK <--
     )

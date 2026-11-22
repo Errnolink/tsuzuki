@@ -19,9 +19,11 @@ class FetchInterval(
         dateTime: ZonedDateTime,
         window: Pair<Long, Long>,
     ): MangaUpdate {
-        val interval = manga.fetchInterval.takeIf { it < 0 } ?: calculateInterval(
+        val interval = manga.fetchInterval.takeIf { it < 0 } ?: dev.errnolink.tsuzuki.domain.ReleaseCadencePredictor.predictIntervalDays(
             chapters = getChaptersByMangaId.await(manga.id, applyFilter = true),
             zone = dateTime.zone,
+            maxInterval = MAX_INTERVAL,
+            nowMillis = dateTime.toInstant().toEpochMilli(),
         )
         val currentWindow = if (window.first == 0L && window.second == 0L) {
             getWindow(ZonedDateTime.now())
@@ -40,49 +42,8 @@ class FetchInterval(
         return Pair(lowerBound.toEpochSecond() * 1000, upperBound.toEpochSecond() * 1000 - 1)
     }
 
-    internal fun calculateInterval(chapters: List<Chapter>, zone: ZoneId): Int {
-        val chapterWindow = if (chapters.size <= 8) 3 else 10
-
-        val uploadDates = chapters.asSequence()
-            .filter { it.dateUpload > 0L }
-            .sortedByDescending { it.dateUpload }
-            .map {
-                ZonedDateTime.ofInstant(Instant.ofEpochMilli(it.dateUpload), zone)
-                    .toLocalDate()
-                    .atStartOfDay()
-            }
-            .distinct()
-            .take(chapterWindow)
-            .toList()
-
-        val fetchDates = chapters.asSequence()
-            .sortedByDescending { it.dateFetch }
-            .map {
-                ZonedDateTime.ofInstant(Instant.ofEpochMilli(it.dateFetch), zone)
-                    .toLocalDate()
-                    .atStartOfDay()
-            }
-            .distinct()
-            .take(chapterWindow)
-            .toList()
-
-        val interval = when {
-            // Enough upload date from source
-            uploadDates.size >= 3 -> {
-                val ranges = uploadDates.windowed(2).map { x -> x[1].until(x[0], ChronoUnit.DAYS) }.sorted()
-                ranges[(ranges.size - 1) / 2].toInt()
-            }
-            // Enough fetch date from client
-            fetchDates.size >= 3 -> {
-                val ranges = fetchDates.windowed(2).map { x -> x[1].until(x[0], ChronoUnit.DAYS) }.sorted()
-                ranges[(ranges.size - 1) / 2].toInt()
-            }
-            // Default to 7 days
-            else -> 7
-        }
-
-        return interval.coerceIn(1, MAX_INTERVAL)
-    }
+    internal fun calculateInterval(chapters: List<Chapter>, zone: ZoneId): Int =
+        dev.errnolink.tsuzuki.domain.ReleaseCadencePredictor.predictIntervalDays(chapters, zone, MAX_INTERVAL)
 
     private fun calculateNextUpdate(
         manga: Manga,

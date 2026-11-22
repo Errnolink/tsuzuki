@@ -29,7 +29,8 @@ internal const val RubberBandSlope = 0.55f
 internal const val FallbackContainerPx = 1080f
 internal const val BounceVelocityClamp = 8000f
 internal const val BounceCapFraction = 0.12f
-internal const val BounceStiffness = 110f
+/** (2π / 0.575 s)²: the critically damped edge bounce of UIScrollView as measured by fluid-scroll (ktiays, Apache-2.0). */
+internal const val BounceStiffness = 119.4f
 internal const val SettleMaxFrameSeconds = 1f / 30f
 internal const val SettleSubstepSeconds = 1f / 240f
 internal const val SettleSnapPx = 0.25f

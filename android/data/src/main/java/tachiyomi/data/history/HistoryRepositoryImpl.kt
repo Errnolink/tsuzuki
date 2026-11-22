@@ -101,7 +101,9 @@ class HistoryRepositoryImpl(
     // KMK -->
     override suspend fun resetHistory(historyIds: List<Long>) {
         try {
-            handler.await { historyQueries.resetHistoryByIds(historyIds) }
+            historyIds.distinct().chunked(MAX_SQL_VARIABLES).forEach { chunk ->
+                handler.await { historyQueries.resetHistoryByIds(chunk) }
+            }
             // KMK <--
         } catch (e: Exception) {
             logcat(LogPriority.ERROR, throwable = e)
@@ -111,7 +113,9 @@ class HistoryRepositoryImpl(
     // KMK -->
     override suspend fun resetHistoryByMangaIds(mangaIds: List<Long>) {
         try {
-            handler.await { historyQueries.resetHistoryByMangaIds(mangaIds) }
+            mangaIds.distinct().chunked(MAX_SQL_VARIABLES).forEach { chunk ->
+                handler.await { historyQueries.resetHistoryByMangaIds(chunk) }
+            }
             // KMK <--
         } catch (e: Exception) {
             logcat(LogPriority.ERROR, throwable = e)
@@ -159,4 +163,8 @@ class HistoryRepositoryImpl(
         }
     }
     // SY <--
+
+    private companion object {
+        private const val MAX_SQL_VARIABLES = 900
+    }
 }

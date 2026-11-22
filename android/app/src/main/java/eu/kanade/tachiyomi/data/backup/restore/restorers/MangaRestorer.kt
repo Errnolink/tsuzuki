@@ -1,5 +1,6 @@
 package eu.kanade.tachiyomi.data.backup.restore.restorers
 
+import dev.errnolink.tsuzuki.data.backup.BackupRestoreHardening
 import dev.errnolink.tsuzuki.mangadex.backup.NekoBackupMapper
 import kotlinx.serialization.json.JsonObject
 import eu.kanade.domain.manga.interactor.UpdateManga
@@ -88,6 +89,9 @@ class MangaRestorer(
             // SY -->
             manga = EXHMigrations.migrateBackupEntry(manga)
             // SY <--
+            manga = manga.copy(
+                ogTitle = BackupRestoreHardening.safeRestoreTitle(manga.ogTitle, dbManga?.ogTitle, manga.url),
+            )
             var backupWins = true
             var restoredManga = if (dbManga == null) {
                 restoreNewManga(manga)
@@ -513,15 +517,14 @@ class MangaRestorer(
         replace: Boolean,
         // KMK <--
     ) {
-        // KMK -->
-        // A newer local owner keeps its own reference set; only the winning
-        // backup snapshot may replace it.
-        if (!replace) return
-
         val dbMergedMangaReferences = handler.awaitList {
             mergedQueries.selectByMergeId(mergeMangaId, MergedMangaMapper::map)
         }
-        val reconciliation = reconcileMergedReferences(dbMergedMangaReferences, backupMergedMangaReferences)
+        val reconciliation = BackupRestoreHardening.reconcileReferences(
+            existing = dbMergedMangaReferences,
+            incoming = backupMergedMangaReferences,
+            replace = replace,
+        )
         if (reconciliation.toInsert.isEmpty() && reconciliation.toUpdate.isEmpty() && reconciliation.toDelete.isEmpty()) {
             return
         }

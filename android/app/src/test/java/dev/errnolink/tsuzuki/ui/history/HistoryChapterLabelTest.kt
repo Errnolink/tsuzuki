@@ -12,6 +12,12 @@ class HistoryChapterLabelTest {
     }
 
     @Test
+    fun `chapter zero keeps its number`() {
+        assertEquals("Ch. 0", historyChapterLabel(0.0, "Oneshot"))
+        assertEquals("Ch. 0", historyChapterLabel(0.0, null))
+    }
+
+    @Test
     fun `unnumbered chapters with a name show the name`() {
         assertEquals("Oneshot", historyChapterLabel(-1.0, "Oneshot"))
     }

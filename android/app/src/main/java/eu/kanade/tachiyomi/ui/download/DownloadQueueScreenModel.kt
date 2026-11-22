@@ -63,7 +63,7 @@ class DownloadQueueScreenModel(
                     (item as DownloadItem).download
                 }
             }
-            reorder(downloads)
+            reorder { _ -> downloads }
         }
 
         /**
@@ -91,7 +91,7 @@ class DownloadQueueScreenModel(
                             }
                             newDownloads.addAll(headerItem.subItems.map { it.download })
                         }
-                        reorder(newDownloads)
+                        reorder { _ -> newDownloads }
                     }
                     R.id.move_to_top_series, R.id.move_to_bottom_series -> {
                         val (selectedSeries, otherSeries) = adapter?.currentItems
@@ -100,9 +100,9 @@ class DownloadQueueScreenModel(
                             ?.partition { item.download.manga.id == it.manga.id }
                             ?: Pair(emptyList(), emptyList())
                         if (menuItem.itemId == R.id.move_to_top_series) {
-                            reorder(selectedSeries + otherSeries)
+                            reorder { _ -> selectedSeries + otherSeries }
                         } else {
-                            reorder(otherSeries + selectedSeries)
+                            reorder { _ -> otherSeries + selectedSeries }
                         }
                     }
                     R.id.cancel_download -> {
@@ -173,8 +173,8 @@ class DownloadQueueScreenModel(
         downloadManager.clearQueue()
     }
 
-    fun reorder(downloads: List<Download>) {
-        downloadManager.reorderQueue(downloads)
+    fun reorder(reorder: (List<Download>) -> List<Download>?) {
+        downloadManager.reorderQueue(reorder)
     }
 
     fun cancel(downloads: List<Download>) {
@@ -199,7 +199,7 @@ class DownloadQueueScreenModel(
             }
             newDownloads.addAll(headerItem.subItems.map { it.download })
         }
-        reorder(newDownloads)
+        reorder { _ -> newDownloads }
     }
 
     /**

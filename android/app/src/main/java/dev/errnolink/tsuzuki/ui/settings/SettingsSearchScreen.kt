@@ -8,6 +8,9 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.NonRestartableComposable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.MutableState
+import androidx.compose.runtime.SideEffect
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
@@ -41,7 +44,9 @@ class TsuzukiSettingsSearchScreen : Screen() {
         LaunchedEffect(state.isScrollInProgress) {
             if (state.isScrollInProgress) focus.clearFocus()
         }
-        val results = searchResults(query)
+        val index = remember { mutableStateOf(emptyList<SettingsData>()) }
+        SettingsIndex(index)
+        val results = searchResults(query, index.value)
         val search = rememberTopBarSearch(
             query = query,
             onQueryChange = { query = it },
@@ -57,7 +62,10 @@ class TsuzukiSettingsSearchScreen : Screen() {
         ) {
             if (query.isNotBlank() && results.isEmpty()) {
                 item("settings-no-results") {
-                    ShellEmpty("No matching settings", "Try a different setting name.")
+                    ShellEmpty(
+                        stringResource(MR.strings.tsuzuki_no_matching_settings),
+                        stringResource(MR.strings.tsuzuki_no_matching_settings_desc),
+                    )
                 }
             }
             if (results.isNotEmpty()) {
@@ -83,14 +91,23 @@ class TsuzukiSettingsSearchScreen : Screen() {
     }
 }
 
+/**
+ * Builds the search index in its own recomposition scope: it reruns when a preference it reads
+ * changes, never on a keystroke (each screen's `getPreferences()` subscribes to dozens of prefs).
+ */
 @Composable
-private fun searchResults(searchKey: String): List<SearchResultItem> {
+private fun SettingsIndex(into: MutableState<List<SettingsData>>) {
+    val index = getIndex()
+    SideEffect { into.value = index }
+}
+
+@Composable
+private fun searchResults(searchKey: String, index: List<SettingsData>): List<SearchResultItem> {
     if (searchKey.isBlank()) return emptyList()
 
     val isLtr = LocalLayoutDirection.current == LayoutDirection.Ltr
 
-    val index = getIndex()
-    val result by produceState<List<SearchResultItem>?>(initialValue = null, searchKey) {
+    val result by produceState<List<SearchResultItem>?>(initialValue = null, searchKey, index) {
         value = index.asSequence()
             .flatMap { settingsData ->
                 settingsData.contents.asSequence()
@@ -129,17 +146,15 @@ private fun searchResults(searchKey: String): List<SearchResultItem> {
                                 node = categoryTitle,
                                 isLtr = isLtr,
                             ),
-                            highlightKey = p.title,
+                            highlightKey = p.storeKey() ?: p.title,
                         )
                     }
             }
-            .take(10) // Just take top 10 result for quicker result
             .toList()
     }
 
     return result.orEmpty()
 }
-
 @Composable
 @NonRestartableComposable
 private fun getIndex() = settingScreens
@@ -148,7 +163,9 @@ private fun getIndex() = settingScreens
     // SY <--
     .map { screen ->
         SettingsData(
-            title = screen.displayName ?: stringResource(screen.getTitleRes()),
+            title = settingsDisplayTitleRes(screen)?.let { stringResource(it) }
+                ?: screen.displayName
+                ?: stringResource(screen.getTitleRes()),
             route = screen,
             contents = screen.getPreferences(),
         )

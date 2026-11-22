@@ -1,7 +1,5 @@
 package dev.errnolink.tsuzuki.designsystem
 
-import androidx.compose.animation.core.SpringSpec
-import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.FiniteAnimationSpec
 import androidx.compose.animation.core.tween
 import androidx.compose.runtime.Immutable
@@ -13,7 +11,6 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import kotlin.math.sqrt
 
 @Immutable
 data class TsuzukiColors(
@@ -24,6 +21,7 @@ data class TsuzukiColors(
     val secondary: Color,
     val separator: Color,
     val selectedFill: Color,
+    @Deprecated("Use accent")
     val tabTint: Color,
     val glassTint: Color,
     val accent: Color,
@@ -49,47 +47,6 @@ internal fun tsuzukiColors(dark: Boolean, accent: Color? = null) = if (dark) {
         accent = accent ?: Color(0xFF205DC2), onAccent = Color.White,
         destructive = Color(0xFFBC2925), success = Color(0xFF1E6B39), isDark = false,
     )
-}
-
-fun tsuzukiCardColors(card: Color): TsuzukiColors {
-    val dark = tsuzukiColors(true)
-    fun mix(amount: Float) = androidx.compose.ui.graphics.lerp(card, Color.White, amount)
-    val max = maxOf(card.red, card.green, card.blue)
-    val min = minOf(card.red, card.green, card.blue)
-    val delta = max - min
-    val hueDegrees = when {
-        delta == 0f -> 0f
-        max == card.red -> 60f * (((card.green - card.blue) / delta).mod(6f))
-        max == card.green -> 60f * ((card.blue - card.red) / delta + 2f)
-        else -> 60f * ((card.red - card.green) / delta + 4f)
-    }
-    val hue = Color.hsv(hueDegrees.coerceIn(0f, 359.99f), if (max == 0f) 0f else delta / max, 1f)
-    return TsuzukiColors(
-        background = card,
-        grouped = mix(0.07f),
-        elevated = mix(0.13f),
-        text = dark.text,
-        secondary = mix(0.86f),
-        separator = mix(0.2f),
-        selectedFill = readableUnder(mix(0.1f), dark.text),
-        tabTint = dark.tabTint,
-        glassTint = mix(0.1f),
-        accent = androidx.compose.ui.graphics.lerp(hue, Color.White, 0.86f),
-        onAccent = card,
-        destructive = dark.destructive,
-        success = dark.success,
-        isDark = true,
-    )
-}
-
-private fun readableUnder(fill: Color, text: Color, minContrast: Float = 4.5f): Color {
-    val textLum = text.luminance()
-    var candidate = fill
-    repeat(24) {
-        if ((textLum + 0.05f) / (candidate.luminance() + 0.05f) >= minContrast) return candidate
-        candidate = Color(candidate.red * 0.94f, candidate.green * 0.94f, candidate.blue * 0.94f, candidate.alpha)
-    }
-    return candidate
 }
 
 fun lerpColors(from: TsuzukiColors, to: TsuzukiColors, fraction: Float): TsuzukiColors {
@@ -119,17 +76,27 @@ object BrandColors {
     val mangaDex = Color(0xFFFF6740)
 }
 
-private val Inter = FontFamily(
+internal val Inter = FontFamily(
     Font(R.font.inter_regular, FontWeight.Normal),
+    Font(R.font.inter_medium, FontWeight.Medium),
     Font(R.font.inter_semibold, FontWeight.SemiBold),
     Font(R.font.inter_bold, FontWeight.Bold),
+    Font(R.font.inter_extrabold, FontWeight.ExtraBold),
+)
+
+internal val InterDisplay = FontFamily(
+    Font(R.font.inter_display_semibold, FontWeight.SemiBold),
+    Font(R.font.inter_display_bold, FontWeight.Bold),
+    Font(R.font.inter_display_extrabold, FontWeight.ExtraBold),
 )
 
 @Immutable
-class TsuzukiTypography(private val font: FontFamily = Inter) {
-    private fun role(size: Int, height: Int, weight: FontWeight = FontWeight.Normal, tracking: Double = 0.0) =
+class TsuzukiTypography(
+    private val font: FontFamily = Inter,
+) {
+    private fun role(size: Int, height: Int, weight: FontWeight = FontWeight.Normal, tracking: Double = 0.0, family: FontFamily = font) =
         TextStyle(
-            fontFamily = font,
+            fontFamily = family,
             fontSize = size.sp,
             lineHeight = height.sp,
             fontWeight = weight,
@@ -162,6 +129,7 @@ object TsuzukiSpacing {
     val section = 24.dp
     val large = 32.dp
     val touchTarget = 48.dp
+    val rowMin = 56.dp
 }
 
 @Immutable
@@ -169,8 +137,19 @@ object TsuzukiCorners {
     val cover = 12.dp
     val field = 14.dp
     val group = 20.dp
+    val menu = 28.dp
     val sheet = 34.dp
     val capsulePercent = 50
+}
+
+@Immutable
+object TsuzukiSize {
+    /** 36 dp circle: the icon well inside a [touch] target. */
+    val iconWell = 36.dp
+    /** 44 dp circle: compact inline control target. */
+    val control = 44.dp
+    /** 48 dp circle: full-size touch target. */
+    val touch = 48.dp
 }
 
 @Immutable
@@ -182,20 +161,6 @@ data class TsuzukiMotion(val reduced: Boolean = false) {
     val coverReleaseMillis = 120
     val coverArrivalMillis = 120
     val chromeFadeMillis = 160
-    val pressStiffness = 420f
-    val pressDamping = 34f
-    val pressMass = 0.7f
-    val tabStiffness = 400f
-    val tabDamping = 38f
-    val sheetStiffness = 500f
-    val sheetDamping = 45f
-
-    fun <T> pressSpring(): SpringSpec<T> = physicalSpring(pressStiffness, pressDamping, pressMass)
-    fun <T> tabSpring(): SpringSpec<T> = physicalSpring(tabStiffness, tabDamping)
-    fun <T> sheetSpring(): SpringSpec<T> = physicalSpring(sheetStiffness, sheetDamping)
 
     fun chromeFade(): FiniteAnimationSpec<Float> = tween(M3Motion.Short3, easing = M3Motion.Standard)
-
-    private fun <T> physicalSpring(stiffness: Float, damping: Float, mass: Float = 1f): SpringSpec<T> =
-        spring(stiffness = stiffness / mass, dampingRatio = damping / (2f * sqrt(stiffness * mass)))
 }

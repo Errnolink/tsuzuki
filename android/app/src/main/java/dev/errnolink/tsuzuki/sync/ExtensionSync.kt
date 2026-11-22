@@ -18,6 +18,7 @@ import eu.kanade.tachiyomi.network.await
 import eu.kanade.tachiyomi.util.system.cancelNotification
 import eu.kanade.tachiyomi.util.system.notificationBuilder
 import eu.kanade.tachiyomi.util.system.notify
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -49,7 +50,7 @@ object ExtensionSync {
     private val preferences: SharedPreferences by lazy {
         app.getSharedPreferences("extension_sync", Context.MODE_PRIVATE)
     }
-    private val json = Json
+    private val json = Json { ignoreUnknownKeys = true }
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val mutex = Mutex()
     private val storeLock = Any()
@@ -321,6 +322,8 @@ object ExtensionSync {
             } else {
                 Change(available.pkgName, Action.FAILED, ExtensionSyncRules.REASON_INSTALL_FAILED)
             }
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             logcat(LogPriority.WARN, e) { "Failed to install wanted extension ${available.pkgName}" }
             Change(available.pkgName, Action.FAILED, e.message)

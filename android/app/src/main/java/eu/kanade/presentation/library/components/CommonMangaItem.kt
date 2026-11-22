@@ -42,7 +42,8 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import eu.kanade.presentation.manga.components.MangaCover
-import dev.errnolink.tsuzuki.ui.shell.mangaHeroSource
+import dev.errnolink.tsuzuki.ui.motion.mangaHeroSource
+import dev.errnolink.tsuzuki.ui.motion.heroFlightLabel
 import eu.kanade.presentation.manga.components.MangaCoverHide
 import eu.kanade.presentation.manga.components.RatioSwitchToPanorama
 import exh.debug.DebugToggles
@@ -133,6 +134,7 @@ fun MangaCompactGridItem(
                 if (title != null) {
                     CoverTextOverlay(
                         title = title,
+                        mangaId = coverData.mangaId,
                         onClickContinueReading = onClickContinueReading,
                     )
                 } else if (onClickContinueReading != null) {
@@ -156,6 +158,7 @@ fun MangaCompactGridItem(
 @Composable
 private fun BoxScope.CoverTextOverlay(
     title: String,
+    mangaId: Long = 0L,
     onClickContinueReading: (() -> Unit)? = null,
 ) {
     Box(
@@ -178,6 +181,7 @@ private fun BoxScope.CoverTextOverlay(
         GridItemTitle(
             modifier = Modifier
                 .weight(1f)
+                .heroFlightLabel(mangaId)
                 .padding(8.dp),
             title = title,
             style = MaterialTheme.typography.titleSmall.copy(
@@ -317,7 +321,7 @@ fun MangaComfortableGridItem(
                 },
             )
             GridItemTitle(
-                modifier = Modifier.padding(4.dp),
+                modifier = Modifier.padding(4.dp).heroFlightLabel(coverData.mangaId),
                 title = title,
                 style = MaterialTheme.typography.titleSmall,
                 minLines = 2,
@@ -473,9 +477,9 @@ fun MangaListItem(
             MangaCover.Square(
                 modifier = Modifier
                     // KMK -->
-                    // .alpha(coverAlpha)
-                    // KMK <--
-                    .fillMaxHeight(),
+                    .fillMaxHeight()
+                    .mangaHeroSource(coverData.mangaId, null),
+                // KMK <--
                 data = coverData,
                 // KMK -->
                 alpha = coverAlpha,
@@ -489,7 +493,8 @@ fun MangaListItem(
             text = title,
             modifier = Modifier
                 .padding(horizontal = 16.dp)
-                .weight(1f),
+                .weight(1f)
+                .heroFlightLabel(coverData.mangaId),
             maxLines = 2,
             overflow = TextOverflow.Ellipsis,
             style = MaterialTheme.typography.bodyMedium,

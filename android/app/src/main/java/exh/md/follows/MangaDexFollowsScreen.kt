@@ -7,6 +7,7 @@ import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.FlipToBack
 import androidx.compose.material.icons.outlined.SelectAll
 import androidx.compose.material3.SnackbarHostState
+import dev.errnolink.tsuzuki.designsystem.ToastHostState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -68,7 +69,7 @@ class MangaDexFollowsScreen(private val sourceId: Long) : Screen() {
         }
         // KMK <--
 
-        val snackbarHostState = remember { SnackbarHostState() }
+        val toasts = remember { ToastHostState() }
 
         // KMK -->
         val mangaList = screenModel.mangaPagerFlowFlow.collectAsLazyPagingItems()
@@ -93,7 +94,7 @@ class MangaDexFollowsScreen(private val sourceId: Long) : Screen() {
         ShellContentScaffold(
             title = stringResource(SYMR.strings.mangadex_follows),
             navigateUp = navigator::pop,
-            snackbar = snackbarHostState,
+            toasts = toasts,
             actions = if (bulkFavoriteState.selectionMode) {
                 listOf(
                     ShellTopAction(
@@ -121,7 +122,7 @@ class MangaDexFollowsScreen(private val sourceId: Long) : Screen() {
                 columns = screenModel.getColumnsPreference(LocalConfiguration.current.orientation),
 
                 displayMode = screenModel.displayMode,
-                snackbarHostState = snackbarHostState,
+                toasts = toasts,
                 contentPadding = paddingValues,
                 onWebViewClick = null,
                 onHelpClick = null,

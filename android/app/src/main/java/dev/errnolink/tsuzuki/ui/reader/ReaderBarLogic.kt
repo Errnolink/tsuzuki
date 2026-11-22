@@ -27,29 +27,31 @@ fun calculateSliderValueAt(
     return (valueRange.first + f * (valueRange.last - valueRange.first)).roundToInt()
 }
 
-fun calculateBubbleOffsetPx(
+fun scrubBubbleLeftPx(
+    trackLeftPx: Float,
+    trackWidthPx: Float,
+    padPx: Float,
     fraction: Float,
-    maxWidthPx: Float,
+    containerWidthPx: Float,
     bubbleWidthPx: Float,
 ): Float {
-    val halfBubble = bubbleWidthPx / 2f
-    val x = maxWidthPx * fraction.coerceIn(0f, 1f)
-    val maxOffset = (maxWidthPx - bubbleWidthPx).coerceAtLeast(0f)
-    return (x - halfBubble).coerceIn(0f, maxOffset)
+    val thumb = trackLeftPx + padPx + fraction.coerceIn(0f, 1f) * (trackWidthPx - padPx * 2).coerceAtLeast(0f)
+    val maxLeft = (containerWidthPx - bubbleWidthPx).coerceAtLeast(0f)
+    return (thumb - bubbleWidthPx / 2f).coerceIn(0f, maxLeft)
 }
-
-fun formatPageChipText(page: Int, total: Int): String = "Page $page of $total"
 
 fun formatPageCountText(current: Int, total: Int): String = "$current / $total"
 
-fun formatChapterShortName(readerChapter: ReaderChapter?): String? {
+fun formatChapterShortName(readerChapter: ReaderChapter?, chapterShortPattern: String): String? {
     val chapter = readerChapter?.chapter ?: return null
     return formatChapterShortName(
         chapterNumber = chapter.chapter_number.toDouble(),
         isRecognized = chapter.isRecognizedNumber,
         name = chapter.name,
+        chapterShortPattern = chapterShortPattern,
     )
 }
+
 
 @Immutable
 data class ChapterLabels(val previous: String?, val current: String, val next: String?)
@@ -58,9 +60,10 @@ fun formatChapterShortName(
     chapterNumber: Double,
     isRecognized: Boolean,
     name: String?,
+    chapterShortPattern: String,
 ): String? {
     return if (isRecognized && chapterNumber.isFinite() && chapterNumber >= 0.0) {
-        "Ch. ${formatChapterNumber(chapterNumber)}"
+        chapterShortPattern.format(formatChapterNumber(chapterNumber))
     } else {
         name?.trim()?.ifBlank { null }
     }
@@ -99,32 +102,32 @@ data class ReaderArrowConfig(
     val isNext: Boolean,
 )
 
-fun resolveLeftArrow(isRtl: Boolean, enabledPrevious: Boolean, enabledNext: Boolean): ReaderArrowConfig {
+fun resolveLeftArrow(isRtl: Boolean, enabledPrevious: Boolean, enabledNext: Boolean, previousLabel: String, nextLabel: String): ReaderArrowConfig {
     return if (isRtl) {
         ReaderArrowConfig(
-            contentDescription = "Next chapter",
+            contentDescription = nextLabel,
             enabled = enabledNext,
             isNext = true,
         )
     } else {
         ReaderArrowConfig(
-            contentDescription = "Previous chapter",
+            contentDescription = previousLabel,
             enabled = enabledPrevious,
             isNext = false,
         )
     }
 }
 
-fun resolveRightArrow(isRtl: Boolean, enabledPrevious: Boolean, enabledNext: Boolean): ReaderArrowConfig {
+fun resolveRightArrow(isRtl: Boolean, enabledPrevious: Boolean, enabledNext: Boolean, previousLabel: String, nextLabel: String): ReaderArrowConfig {
     return if (isRtl) {
         ReaderArrowConfig(
-            contentDescription = "Previous chapter",
+            contentDescription = previousLabel,
             enabled = enabledPrevious,
             isNext = false,
         )
     } else {
         ReaderArrowConfig(
-            contentDescription = "Next chapter",
+            contentDescription = nextLabel,
             enabled = enabledNext,
             isNext = true,
         )
@@ -135,11 +138,15 @@ fun resolveEffectiveBarStyle(barStyle: ReaderBarStyle, navBarType: NavBarType): 
     return if (navBarType == NavBarType.Bottom) barStyle else ReaderBarStyle.Classic
 }
 
-fun pagesLeftInChapter(currentPage: Int, totalPages: Int): String? {
+/** The page count the chrome shows: "9 / 30", or nothing before the chapter has pages. */
+fun readerPageCount(currentPage: Int, totalPages: Int): String? {
     if (totalPages <= 0 || currentPage < 1 || currentPage > totalPages) return null
-    return when (val left = totalPages - currentPage) {
-        0 -> "Last page in chapter"
-        1 -> "1 page left in chapter"
-        else -> "$left pages left in chapter"
-    }
+    return "$currentPage / $totalPages"
 }
+
+/** The scrubber's resting page. `currentPage` is already 1-based (`ReaderViewModel` stores index + 1). */
+fun scrubberRestPage(currentPage: Int, totalPages: Int): Int = currentPage.coerceIn(1, totalPages.coerceAtLeast(1))
+
+/** How far through the chapter the reader is, for the status pill. */
+fun readerProgressFraction(currentPage: Int, totalPages: Int): Float =
+    if (totalPages > 0) (currentPage.toFloat() / totalPages).coerceIn(0.04f, 1f) else 0.04f

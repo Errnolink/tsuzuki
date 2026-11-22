@@ -40,6 +40,44 @@
         <item quantity="other">%d days</item>
     </plurals>
 
+    <plurals name="tsuzuki_n_selected">
+        <item quantity="one">%d selected</item>
+        <item quantity="other">%d selected</item>
+    </plurals>
+    <plurals name="tsuzuki_kotatsu_backup_unmatched">
+        <item quantity="one">%d title is from a source without an installed extension. It restores as “source not found” and becomes readable after you install the extension and restore again.</item>
+        <item quantity="other">%d titles are from sources without an installed extension. They restore as “source not found” and become readable after you install the extension and restore again.</item>
+    </plurals>
+    <plurals name="tsuzuki_num_titles">
+        <item quantity="one">%d title</item>
+        <item quantity="other">%d titles</item>
+    </plurals>
+    <plurals name="tsuzuki_num_unread">
+        <item quantity="one">%d unread</item>
+        <item quantity="other">%d unread</item>
+    </plurals>
+    <plurals name="tsuzuki_num_downloaded">
+        <item quantity="one">%d downloaded</item>
+        <item quantity="other">%d downloaded</item>
+    </plurals>
+    <plurals name="tsuzuki_num_downloads">
+        <item quantity="one">%d download</item>
+        <item quantity="other">%d downloads</item>
+    </plurals>
+    <plurals name="tsuzuki_other_groups">
+        <item quantity="one">Show %d other group</item>
+        <item quantity="other">Show %d other groups</item>
+    </plurals>
+    <plurals name="tsuzuki_merged_from_sources">
+        <item quantity="one">Merged from %d source</item>
+        <item quantity="other">Merged from %d sources</item>
+    </plurals>
+
+    <plurals name="tsuzuki_searching_sources">
+        <item quantity="one">Searching %d source…</item>
+        <item quantity="other">Searching %d sources…</item>
+    </plurals>
+
     <plurals name="pref_pages">
         <item quantity="one">1 page</item>
         <item quantity="other">%1$s pages</item>

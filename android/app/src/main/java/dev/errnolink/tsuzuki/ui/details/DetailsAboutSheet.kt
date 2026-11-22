@@ -11,7 +11,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import dev.errnolink.tsuzuki.designsystem.DetentSheet
-import dev.errnolink.tsuzuki.designsystem.SheetDetent
+import dev.errnolink.tsuzuki.designsystem.SheetKind
 import dev.errnolink.tsuzuki.designsystem.TsuzukiText
 import dev.errnolink.tsuzuki.mangadex.MangaDexAboutRows
 import dev.errnolink.tsuzuki.designsystem.TsuzukiTheme
@@ -20,6 +20,8 @@ import eu.kanade.presentation.manga.components.MarkdownRender
 import eu.kanade.presentation.manga.components.SearchMetadataChips
 import uy.kohesive.injekt.Injekt
 import uy.kohesive.injekt.api.get
+import tachiyomi.i18n.MR
+import tachiyomi.presentation.core.i18n.stringResource
 import tachiyomi.domain.manga.model.Manga
 
 /**
@@ -41,9 +43,9 @@ fun DetailsAboutSheet(
 ) {
     DetentSheet(
         visible = visible,
-        title = "About",
+        title = stringResource(MR.strings.pref_category_about),
         onDismissRequest = onDismissRequest,
-        initialDetent = SheetDetent.Large,
+        kind = SheetKind.Picker,
     ) {
         val uiPreferences = remember { Injekt.get<UiPreferences>() }
         val loadDescriptionImages = remember { uiPreferences.imagesInDescription().get() }
@@ -51,7 +53,7 @@ fun DetailsAboutSheet(
             manga.description?.takeIf { it.isNotBlank() }?.let { description ->
                 SelectionContainer { MarkdownRender(content = description, loadImages = loadDescriptionImages) }
             }
-            aboutTagSections(manga.genre.orEmpty(), searchMetadataChips).forEach { section ->
+            aboutTagSections(manga.genre.orEmpty(), searchMetadataChips, stringResource(MR.strings.tsuzuki_tags)).forEach { section ->
                 TsuzukiText(section.title, style = TsuzukiTheme.typography.sectionHeader, color = TsuzukiTheme.colors.secondary)
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     section.chips.forEach { tag ->
@@ -71,10 +73,10 @@ internal data class AboutTagChip(val label: String, val query: String)
 internal data class AboutTagSection(val title: String, val chips: List<AboutTagChip>)
 
 /** Tags appear once: grouped by namespace when namespace grouping exists, else one flat deduplicated section. */
-internal fun aboutTagSections(genre: List<String>, grouped: SearchMetadataChips?): List<AboutTagSection> = when {
+internal fun aboutTagSections(genre: List<String>, grouped: SearchMetadataChips?, tagsLabel: String): List<AboutTagSection> = when {
     grouped != null -> grouped.tags.map { (namespace, values) ->
         AboutTagSection(namespace, values.map { AboutTagChip(it.text.substringAfter(':').trim(), it.search) })
     }
-    genre.isNotEmpty() -> listOf(AboutTagSection("Tags", genre.map { AboutTagChip(it.substringAfter(':').trim(), it) }.distinct()))
+    genre.isNotEmpty() -> listOf(AboutTagSection(tagsLabel, genre.map { AboutTagChip(it.substringAfter(':').trim(), it) }.distinct()))
     else -> emptyList()
 }

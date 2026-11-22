@@ -2,8 +2,8 @@ package eu.kanade.tachiyomi.ui.reader.setting
 
 import android.os.Build
 import androidx.compose.ui.graphics.BlendMode
-import com.davemorrissey.labs.subscaleview.SubsamplingScaleImageView
 import dev.icerock.moko.resources.StringResource
+import dev.errnolink.tsuzuki.ui.reader.viewer.ReaderScaleType
 import eu.kanade.tachiyomi.ui.reader.viewer.pager.PagerConfig
 import tachiyomi.core.common.preference.PreferenceStore
 import tachiyomi.core.common.preference.getEnum
@@ -38,6 +38,10 @@ class ReaderPreferences(
     fun showPageNumber() = preferenceStore.getBoolean("pref_show_page_number_key", true)
 
     fun showReadingMode() = preferenceStore.getBoolean("pref_show_reading_mode", true)
+
+    fun eInkMode() = preferenceStore.getBoolean("pref_reader_eink_mode", false)
+
+    fun splitTallPages() = preferenceStore.getBoolean("pref_reader_split_tall_pages", true)
 
     fun fullscreen() = preferenceStore.getBoolean("fullscreen", true)
 
@@ -294,8 +298,8 @@ class ReaderPreferences(
 
         // KMK -->
         val zoomWideImagesAllowedList = listOf(
-            SubsamplingScaleImageView.SCALE_TYPE_CENTER_INSIDE,
-            SubsamplingScaleImageView.SCALE_TYPE_ORIGINAL_SIZE,
+            ReaderScaleType.FitScreen.value,
+            ReaderScaleType.OriginalSize.value,
         )
         // KMK <--
 

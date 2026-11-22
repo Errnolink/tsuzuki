@@ -227,4 +227,79 @@ class FeedMergerTest {
         val ist = FeedMerger.groupByDayAndTitle(items, java.time.ZoneId.of("Asia/Kolkata"))
         assertEquals(LocalDate.of(2026, 11, 2), ist.keys.single())
     }
+
+    // Round 10 B5: the All / Library / Unread chips DO reach the list (UnifiedFeedScreenModel
+    // rebuilds the feed through this filter on setChip). The counts below measure each chip's
+    // list on a mixed feed, and prove the all-library-unread feed looks identical under all
+    // three, as reported in review ("I don't think it does anything").
+
+    private fun chipCounts(items: List<FeedChapterItem>, loggedIn: Boolean = true): Map<FeedChip, Int> =
+        FeedChip.entries.associateWith { chip -> FeedMerger.filter(items, chip, loggedIn).size }
+
+    @Test
+    fun `each chip filters a mixed feed differently`() {
+        val t = 1700000000000L
+        val feed = listOf(
+            // library, unread
+            FeedChapterItem("1", 1L, 10L, "A", "Ch 1", 1.0, t, null, isLibrary = true, isRead = false),
+            FeedChapterItem("2", 1L, 11L, "A", "Ch 2", 2.0, t, null, isLibrary = true, isRead = false),
+            // library, already read
+            FeedChapterItem("3", 2L, 20L, "B", "Ch 5", 5.0, t, null, isLibrary = true, isRead = true),
+            // follows-only (not in library), unread
+            FeedChapterItem("4", -1L, null, "C", "Ch 1", 1.0, t, null, isLibrary = false, isRead = false, mangaDexId = "mc"),
+        )
+        val counts = chipCounts(feed)
+        assertEquals(4, counts[FeedChip.ALL])
+        assertEquals(3, counts[FeedChip.LIBRARY])
+        assertEquals(3, counts[FeedChip.UNREAD])
+        assertEquals(1, counts[FeedChip.MANGADEX])
+    }
+
+    @Test
+    fun `an all-library all-unread feed is identical under every chip`() {
+        val t = 1700000000000L
+        val feed = (1..6).map { i ->
+            FeedChapterItem("$i", 1L, 10L + i, "A", "Ch $i", i.toDouble(), t, null, isLibrary = true, isRead = false)
+        }
+        val counts = chipCounts(feed)
+        assertEquals(counts[FeedChip.ALL], counts[FeedChip.LIBRARY])
+        assertEquals(counts[FeedChip.ALL], counts[FeedChip.UNREAD])
+    }
+
+    @Test
+    fun `read library chapters drop out of Unread but stay in Library`() {
+        val t = 1700000000000L
+        val feed = listOf(
+            FeedChapterItem("1", 1L, 10L, "A", "Ch 1", 1.0, t, null, isLibrary = true, isRead = true),
+            FeedChapterItem("2", 2L, 20L, "B", "Ch 1", 1.0, t, null, isLibrary = true, isRead = false),
+        )
+        val unread = FeedMerger.filter(feed, FeedChip.UNREAD, true)
+        val library = FeedMerger.filter(feed, FeedChip.LIBRARY, true)
+        assertEquals(listOf("2"), unread.map { it.id })
+        assertEquals(listOf("1", "2"), library.map { it.id })
+    }
+
+    @Test
+    fun `a blank query keeps the whole feed`() {
+        val t = 1700000000000L
+        val feed = listOf(
+            FeedChapterItem("1", 1L, 10L, "One", "Ch 1", 1.0, t, null, isLibrary = true, isRead = false),
+            FeedChapterItem("2", 2L, 20L, "Two", "Ch 1", 1.0, t, null, isLibrary = true, isRead = false),
+        )
+        assertEquals(feed, FeedMerger.filterByQuery(feed, null))
+        assertEquals(feed, FeedMerger.filterByQuery(feed, "  "))
+    }
+
+    @Test
+    fun `the query filters by title, case-insensitively, and composes with chips`() {
+        val t = 1700000000000L
+        val feed = listOf(
+            FeedChapterItem("1", 1L, 10L, "Houkago no Idol", "Ch 1", 1.0, t, null, isLibrary = true, isRead = false),
+            FeedChapterItem("2", 2L, 20L, "Dimension System", "Ch 1", 1.0, t, null, isLibrary = true, isRead = false),
+        )
+        assertEquals(listOf("1"), FeedMerger.filterByQuery(feed, "houkago").map { it.id })
+        val chipped = FeedMerger.filter(feed, FeedChip.LIBRARY, true)
+        assertEquals(listOf("1"), FeedMerger.filterByQuery(chipped, "IDOL").map { it.id })
+        assertEquals(emptyList<String>(), FeedMerger.filterByQuery(feed, "nothing matches").map { it.id })
+    }
 }

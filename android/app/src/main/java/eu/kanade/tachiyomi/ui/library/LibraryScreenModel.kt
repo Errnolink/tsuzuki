@@ -110,6 +110,7 @@ import tachiyomi.domain.category.interactor.SetMangaCategories
 import tachiyomi.domain.category.model.Category
 import tachiyomi.domain.category.model.Category.Companion.UNCATEGORIZED_ID
 import tachiyomi.domain.chapter.interactor.GetBookmarkedChaptersByMangaId
+import tachiyomi.domain.chapter.model.Chapter
 import tachiyomi.domain.history.interactor.GetNextChapters
 import tachiyomi.domain.library.model.LibraryDisplayMode
 import tachiyomi.domain.library.model.LibraryGroup
@@ -432,9 +433,12 @@ class LibraryScreenModel(
 
         screenModelScope.launchIO {
             combine(
+                // A library update changes unread counts title by title; recomputing on every write
+                // ran one query per unread title each time and starved the update of the database.
                 state
                     .map { it.libraryData.favorites.filter { item -> item.libraryManga.unreadCount > 0 } }
-                    .distinctUntilChanged(),
+                    .distinctUntilChanged()
+                    .debounce(CONTINUE_TARGETS_SETTLE_MILLIS),
                 pageTotals.inProgressTotals(),
                 ::Pair,
             )
@@ -466,6 +470,10 @@ class LibraryScreenModel(
                         ContinueTarget(
                             row.chapterId,
                             chapterPageProgress(row.lastPageRead, totals[row.chapterId], read = false),
+                            row.chapterNumber.takeIf { it > 0.0 },
+                            row.chapterName.takeIf { it.isNotBlank() },
+                            row.lastPageRead,
+                            totals[row.chapterId],
                         )
                     }
                     mutableState.update { it.copy(continueTargets = targets) }
@@ -1046,16 +1054,7 @@ class LibraryScreenModel(
                         .groupBy { it.mangaId }
                         .forEach ab@{ (mangaId, chapters) ->
                             val mergedManga = mergedMangas[mangaId] ?: return@ab
-                            val downloadChapters = chapters.fastFilterNot { chapter ->
-                                downloadManager.queueState.value.fastAny { chapter.id == it.chapter.id } ||
-                                    downloadManager.isChapterDownloaded(
-                                        chapter.name,
-                                        chapter.scanlator,
-                                        chapter.url,
-                                        mergedManga.ogTitle,
-                                        mergedManga.source,
-                                    )
-                            }
+                            val downloadChapters = chapters.filterNotQueuedOrDownloaded(mergedManga)
 
                             downloadManager.downloadChapters(mergedManga, downloadChapters)
                         }
@@ -1065,18 +1064,7 @@ class LibraryScreenModel(
 
                 // SY <--
                 val chapters = getNextChapters.await(manga.id)
-                    .fastFilterNot { chapter ->
-                        downloadManager.getQueuedDownloadOrNull(chapter.id) != null ||
-                            downloadManager.isChapterDownloaded(
-                                chapter.name,
-                                chapter.scanlator,
-                                chapter.url,
-                                // SY -->
-                                manga.ogTitle,
-                                // SY <--
-                                manga.source,
-                            )
-                    }
+                    .filterNotQueuedOrDownloaded(manga)
                     .let { if (amount != null) it.take(amount) else it }
 
                 downloadManager.downloadChapters(manga, chapters)
@@ -1096,16 +1084,7 @@ class LibraryScreenModel(
                         .groupBy { it.mangaId }
                         .forEach ab@{ (mangaId, chapters) ->
                             val mergedManga = mergedMangas[mangaId] ?: return@ab
-                            val downloadChapters = chapters.fastFilterNot { chapter ->
-                                downloadManager.queueState.value.fastAny { chapter.id == it.chapter.id } ||
-                                    downloadManager.isChapterDownloaded(
-                                        chapter.name,
-                                        chapter.scanlator,
-                                        chapter.url,
-                                        mergedManga.ogTitle,
-                                        mergedManga.source,
-                                    )
-                            }
+                            val downloadChapters = chapters.filterNotQueuedOrDownloaded(mergedManga)
 
                             downloadManager.downloadChapters(mergedManga, downloadChapters)
                         }
@@ -1115,21 +1094,16 @@ class LibraryScreenModel(
                 // SY <--
 
                 val chapters = getBookmarkedChaptersByMangaId.await(manga.id)
-                    .fastFilterNot { chapter ->
-                        downloadManager.getQueuedDownloadOrNull(chapter.id) != null ||
-                            downloadManager.isChapterDownloaded(
-                                chapter.name,
-                                chapter.scanlator,
-                                chapter.url,
-                                // SY -->
-                                manga.ogTitle,
-                                // SY <--
-                                manga.source,
-                            )
-                    }
+                    .filterNotQueuedOrDownloaded(manga)
                 downloadManager.downloadChapters(manga, chapters)
             }
         }
+    }
+
+    private fun List<Chapter>.filterNotQueuedOrDownloaded(manga: Manga): List<Chapter> {
+        val queuedDownloads = downloadManager.getQueuedDownloadsByChapterId()
+        val downloadedChapterIds = downloadManager.getDownloadedChapterIds(this, manga)
+        return fastFilterNot { it.id in queuedDownloads || it.id in downloadedChapterIds }
     }
 
     // SY -->
@@ -1169,13 +1143,16 @@ class LibraryScreenModel(
     /**
      * Update Selected Mangas
      */
-    fun updateSelectedManga(): Boolean {
+    fun updateSelectedManga(onStarted: (Boolean) -> Unit = {}) {
         val mangaIds = state.value.selection.toList()
-        return LibraryUpdateJob.startNow(
-            context = preferences.context,
-            mangaIds = mangaIds,
-            target = LibraryUpdateJob.Target.CHAPTERS,
-        )
+        screenModelScope.launchNonCancellable {
+            val started = LibraryUpdateJob.startNow(
+                context = preferences.context,
+                mangaIds = mangaIds,
+                target = LibraryUpdateJob.Target.CHAPTERS,
+            )
+            onStarted(started)
+        }
     }
     // KMK <--
 
@@ -1764,6 +1741,10 @@ class LibraryScreenModel(
     data class ContinueTarget(
         val chapterId: Long,
         val progress: Float?,
+        val chapterNumber: Double? = null,
+        val chapterName: String? = null,
+        val lastPageRead: Long = 0,
+        val pageTotal: Int? = null,
     )
 
     @Immutable
@@ -1908,3 +1889,5 @@ class LibraryScreenModel(
     }
     // KMK <--
 }
+
+private const val CONTINUE_TARGETS_SETTLE_MILLIS = 1_000L

@@ -1,20 +1,18 @@
 package dev.errnolink.tsuzuki.ui.settings
-import dev.errnolink.tsuzuki.designsystem.TsuzukiCheckMark
 
 
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.FlipToBack
-import androidx.compose.material.icons.outlined.SelectAll
+import androidx.compose.foundation.layout.padding
+import dev.errnolink.tsuzuki.designsystem.ArrowLeftRight
 import dev.errnolink.tsuzuki.designsystem.GroupedRow
 import dev.errnolink.tsuzuki.designsystem.InsetGroupedList
+import dev.errnolink.tsuzuki.designsystem.ListChecks
+import dev.errnolink.tsuzuki.designsystem.PullDownConfirmSheet
+import dev.errnolink.tsuzuki.designsystem.SelectionMark
+import dev.errnolink.tsuzuki.designsystem.TsuzukiIcons
 import dev.errnolink.tsuzuki.designsystem.TsuzukiText
-import dev.errnolink.tsuzuki.designsystem.TsuzukiSpacing
 import dev.errnolink.tsuzuki.designsystem.TsuzukiTheme
 import dev.errnolink.tsuzuki.ui.shell.ShellTopAction
 import dev.errnolink.tsuzuki.ui.shell.ShellEmpty
@@ -29,6 +27,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.unit.dp
 import androidx.compose.ui.util.fastMap
 import cafe.adriel.voyager.core.model.StateScreenModel
 import cafe.adriel.voyager.core.model.rememberScreenModel
@@ -65,56 +64,53 @@ class TsuzukiClearDatabaseScreen : Screen() {
 
         when (val s = state) {
             is ClearDatabaseScreenModel.State.Loading -> {
-                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    dev.errnolink.tsuzuki.designsystem.ProgressRing(progress = 0f, label = stringResource(MR.strings.loading))
+                SettingsScaffold(
+                    title = stringResource(MR.strings.pref_clear_database),
+                    navigateUp = navigator::pop,
+                ) {
+                    item(key = "clear-db-loading") {
+                        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                            dev.errnolink.tsuzuki.designsystem.ProgressMark(progress = 0f, label = stringResource(MR.strings.loading))
+                        }
+                    }
                 }
             }
             is ClearDatabaseScreenModel.State.Ready -> {
                 if (s.showConfirmation) {
                     var keepReadManga by remember { mutableStateOf(true) }
-                    SettingsAlert(title = {
-                        TsuzukiText(text = stringResource(MR.strings.are_you_sure))
-                    },
-                    text = {
-                        Column(
-                            verticalArrangement = Arrangement.spacedBy(TsuzukiSpacing.small),
-                        ) {
-                            TsuzukiText(text = stringResource(MR.strings.clear_database_text))
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.spacedBy(TsuzukiSpacing.tiny),
-                                verticalAlignment = Alignment.CenterVertically,
-                            ) {
-                                TsuzukiText(
-                                    text = stringResource(MR.strings.clear_db_exclude_read),
-                                    modifier = Modifier.weight(1f),
-                                )
-                                SettingsSwitch(checked = keepReadManga,
-                                onCheckedChange = { keepReadManga = it },)
-                            }
-                            if (!keepReadManga) {
-                                TsuzukiText(
-                                    text = stringResource(MR.strings.clear_database_history_warning),
-                                    style = TsuzukiTheme.typography.footnote,
-                                    color = TsuzukiTheme.colors.destructive,
-                                )
-                            }
-                        }
-                    },
-                    onDismissRequest = model::hideConfirmation,
-                    confirmButton = {
-                        SettingsActionButton(destructive = true, onClick = {
+                    PullDownConfirmSheet(
+                        visible = true,
+                        title = stringResource(MR.strings.are_you_sure),
+                        message = stringResource(MR.strings.clear_database_text),
+                        confirmLabel = stringResource(MR.strings.action_delete),
+                        destructive = true,
+                        onConfirm = {
                             scope.launchUI {
                                 model.removeMangaBySourceId(keepReadManga)
                                 model.clearSelection()
                                 model.hideConfirmation()
                                 context.toast(MR.strings.clear_database_completed)
                             }
-                        },) { TsuzukiText(text = stringResource(MR.strings.action_delete)) }
-                    },
-                    dismissButton = {
-                        SettingsActionButton(onClick = model::hideConfirmation) { TsuzukiText(text = stringResource(MR.strings.action_cancel)) }
-                    },)
+                        },
+                        onDismissRequest = model::hideConfirmation,
+                        extraContent = {
+                            InsetGroupedList {
+                                GroupedRow(
+                                    title = stringResource(MR.strings.clear_db_exclude_read),
+                                    checked = keepReadManga,
+                                    onCheckedChange = { keepReadManga = it },
+                                )
+                            }
+                            if (!keepReadManga) {
+                                TsuzukiText(
+                                    text = stringResource(MR.strings.clear_database_history_warning),
+                                    style = TsuzukiTheme.typography.footnote,
+                                    color = TsuzukiTheme.colors.destructive,
+                                    modifier = Modifier.padding(horizontal = 16.dp),
+                                )
+                            }
+                        },
+                    )
                 }
 
                 SettingsScaffold(
@@ -122,8 +118,8 @@ class TsuzukiClearDatabaseScreen : Screen() {
                     navigateUp = navigator::pop,
                     actions = if (s.items.isNotEmpty()) {
                         listOf(
-                            ShellTopAction("Select all", Icons.Outlined.SelectAll, model::selectAll),
-                            ShellTopAction("Invert selection", Icons.Outlined.FlipToBack, model::invertSelection),
+                            ShellTopAction("Select all", TsuzukiIcons.ListChecks, model::selectAll),
+                            ShellTopAction("Invert selection", TsuzukiIcons.ArrowLeftRight, model::invertSelection),
                         )
                     } else {
                         emptyList()
@@ -147,18 +143,19 @@ class TsuzukiClearDatabaseScreen : Screen() {
                         item(key = "clear-db-empty") {
                             ShellEmpty(
                                 stringResource(MR.strings.database_clean),
-                                stringResource(MR.strings.pref_clear_database),
+                                stringResource(MR.strings.pref_clear_database_summary),
                             )
                         }
                     } else {
                         item(key = "clear-db-list") {
                             InsetGroupedList {
-                                s.items.forEach { sourceWithCount ->
+                                s.items.forEachIndexed { index, sourceWithCount ->
                                     ClearDatabaseItem(
                                         source = sourceWithCount.source,
                                         count = sourceWithCount.count,
                                         isSelected = s.selection.contains(sourceWithCount.id),
                                         onClickSelect = { model.toggleSelection(sourceWithCount.source) },
+                                        divider = index < s.items.lastIndex,
                                     )
                                 }
                             }
@@ -175,14 +172,15 @@ class TsuzukiClearDatabaseScreen : Screen() {
         count: Long,
         isSelected: Boolean,
         onClickSelect: () -> Unit,
+        divider: Boolean,
     ) {
         GroupedRow(
             title = source.visualName,
             subtitle = stringResource(MR.strings.clear_database_source_item_count, count),
-            divider = true,
+            divider = divider,
             leading = { SourceIcon(source = source) },
             trailing = {
-                SettingsCheckmark(checked = isSelected, onCheckedChange = { onClickSelect() })
+                SelectionMark(selected = isSelected)
             },
             onClick = onClickSelect,
         )

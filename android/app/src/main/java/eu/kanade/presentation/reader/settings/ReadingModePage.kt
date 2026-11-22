@@ -13,7 +13,8 @@ import eu.kanade.tachiyomi.ui.reader.setting.ReaderOrientation
 import eu.kanade.tachiyomi.ui.reader.setting.ReaderPreferences
 import eu.kanade.tachiyomi.ui.reader.setting.ReaderSettingsScreenModel
 import eu.kanade.tachiyomi.ui.reader.setting.ReadingMode
-import eu.kanade.tachiyomi.ui.reader.viewer.webtoon.WebtoonViewer
+import dev.errnolink.tsuzuki.ui.reader.ComposeReaderKind
+import dev.errnolink.tsuzuki.ui.reader.ComposeReaderState
 import tachiyomi.i18n.MR
 import tachiyomi.i18n.kmk.KMR
 import tachiyomi.i18n.sy.SYMR
@@ -52,8 +53,7 @@ internal fun ReadingModePage(screenModel: ReaderSettingsScreenModel) {
         }
     }
 
-    val viewer by screenModel.viewerFlow.collectAsState()
-    if (viewer is WebtoonViewer) {
+    if (ComposeReaderState.activeKind == ComposeReaderKind.Webtoon) {
         WebtoonViewerSettings(
             screenModel,
             // KMK -->

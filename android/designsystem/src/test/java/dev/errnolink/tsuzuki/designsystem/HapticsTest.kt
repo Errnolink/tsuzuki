@@ -33,14 +33,18 @@ private fun alwaysGate(enabled: Boolean) = HapticGate { enabled }
 class HapticsTest {
 
     @Test
-    fun `every pattern is a two beat figure with ordered strengths and short gaps`() {
-        for (haptic in TsuzukiHaptic.entries) {
+    fun `every pattern except the detent is a two beat figure with ordered strengths and short gaps`() {
+        for (haptic in TsuzukiHaptic.entries.filter { it != TsuzukiHaptic.Detent }) {
             val beats = rhythmOf(haptic)
             assertEquals(2, beats.size, "$haptic")
-            assertTrue(beats[0].gapAfterMs in 14..20, "$haptic gap")
+            assertTrue(beats[0].gapAfterMs in 14..20 || (haptic == TsuzukiHaptic.Warning && beats[0].gapAfterMs == 70), "$haptic gap")
             assertEquals(0, beats[1].gapAfterMs, "$haptic trailing gap")
             assertTrue(beats[0].strength in 0.3f..0.9f, "$haptic lead strength")
         }
+        val detent = rhythmOf(TsuzukiHaptic.Detent)
+        assertEquals(1, detent.size, "Detent")
+        assertEquals(0.30f, detent[0].strength, 1e-6f, "Detent strength")
+        assertEquals(0, detent[0].gapAfterMs, "Detent trailing gap")
         assertTrue(rhythmOf(TsuzukiHaptic.ToggleOn)[1].strength > rhythmOf(TsuzukiHaptic.Select)[1].strength)
         assertTrue(rhythmOf(TsuzukiHaptic.ChapterArm)[1].strength == 1.0f)
         assertTrue(rhythmOf(TsuzukiHaptic.ToggleOff)[0].strength > rhythmOf(TsuzukiHaptic.ToggleOff)[1].strength)
@@ -63,7 +67,7 @@ class HapticsTest {
         for (haptic in TsuzukiHaptic.entries) {
             val rendered = amplitudeWaveform(rhythmOf(haptic))
             val total = rendered.timingsMs.sum()
-            assertTrue(total < 45L, "$haptic total $total")
+            assertTrue(total < 45L || haptic == TsuzukiHaptic.Warning, "$haptic total $total")
             assertEquals(rendered.timingsMs.size, rendered.amplitudes!!.size)
         }
     }
@@ -199,5 +203,22 @@ class HapticsTest {
         haptics.chapterArm()
         assertEquals(5, gateway.vibrateCalls)
         assertTrue(gateway.lastPattern is RenderedPattern.Waveform)
+    }
+
+    @Test
+    fun `lift and warning rhythms follow their figures`() {
+        val lift = rhythmOf(TsuzukiHaptic.Lift)
+        assertEquals(PulseKind.Tick, lift[0].kind)
+        assertEquals(0.35f, lift[0].strength, 1e-6f)
+        assertEquals(14, lift[0].gapAfterMs)
+        assertEquals(PulseKind.Press, lift[1].kind)
+        assertEquals(0.8f, lift[1].strength, 1e-6f)
+
+        val warning = rhythmOf(TsuzukiHaptic.Warning)
+        assertEquals(PulseKind.Thump, warning[0].kind)
+        assertEquals(0.7f, warning[0].strength, 1e-6f)
+        assertEquals(70, warning[0].gapAfterMs)
+        assertEquals(PulseKind.Thump, warning[1].kind)
+        assertEquals(0.5f, warning[1].strength, 1e-6f)
     }
 }

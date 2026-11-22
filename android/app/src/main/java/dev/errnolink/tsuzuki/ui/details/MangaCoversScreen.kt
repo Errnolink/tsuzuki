@@ -6,10 +6,15 @@ import android.os.Build
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import cafe.adriel.voyager.core.model.rememberScreenModel
+import dev.errnolink.tsuzuki.designsystem.ToastAction
+import dev.errnolink.tsuzuki.designsystem.ToastHostState
 import eu.kanade.domain.manga.model.hasCustomCover
 import eu.kanade.presentation.manga.EditCoverAction
 import eu.kanade.tachiyomi.ui.manga.MangaCoverScreenModel
@@ -32,10 +37,22 @@ internal fun Screen.MangaCoverContent(mangaId: Long, onDismissRequest: () -> Uni
     val savePermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
         if (granted) model.saveCover(context)
     }
+    val toasts = remember { ToastHostState() }
+    // The cover model is upstream and still speaks SnackbarHostState; relay it into the toasts.
+    LaunchedEffect(model) {
+        snapshotFlow { model.snackbarHostState.currentSnackbarData }.collect { data ->
+            data ?: return@collect
+            data.dismiss()
+            toasts.show(
+                data.visuals.message,
+                action = data.visuals.actionLabel?.let { label -> ToastAction(label) { data.performAction() } },
+            )
+        }
+    }
     MangaCoverDialog(
         manga = current,
         isCustomCover = current.hasCustomCover(),
-        snackbarHostState = model.snackbarHostState,
+        toasts = toasts,
         onShareClick = { model.shareCover(context) },
         onSaveClick = {
             if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q &&

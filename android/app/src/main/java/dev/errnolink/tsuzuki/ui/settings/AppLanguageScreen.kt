@@ -32,6 +32,9 @@ import tachiyomi.core.common.i18n.stringResource as contextStringResource
 import tachiyomi.presentation.core.i18n.stringResource
 import tachiyomi.i18n.MR
 
+/** Language flag leading width; the divider inset derives from it (S1). */
+private val LanguageFlagWidth = 32.dp
+
 class TsuzukiAppLanguageScreen : Screen() {
 
     @Composable
@@ -40,11 +43,13 @@ class TsuzukiAppLanguageScreen : Screen() {
         val navigator = LocalNavigator.currentOrThrow
 
         val langs = remember { getLangs(context) }
-        var currentLanguage by remember {
-            mutableStateOf(AppCompatDelegate.getApplicationLocales().get(0)?.toLanguageTag() ?: "")
+        val initialLanguage = remember {
+            AppCompatDelegate.getApplicationLocales().get(0)?.toLanguageTag() ?: ""
         }
+        var currentLanguage by remember { mutableStateOf(initialLanguage) }
 
         LaunchedEffect(currentLanguage) {
+            if (currentLanguage == initialLanguage) return@LaunchedEffect
             val locale = if (currentLanguage.isEmpty()) {
                 LocaleListCompat.getEmptyLocaleList()
             } else {
@@ -61,7 +66,7 @@ class TsuzukiAppLanguageScreen : Screen() {
                 InsetGroupedList {
                     langs.forEachIndexed { index, language ->
                         val selected = currentLanguage == language.langTag
-                        if (index > 0) GroupDivider()
+                        if (index > 0) GroupDivider(LanguageFlagWidth)
                         GroupedRow(
                             title = language.displayName,
                             subtitle = language.localizedDisplayName,
@@ -72,7 +77,7 @@ class TsuzukiAppLanguageScreen : Screen() {
                                 Image(
                                     painter = painterResource(icon),
                                     contentDescription = null,
-                                    modifier = Modifier.width(32.dp).height(24.dp),
+                                    modifier = Modifier.width(LanguageFlagWidth).height(24.dp),
                                 )
                             },
                             trailing = {

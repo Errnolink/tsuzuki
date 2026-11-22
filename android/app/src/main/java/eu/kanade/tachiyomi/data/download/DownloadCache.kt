@@ -132,6 +132,21 @@ class DownloadCache(
             .launchIn(scope)
     }
 
+    fun getDownloadedChapterIds(chapters: List<Chapter>, mangaTitle: String, sourceId: Long): Set<Long> {
+        renewCache()
+
+        val sourceDir = rootDownloadsDir.sourceDirs[sourceId] ?: return emptySet()
+        val mangaDir = sourceDir.mangaDirs[provider.getMangaDirName(mangaTitle)] ?: return emptySet()
+        if (mangaDir.chapterDirs.isEmpty()) return emptySet()
+
+        return chapters
+            .filter { chapter ->
+                provider.getValidChapterDirNames(chapter.name, chapter.scanlator, chapter.url)
+                    .any { it in mangaDir.chapterDirs }
+            }
+            .mapTo(HashSet()) { it.id }
+    }
+
     /**
      * Returns true if the chapter is downloaded.
      *

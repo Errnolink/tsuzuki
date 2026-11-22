@@ -7,14 +7,12 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalUriHandler
 import dev.errnolink.tsuzuki.designsystem.Banner
 import dev.errnolink.tsuzuki.designsystem.InsetGroupedList
 import dev.errnolink.tsuzuki.designsystem.NoticeTone
@@ -24,7 +22,8 @@ import dev.errnolink.tsuzuki.designsystem.TsuzukiText
 import dev.errnolink.tsuzuki.designsystem.TsuzukiTheme
 import eu.kanade.presentation.more.settings.screen.SettingsDataScreen
 import eu.kanade.tachiyomi.util.system.toast
-import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import tachiyomi.domain.storage.service.StorageManager.Companion.directoryAccessible
 import tachiyomi.domain.storage.service.StoragePreferences
 import tachiyomi.i18n.MR
@@ -46,22 +45,15 @@ internal class StorageStep : OnboardingStep {
     @Composable
     override fun Content() {
         val context = LocalContext.current
-        val handler = LocalUriHandler.current
 
         val pickStorageLocation = SettingsDataScreen.storageLocationPicker(storagePref)
 
         val storageDir by storagePref.collectAsState()
-        var locationValid by remember(storageDir) {
-            mutableStateOf(directoryAccessible(context, storageDir))
-        }
-
-        SideEffect { _isComplete = locationValid }
+        var locationValid by remember(storageDir) { mutableStateOf<Boolean?>(null) }
         LaunchedEffect(storageDir) {
-            storagePref.changes()
-                .collectLatest {
-                    locationValid = directoryAccessible(context, storageDir)
-                    _isComplete = locationValid
-                }
+            val valid = withContext(Dispatchers.IO) { directoryAccessible(context, storageDir) }
+            locationValid = valid
+            _isComplete = valid
         }
 
         InsetGroupedList(
@@ -95,25 +87,18 @@ internal class StorageStep : OnboardingStep {
                 )
 
                 if (storageDir != null) {
-                    if (locationValid) {
+                    if (locationValid == true) {
                         Banner(
-                            storageDir.toString(),
+                            SettingsDataScreen.storageLocationText(storagePref),
                             tone = NoticeTone.Success,
                         )
-                    } else {
+                    } else if (locationValid == false) {
                         Banner(
                             "The selected folder is not accessible. Pick a different location.",
                             tone = NoticeTone.Error,
                         )
                     }
                 }
-
-                PillButton(
-                    label = stringResource(MR.strings.onboarding_storage_help_action),
-                    onClick = { handler.openUri(SettingsDataScreen.HELP_URL) },
-                    prominent = false,
-                    modifier = Modifier.fillMaxWidth(),
-                )
             }
         }
     }

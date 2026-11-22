@@ -73,9 +73,12 @@ class MangaDexRateLimitTest {
             release.await(10, TimeUnit.SECONDS)
             ok(chain.request())
         }
+        val permits = MangaDexRateLimit.API_PERMITS_PER_SECOND
         val limiter = PriorityRateLimitInterceptor(
-            permits = MangaDexRateLimit.API_PERMITS_PER_SECOND,
-            period = 1,
+            permits = permits,
+            // A long window: the queued call is always waiting before the next window opens, so
+            // wall-clock scheduling under load cannot decide the order.
+            period = 5,
             unit = TimeUnit.SECONDS,
             prioritySelector = MangaDexRateLimit::mangaDexRequestPriority,
         )
@@ -92,8 +95,8 @@ class MangaDexRateLimitTest {
                 }
             }
             val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5)
-            while (startOrder.size < 5 && System.nanoTime() < deadline) Thread.sleep(10)
-            assertEquals(5, startOrder.size)
+            while (startOrder.size < permits && System.nanoTime() < deadline) Thread.sleep(10)
+            assertEquals(permits, startOrder.size)
 
             val user = executor.submit<Void> {
                 client.newCall(
@@ -102,8 +105,8 @@ class MangaDexRateLimitTest {
                 ).execute().close()
                 null
             }
-            val allStarted = System.nanoTime() + TimeUnit.SECONDS.toNanos(15)
-            while (startOrder.size < 11 && System.nanoTime() < allStarted) Thread.sleep(10)
+            val started = System.nanoTime() + TimeUnit.SECONDS.toNanos(12)
+            while ("user" !in startOrder && System.nanoTime() < started) Thread.sleep(10)
             release.countDown()
             user.get(10, TimeUnit.SECONDS)
         } finally {
@@ -113,13 +116,62 @@ class MangaDexRateLimitTest {
             client.connectionPool.evictAll()
         }
 
-        val userPosition = startOrder.indexOf("user")
-        assertTrue(userPosition >= 0, "user call never started")
-        val backgroundAfterUser = startOrder.drop(userPosition + 1).count { it.startsWith("background") }
-        assertTrue(
-            backgroundAfterUser >= 5,
-            "user started at position $userPosition of ${startOrder.size}; $backgroundAfterUser background calls started after it",
+        assertEquals(permits, startOrder.indexOf("user"), "the user call opens the next window: $startOrder")
+    }
+
+    @Test
+    fun `a title page chapter fetch starts before the library update's queued chapter fetches`() {
+        val release = CountDownLatch(1)
+        val startOrder = java.util.Collections.synchronizedList(mutableListOf<String>())
+        val recorder = okhttp3.Interceptor { chain ->
+            startOrder.add(chain.request().header("X-Call") ?: "unknown")
+            release.await(10, TimeUnit.SECONDS)
+            ok(chain.request())
+        }
+        val permits = MangaDexRateLimit.API_PERMITS_PER_SECOND
+        val limiter = PriorityRateLimitInterceptor(
+            permits = permits,
+            period = 5,
+            unit = TimeUnit.SECONDS,
+            prioritySelector = MangaDexRateLimit::mangaDexRequestPriority,
         )
+        val client = clientWith(limiter, recorder)
+        val executor = Executors.newFixedThreadPool(12)
+        try {
+            repeat(10) { index ->
+                executor.submit<Void> {
+                    client.newCall(
+                        Request.Builder().url("https://api.mangadex.org/manga/manga-$index/feed")
+                            .header("X-Call", "update-$index")
+                            .tag(dev.errnolink.tsuzuki.mangadex.MangaDexBackground::class.java, dev.errnolink.tsuzuki.mangadex.MangaDexBackground)
+                            .build(),
+                    ).execute().close()
+                    null
+                }
+            }
+            val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5)
+            while (startOrder.size < permits && System.nanoTime() < deadline) Thread.sleep(10)
+            assertEquals(permits, startOrder.size)
+
+            val opened = executor.submit<Void> {
+                client.newCall(
+                    Request.Builder().url("https://api.mangadex.org/manga/opened/feed")
+                        .header("X-Call", "opened").build(),
+                ).execute().close()
+                null
+            }
+            val started = System.nanoTime() + TimeUnit.SECONDS.toNanos(12)
+            while ("opened" !in startOrder && System.nanoTime() < started) Thread.sleep(10)
+            release.countDown()
+            opened.get(10, TimeUnit.SECONDS)
+        } finally {
+            release.countDown()
+            executor.shutdownNow()
+            client.dispatcher.executorService.shutdown()
+            client.connectionPool.evictAll()
+        }
+
+        assertEquals(permits, startOrder.indexOf("opened"), "the opened title opens the next window: $startOrder")
     }
 
     @Test

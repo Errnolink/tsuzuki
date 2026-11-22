@@ -135,11 +135,11 @@ object DebugFunctions {
 
     fun killSyncJobs() {
         val context = Injekt.get<Application>()
-        SyncDataJob.stop(context)
+        runBlocking { SyncDataJob.stop(context) }
     }
 
     fun killLibraryJobs() {
         val context = Injekt.get<Application>()
-        LibraryUpdateJob.stop(context)
+        runBlocking { LibraryUpdateJob.stop(context) }
     }
 }

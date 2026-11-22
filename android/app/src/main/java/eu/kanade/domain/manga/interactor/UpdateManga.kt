@@ -41,6 +41,20 @@ class UpdateManga(
         return mangaRepository.update(MangaUpdate(id = mangaId, lastUpdate = Instant.now().toEpochMilli()))
     }
 
+    /**
+     * Updates the fetch interval and marks the chapter list as changed in a single write.
+     */
+    suspend fun awaitUpdateFetchIntervalAndLastUpdate(
+        manga: Manga,
+        dateTime: ZonedDateTime = ZonedDateTime.now(),
+        window: Pair<Long, Long> = fetchInterval.getWindow(dateTime),
+    ): Boolean {
+        return mangaRepository.update(
+            fetchInterval.toMangaUpdate(manga, dateTime, window)
+                .copy(lastUpdate = Instant.now().toEpochMilli()),
+        )
+    }
+
     suspend fun awaitUpdateCoverLastModified(mangaId: Long): Boolean {
         return mangaRepository.update(MangaUpdate(id = mangaId, coverLastModified = Instant.now().toEpochMilli()))
     }

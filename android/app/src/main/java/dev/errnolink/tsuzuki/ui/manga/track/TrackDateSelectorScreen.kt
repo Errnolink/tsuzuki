@@ -21,6 +21,7 @@ import cafe.adriel.voyager.navigator.LocalNavigator
 import cafe.adriel.voyager.navigator.Navigator
 import cafe.adriel.voyager.navigator.currentOrThrow
 import dev.errnolink.tsuzuki.designsystem.DetentSheet
+import dev.errnolink.tsuzuki.designsystem.SheetKind
 import dev.errnolink.tsuzuki.designsystem.PillButton
 import eu.kanade.domain.track.model.toDbTrack
 import eu.kanade.presentation.util.Screen
@@ -107,6 +108,7 @@ data class TrackDateSelectorScreen(
                 stringResource(MR.strings.track_finished_reading_date)
             },
             navigator::pop,
+            kind = SheetKind.Picker,
         ) {
             Row(
                 Modifier.fillMaxWidth(),

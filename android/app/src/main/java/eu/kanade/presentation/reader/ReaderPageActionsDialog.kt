@@ -42,7 +42,7 @@ fun ReaderPageActionsDialog(
     var useExtraPage by remember { mutableStateOf(false) }
     // SY <--
 
-    DetentSheet(true, "Page actions", onDismissRequest, initialDetent = dev.errnolink.tsuzuki.designsystem.SheetDetent.FitContent) {
+    DetentSheet(true, "Page actions", onDismissRequest) {
         InsetGroupedList(title = "This page") {
             PageActionRow(stringResource(if (hasExtraPage) SYMR.strings.action_set_first_page_cover else MR.strings.set_as_cover), TsuzukiIcons.Images) {
                 useExtraPage = false

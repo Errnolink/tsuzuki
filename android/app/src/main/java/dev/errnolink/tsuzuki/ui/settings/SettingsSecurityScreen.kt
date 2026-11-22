@@ -19,6 +19,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.key.key
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.fragment.app.FragmentActivity
 import cafe.adriel.voyager.navigator.LocalNavigator
@@ -26,6 +28,8 @@ import cafe.adriel.voyager.navigator.currentOrThrow
 import dev.icerock.moko.resources.StringResource
 import eu.kanade.tachiyomi.core.security.SecurityPreferences
 import eu.kanade.tachiyomi.ui.base.delegate.SecureActivityDelegate
+import eu.kanade.domain.ui.UiPreferences
+import eu.kanade.domain.ui.model.NavigationStyle
 import eu.kanade.tachiyomi.ui.category.biometric.BiometricTimesScreen
 import eu.kanade.tachiyomi.util.system.AuthenticatorUtil.authenticate
 import eu.kanade.tachiyomi.util.system.AuthenticatorUtil.isAuthenticationSupported
@@ -161,6 +165,13 @@ val prefKeys: Set<String> = setOf(
     private fun getPrivacyGroup(
         securityPreferences: SecurityPreferences,
     ): Preference.PreferenceGroup {
+        val uiPreferences = remember { Injekt.get<UiPreferences>() }
+        val navigationStyle by uiPreferences.navigationStyle().collectAsState()
+        val oneTapHint = if (navigationStyle == NavigationStyle.Simple) {
+            "Incognito and Downloaded-only are one-tap modes in the Library menu."
+        } else {
+            "Incognito and Downloaded-only are one-tap modes on the More tab."
+        }
         return Preference.PreferenceGroup(
             title = "Privacy",
             preferenceItems = persistentListOf(
@@ -179,7 +190,7 @@ val prefKeys: Set<String> = setOf(
                 Preference.PreferenceItem.InfoPreference(
                     stringResource(MR.strings.secure_screen_summary) +
                         "\n\n" +
-                        "Incognito and Downloaded-only are one-tap modes on the More tab.",
+                        oneTapHint,
                 ),
             ),
         )
@@ -307,6 +318,8 @@ val prefKeys: Set<String> = setOf(
             errorText = null,
             placeholder = stringResource(MR.strings.password),
             supportsConfirm = { true },
+            visualTransformation = PasswordVisualTransformation(),
+            keyboardType = KeyboardType.Password,
             onConfirm = { value ->
                 onReturnPassword(value)
                 true

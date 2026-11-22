@@ -3,10 +3,6 @@ package dev.errnolink.tsuzuki.ui.browse
 import androidx.compose.animation.Crossfade
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.lazy.items
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.FilterList
-import androidx.compose.material.icons.outlined.Public
-import androidx.compose.material3.Icon
 import androidx.compose.material3.SmallExtendedFloatingActionButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBarScrollBehavior
@@ -21,11 +17,13 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.unit.dp
-import androidx.compose.material.icons.outlined.MoreHoriz
-import androidx.compose.material.icons.outlined.Close
-import androidx.compose.material.icons.outlined.SelectAll
-import androidx.compose.material.icons.outlined.FlipToBack
+import dev.errnolink.tsuzuki.designsystem.ArrowLeftRight
+import dev.errnolink.tsuzuki.designsystem.Ellipsis
+import dev.errnolink.tsuzuki.designsystem.ListChecks
+import dev.errnolink.tsuzuki.designsystem.ListFilter
 import dev.errnolink.tsuzuki.designsystem.PillButton
+import dev.errnolink.tsuzuki.designsystem.X
+import dev.errnolink.tsuzuki.designsystem.TsuzukiIcons
 import dev.errnolink.tsuzuki.designsystem.rememberTopBarSearch
 import dev.errnolink.tsuzuki.ui.shell.ShellAction
 import dev.errnolink.tsuzuki.ui.shell.ShellActionSheet
@@ -129,20 +127,20 @@ fun SourceFeedScreen(
             listOf(
                 ShellTopAction(
                     "Select all",
-                    Icons.Outlined.SelectAll,
+                    TsuzukiIcons.ListChecks,
                     { items.flatMap { it.results.orEmpty() }.forEach(bulkFavoriteScreenModel::select) },
                 ),
                 ShellTopAction(
                     "Invert selection",
-                    Icons.Outlined.FlipToBack,
+                    TsuzukiIcons.ArrowLeftRight,
                     { bulkFavoriteScreenModel.reverseSelection(items.flatMap { it.results.orEmpty() }) },
                 ),
-                ShellTopAction("Done", Icons.Outlined.Close, bulkFavoriteScreenModel::toggleSelectionMode),
+                ShellTopAction("Done", TsuzukiIcons.X, bulkFavoriteScreenModel::toggleSelectionMode),
             )
         } else {
             listOf(
-                ShellTopAction("Filters and saved searches", Icons.Outlined.FilterList, onFabClick, active = hasFilters),
-                ShellTopAction("More", Icons.Outlined.MoreHoriz, { showActions = true }),
+                ShellTopAction("Filters and saved searches", TsuzukiIcons.ListFilter, onFabClick, active = hasFilters),
+                ShellTopAction("More", TsuzukiIcons.Ellipsis, { showActions = true }),
             )
         },
         search = search,
@@ -153,7 +151,7 @@ fun SourceFeedScreen(
         },
     ) { paddingValues ->
         if (isLoading) {
-            dev.errnolink.tsuzuki.ui.details.SkeletonPulseClock {
+            dev.errnolink.tsuzuki.designsystem.SkeletonClock {
                 androidx.compose.foundation.layout.Column(Modifier.padding(paddingValues + topSmallPaddingValues)) {
                     FeedSectionSkeleton()
                     FeedSectionSkeleton()

@@ -27,7 +27,7 @@ import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
-import androidx.compose.foundation.clickable
+import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.ui.semantics.Role
@@ -56,6 +56,7 @@ import dev.errnolink.tsuzuki.designsystem.PillButton
 import dev.errnolink.tsuzuki.designsystem.TsuzukiTheme
 import dev.errnolink.tsuzuki.designsystem.TsuzukiText
 import dev.errnolink.tsuzuki.designsystem.rememberGlassContext
+import dev.errnolink.tsuzuki.designsystem.TsuzukiSize
 import eu.kanade.tachiyomi.R
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.collect
@@ -83,7 +84,7 @@ fun OnboardingScreen(
     val isRtl = androidx.compose.ui.platform.LocalLayoutDirection.current == androidx.compose.ui.unit.LayoutDirection.Rtl
     val motion = TsuzukiTheme.motion
     val scope = rememberCoroutineScope()
-    val seekable = remember { SeekableTransitionState(0) }
+    val seekable = remember { SeekableTransitionState(currentStep) }
     val backCurve = remember { CubicBezierEasing(0.1f, 0.1f, 0f, 1f) }
     val slidePx = with(LocalDensity.current) { M3Motion.SharedAxisSlide.roundToPx() }
     val fadeOutMs = (M3Motion.Long1 * M3Motion.FadeThroughThreshold).roundToInt()
@@ -199,10 +200,11 @@ fun OnboardingScreen(
                 steps.indices.forEach { index ->
                     val selected = index == currentStep
                     val itemDescription = stringResource(MR.strings.tsuzuki_step_n_of_m, index + 1, steps.size)
+                    val reachable = steps.take(index).all { it.isComplete }
                     Box(
                         Modifier
-                            .size(48.dp)
-                            .clickable(role = Role.RadioButton) { goToStep(index) }
+                            .size(TsuzukiSize.touch)
+                            .selectable(selected = selected, enabled = reachable, role = Role.RadioButton) { goToStep(index) }
                             .semantics {
                                 stateDescription = itemDescription
                             },

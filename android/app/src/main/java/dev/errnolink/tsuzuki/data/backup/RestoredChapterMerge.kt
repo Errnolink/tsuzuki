@@ -19,10 +19,9 @@ object RestoredChapterMerge {
                 version = maxOf(incoming.version, local.version),
             )
         }
-        return when {
-            local.read && !base.read -> base.copy(read = true, lastPageRead = local.lastPageRead)
-            base.read -> base
-            else -> base.copy(lastPageRead = maxOf(base.lastPageRead, local.lastPageRead))
-        }
+        return base.copy(
+            read = base.read || local.read,
+            lastPageRead = maxOf(base.lastPageRead, local.lastPageRead),
+        )
     }
 }

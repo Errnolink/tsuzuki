@@ -20,6 +20,8 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -41,12 +43,15 @@ import dev.errnolink.tsuzuki.designsystem.TsuzukiCorners
 import dev.errnolink.tsuzuki.designsystem.TsuzukiSpacing
 import dev.errnolink.tsuzuki.designsystem.TsuzukiTheme
 import dev.errnolink.tsuzuki.designsystem.TsuzukiText
+import dev.errnolink.tsuzuki.designsystem.M3Motion
 import kotlinx.coroutines.delay
 import kotlin.time.Duration.Companion.seconds
 
 internal val PrefsHorizontalPadding = 16.dp
 internal val PrefsVerticalPadding = 12.dp
 internal val TrailingWidgetBuffer = 16.dp
+/** Leading icon width of the standard preference rows; the divider inset derives from it (S1). */
+internal val PreferenceLeadingIconWidth = 24.dp
 
 @Composable
 internal fun Modifier.preferenceHighlight(): Modifier {
@@ -64,9 +69,9 @@ internal fun Modifier.preferenceHighlight(): Modifier {
         if (TsuzukiTheme.motion.reduced) {
             snap()
         } else if (flag) {
-            tween(150)
+            tween(M3Motion.Short3)
         } else {
-            tween(200)
+            tween(M3Motion.Short4)
         },
         label = "preference-highlight",
     )
@@ -84,6 +89,8 @@ internal fun BaseTextFieldRow(
     modifier: Modifier = Modifier,
     placeholder: String? = null,
     singleLine: Boolean = true,
+    visualTransformation: VisualTransformation = VisualTransformation.None,
+    keyboardType: KeyboardType = KeyboardType.Text,
 ) {
     val colors = TsuzukiTheme.colors
     val focusManager = androidx.compose.ui.platform.LocalFocusManager.current
@@ -92,7 +99,7 @@ internal fun BaseTextFieldRow(
             .fillMaxWidth()
             .clip(RoundedCornerShape(TsuzukiCorners.field))
             .background(colors.grouped)
-            .heightIn(min = 44.dp)
+            .heightIn(min = TsuzukiSpacing.rowMin)
             .padding(horizontal = 14.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -103,7 +110,8 @@ internal fun BaseTextFieldRow(
             textStyle = TsuzukiTheme.typography.body.copy(color = colors.text),
             cursorBrush = SolidColor(colors.accent),
             singleLine = singleLine,
-            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+            visualTransformation = visualTransformation,
+            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done, keyboardType = keyboardType),
             keyboardActions = KeyboardActions(onDone = { focusManager.clearFocus() }),
             decorationBox = { inner ->
                 Box {

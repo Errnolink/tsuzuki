@@ -7,10 +7,11 @@ CREATE TABLE tsuzuki_page_totals(
 
 upsert:
 INSERT INTO tsuzuki_page_totals(chapter_id, total_pages)
-VALUES (:chapterId, :totalPages)
+SELECT :chapterId, :totalPages
+WHERE EXISTS (SELECT 1 FROM chapters WHERE _id = :chapterId)
 ON CONFLICT(chapter_id)
 DO UPDATE
-SET total_pages = :totalPages;
+SET total_pages = excluded.total_pages;
 
 totalsByChapterIds:
 SELECT chapter_id, total_pages

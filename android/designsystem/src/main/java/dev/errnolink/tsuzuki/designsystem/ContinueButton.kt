@@ -9,8 +9,11 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.LocalIndication
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
@@ -40,21 +43,31 @@ fun ContinueButton(
 ) {
     val colors = TsuzukiTheme.colors
     val reduced = TsuzukiTheme.motion.reduced
+    val labels = LocalTsuzukiComponentLabels.current
     val animatedFraction by animateFloatAsState(
         targetValue = progress?.coerceIn(0f, 1f) ?: 0f,
         animationSpec = if (reduced) snap() else tween(M3Motion.Medium2, easing = M3Motion.Standard),
         label = "ContinueButtonProgress",
     )
     val description = if (progress != null) {
-        "${contentDescription}, ${(progress.coerceIn(0f, 1f) * 100).toInt()} percent read"
+        labels.percentRead(contentDescription, (progress.coerceIn(0f, 1f) * 100).toInt())
     } else {
         contentDescription
     }
+    val interaction = remember { MutableInteractionSource() }
+    val press = rememberPressShapeState(interaction, restRadius = CapsuleRestRadius)
+    val discShape = if (press.enabled) press.shape else CircleShape
     Box(
         modifier
             .size(size.target)
+            .pressShapeScale(press)
             .semantics { this.contentDescription = description }
-            .clickable(onClick = onClick, role = Role.Button),
+            .clickable(
+                interactionSource = interaction,
+                indication = if (press.enabled) null else LocalIndication.current,
+                onClick = onClick,
+                role = Role.Button,
+            ),
         contentAlignment = Alignment.Center,
     ) {
         if (onImage) {
@@ -90,7 +103,7 @@ fun ContinueButton(
         Box(
             Modifier
                 .size(size.disc)
-                .background(if (onImage) Color.White else colors.text, CircleShape),
+                .background(if (onImage) Color.White else colors.text, discShape),
             contentAlignment = Alignment.Center,
         ) {
             TsuzukiIcon(

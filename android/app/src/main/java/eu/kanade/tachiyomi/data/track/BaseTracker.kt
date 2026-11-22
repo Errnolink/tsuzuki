@@ -10,7 +10,12 @@ import eu.kanade.tachiyomi.data.track.model.TrackMangaMetadata
 import eu.kanade.tachiyomi.data.track.model.TrackSearch
 import eu.kanade.tachiyomi.network.NetworkHelper
 import eu.kanade.tachiyomi.util.system.toast
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharedFlow
+import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import logcat.LogPriority
 import okhttp3.OkHttpClient
@@ -68,7 +73,42 @@ abstract class BaseTracker(
         }
     }
 
+    // KMK -->
+    private val _isRefreshing = MutableStateFlow(false)
+    final override val isRefreshingFlow: StateFlow<Boolean> = _isRefreshing
+
+    private val _refreshResult = MutableSharedFlow<RefreshResult>(extraBufferCapacity = 1)
+    final override val refreshResultFlow: SharedFlow<RefreshResult> = _refreshResult
+
+    final override suspend fun refreshUser() {
+        _isRefreshing.value = true
+        try {
+            updateUserConfig()
+            _refreshResult.emit(RefreshResult.Success)
+        } catch (e: Exception) {
+            if (e is CancellationException) throw e
+            logcat(LogPriority.ERROR, e) { "Failed to update user config id=$id" }
+            _refreshResult.emit(RefreshResult.Error(e.message ?: "Failed with unknown error"))
+        } finally {
+            _isRefreshing.value = false
+        }
+    }
+
+    // does the actual remote calls shielded from outside access to guarantee proper refresh flow setting
+    protected abstract suspend fun updateUserConfig()
+    // KMK <--
+
     override fun getUsername() = trackPreferences.trackUsername(this).get()
+
+    // KMK -->
+    override fun getDisplayUsername(): String {
+        return trackPreferences.trackDisplayUsername(this).get().ifBlank { getUsername() }
+    }
+
+    override fun saveDisplayUsername(name: String) {
+        trackPreferences.trackDisplayUsername(this).set(name)
+    }
+    // KMK <--
 
     override fun getPassword() = trackPreferences.trackPassword(this).get()
 
@@ -154,3 +194,10 @@ abstract class BaseTracker(
         }
     }
 }
+
+// KMK -->
+sealed interface RefreshResult {
+    data object Success : RefreshResult
+    data class Error(val msg: String) : RefreshResult
+}
+// KMK <--

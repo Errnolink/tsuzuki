@@ -3,6 +3,7 @@ package dev.errnolink.tsuzuki.ui.history
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import dev.errnolink.tsuzuki.designsystem.DetentSheet
+import dev.errnolink.tsuzuki.designsystem.SheetKind
 import dev.errnolink.tsuzuki.designsystem.GroupedRow
 import dev.errnolink.tsuzuki.ui.shell.ShellFilterRow
 import eu.kanade.tachiyomi.ui.history.HistorySettingsScreenModel
@@ -18,7 +19,7 @@ fun HistoryFilterDialog(onDismissRequest: () -> Unit, screenModel: HistorySettin
     val chapter by screenModel.historyPreferences.filterUnfinishedChapter().collectAsState()
     val nonLibrary by screenModel.historyPreferences.filterNonLibraryManga().collectAsState()
     val panorama by screenModel.historyPreferences.usePanoramaCover().collectAsState()
-    DetentSheet(true, stringResource(MR.strings.action_filter), onDismissRequest) {
+    DetentSheet(true, stringResource(MR.strings.action_filter), onDismissRequest, kind = SheetKind.Picker) {
         ShellFilterRow(stringResource(KMR.strings.action_filter_unfinished_manga), manga) {
             screenModel.toggleFilter(HistoryPreferences::filterUnfinishedManga)
         }

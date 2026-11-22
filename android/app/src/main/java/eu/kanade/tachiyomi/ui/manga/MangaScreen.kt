@@ -12,6 +12,9 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.snapshotFlow
+import dev.errnolink.tsuzuki.designsystem.ToastAction
+import dev.errnolink.tsuzuki.designsystem.ToastHostState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -62,7 +65,6 @@ import eu.kanade.tachiyomi.ui.category.CategoryScreen
 import eu.kanade.tachiyomi.ui.home.HomeScreen
 import eu.kanade.tachiyomi.ui.manga.merged.EditMergedSettingsDialog
 import dev.errnolink.tsuzuki.ui.details.MangaMergeSheet
-import eu.kanade.tachiyomi.ui.manga.notes.MangaNotesScreen
 import eu.kanade.tachiyomi.ui.reader.ReaderActivity
 import eu.kanade.tachiyomi.ui.setting.SettingsScreen
 import eu.kanade.tachiyomi.ui.webview.WebViewScreen
@@ -105,7 +107,7 @@ import uy.kohesive.injekt.api.get
 import dev.errnolink.tsuzuki.ui.details.MangaDetailSkeleton
 import dev.errnolink.tsuzuki.ui.details.rememberPreparedDetailsState
 import dev.errnolink.tsuzuki.ui.shell.SkeletonCrossfade
-import dev.errnolink.tsuzuki.ui.shell.mangaHeroTarget
+import dev.errnolink.tsuzuki.ui.motion.mangaHeroTarget
 
 class MangaScreen(
     val mangaId: Long,
@@ -247,10 +249,22 @@ class MangaScreen(
         val isConfigurableSource = successState.source.anyIs<ConfigurableSource>()
         // KMK <--
 
+        // KMK: the model is upstream and still speaks SnackbarHostState; relay it into toasts.
+        val toasts = remember { ToastHostState() }
+        LaunchedEffect(screenModel) {
+            snapshotFlow { screenModel.snackbarHostState.currentSnackbarData }.collect { data ->
+                data ?: return@collect
+                data.dismiss()
+                toasts.show(
+                    data.visuals.message,
+                    action = data.visuals.actionLabel?.let { label -> ToastAction(label) { data.performAction() } },
+                )
+            }
+        }
         var showScanlatorsDialog by remember { mutableStateOf(false) }
         MangaScreen(
             state = successState,
-            snackbarHostState = screenModel.snackbarHostState,
+            toasts = toasts,
             nextUpdate = successState.manga.expectedNextUpdate,
             isTabletUi = isTabletUi(),
             chapterSwipeStartAction = screenModel.chapterSwipeStartAction,
@@ -386,7 +400,6 @@ class MangaScreen(
                 mergeWithAnother(navigator, context, successState.manga, screenModel::smartSearchMerge)
             },
             // SY <--
-            onEditNotesClicked = { navigator.push(MangaNotesScreen(manga = successState.manga)) },
             onMultiBookmarkClicked = screenModel::bookmarkChapters,
             onMultiMarkAsReadClicked = screenModel::markChaptersRead,
             onMarkPreviousAsReadClicked = screenModel::markPreviousChapterRead,

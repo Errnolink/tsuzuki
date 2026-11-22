@@ -29,6 +29,7 @@ import cafe.adriel.voyager.core.model.screenModelScope
 import cafe.adriel.voyager.navigator.LocalNavigator
 import cafe.adriel.voyager.navigator.currentOrThrow
 import dev.errnolink.tsuzuki.designsystem.DetentSheet
+import dev.errnolink.tsuzuki.designsystem.SheetKind
 import dev.errnolink.tsuzuki.designsystem.PillButton
 import dev.errnolink.tsuzuki.designsystem.TsuzukiCorners
 import dev.errnolink.tsuzuki.designsystem.TsuzukiSpacing
@@ -64,7 +65,7 @@ data class TrackScoreSelectorScreen(
         val state by screenModel.state.collectAsState()
         val selections = remember { screenModel.getSelections() }
         val listState = rememberLazyListState(selections.indexOf(state.selection).coerceAtLeast(0))
-        DetentSheet(true, stringResource(MR.strings.score), navigator::pop, scrollContent = false) {
+        DetentSheet(true, stringResource(MR.strings.score), navigator::pop, scrollContent = false, kind = SheetKind.Picker) {
             LazyColumn(
                 flingBehavior = dev.errnolink.tsuzuki.designsystem.tsuzukiFlingBehavior(),
                 state = listState,

@@ -27,19 +27,20 @@ import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import dev.errnolink.tsuzuki.designsystem.DetentSheet
+import dev.errnolink.tsuzuki.designsystem.SheetKind
 import dev.errnolink.tsuzuki.designsystem.Ellipsis
 import dev.errnolink.tsuzuki.designsystem.EyeOff
 import dev.errnolink.tsuzuki.designsystem.GroupedRow
-import dev.errnolink.tsuzuki.designsystem.IconButton
 import dev.errnolink.tsuzuki.designsystem.InsetGroupedList
 import dev.errnolink.tsuzuki.designsystem.Link
 import dev.errnolink.tsuzuki.designsystem.PillButton
+import dev.errnolink.tsuzuki.designsystem.PlainIconButton
 import dev.errnolink.tsuzuki.designsystem.PullDownAction
-import dev.errnolink.tsuzuki.designsystem.SettingsLucide
+import dev.errnolink.tsuzuki.designsystem.Gear
 import dev.errnolink.tsuzuki.designsystem.TsuzukiIcons
 import dev.errnolink.tsuzuki.designsystem.TsuzukiText
 import dev.errnolink.tsuzuki.designsystem.TsuzukiTheme
-import dev.errnolink.tsuzuki.designsystem.TsuzukiToggle
+import dev.errnolink.tsuzuki.designsystem.animateItemRespectingMotion
 import dev.errnolink.tsuzuki.ui.shell.ShellEmpty
 import dev.errnolink.tsuzuki.ui.shell.ShellTopAction
 import dev.errnolink.tsuzuki.ui.shell.WarningBanner
@@ -70,6 +71,7 @@ fun ExtensionDetailsContent(
     onClickIncognito: (Boolean) -> Unit,
 ) {
     val uriHandler = LocalUriHandler.current
+    val reduced = TsuzukiTheme.motion.reduced
     val url = remember(state.extension) {
         val regex = """https://raw.githubusercontent.com/(.+?)/(.+?)/.+""".toRegex()
         regex.find(state.extension?.store?.indexUrl.orEmpty())
@@ -142,7 +144,7 @@ fun ExtensionDetailsContent(
             key = { "extension-details-${it.source.id}" },
         ) { source ->
             SourceRow(
-                modifier = Modifier.animateItem(),
+                modifier = animateItemRespectingMotion(reduced),
                 source = source,
                 onClickSourcePreferences = onClickSourcePreferences,
                 onClickSource = onClickSource,
@@ -277,7 +279,7 @@ private fun DetailsHeader(
     }
 
     if (showNsfwWarning) {
-        DetentSheet(true, stringResource(MR.strings.ext_info_age_rating), { showNsfwWarning = false }) {
+        DetentSheet(true, stringResource(MR.strings.ext_info_age_rating), { showNsfwWarning = false }, kind = SheetKind.Confirm) {
             TsuzukiText(stringResource(MR.strings.ext_nsfw_warning))
             PillButton(stringResource(MR.strings.action_ok), { showNsfwWarning = false })
         }
@@ -325,22 +327,20 @@ private fun SourceRow(
     val context = LocalContext.current
     InsetGroupedList(modifier = modifier) {
         GroupedRow(
-                title = if (source.labelAsName) {
-                    source.source.toString()
-                } else {
-                    LocaleHelper.getSourceDisplayName(source.source.lang, context)
-                },
-                onClick = { onClickSource(source.source.id) },
-                trailing = {
-                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                        if (source.source is ConfigurableSource) {
-                            IconButton(stringResource(MR.strings.label_settings), { onClickSourcePreferences(source.source.id) }) {
-                                Icon(TsuzukiIcons.SettingsLucide, null, Modifier.size(20.dp), tint = TsuzukiTheme.colors.secondary)
-                            }
-                        }
-                        TsuzukiToggle(source.enabled)
+            title = if (source.labelAsName) {
+                source.source.toString()
+            } else {
+                LocaleHelper.getSourceDisplayName(source.source.lang, context)
+            },
+            checked = source.enabled,
+            onCheckedChange = { onClickSource(source.source.id) },
+            trailing = {
+                if (source.source is ConfigurableSource) {
+                    PlainIconButton(stringResource(MR.strings.label_settings), { onClickSourcePreferences(source.source.id) }) {
+                        Icon(TsuzukiIcons.Gear, null, Modifier.size(20.dp))
                     }
-                },
-            )
+                }
+            },
+        )
     }
 }

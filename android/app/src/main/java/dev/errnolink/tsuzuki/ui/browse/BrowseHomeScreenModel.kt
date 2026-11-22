@@ -20,7 +20,7 @@ import kotlinx.collections.immutable.ImmutableList
 import kotlinx.collections.immutable.persistentListOf
 import kotlinx.collections.immutable.toImmutableList
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.async
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.combine
@@ -64,6 +64,7 @@ data class BrowseHomeState(
     val recentManga: ImmutableList<Manga> = persistentListOf(),
     val extensionUpdatesCount: Int = 0,
     val loadError: Boolean = false,
+    val isRefreshing: Boolean = false,
 )
 
 class BrowseHomeScreenModel(
@@ -77,6 +78,8 @@ class BrowseHomeScreenModel(
     private val extensionManager: ExtensionManager = Injekt.get(),
     private val listingCache: ListingCache = Injekt.get(),
 ) : StateScreenModel<BrowseHomeState>(BrowseHomeState()) {
+
+    private var refreshJob: Job? = null
 
     init {
         combine(
@@ -138,15 +141,32 @@ class BrowseHomeScreenModel(
     }
 
     fun selectSource(sourceId: Long) {
+        refreshJob?.cancel()
         sourcePreferences.lastUsedSource().set(sourceId)
         mutableState.update { it.copy(selectedSourceId = sourceId) }
     }
 
     fun retryShelves() {
         val sourceId = state.value.selectedSourceId ?: return
+        refreshJob?.cancel()
         listingCache.forget(sourceId)
         screenModelScope.launch {
             loadSourceShelves(sourceId)
+        }
+    }
+
+    fun refreshShelves() {
+        val sourceId = state.value.selectedSourceId ?: return
+        refreshJob?.cancel()
+        listingCache.forget(sourceId)
+        mutableState.update { it.copy(isRefreshing = true) }
+        refreshJob = screenModelScope.launch {
+            try {
+                val showSkeletons = state.value.popularManga.isEmpty() && state.value.recentManga.isEmpty()
+                loadSourceShelves(sourceId, showSkeletons = showSkeletons)
+            } finally {
+                mutableState.update { it.copy(isRefreshing = false) }
+            }
         }
     }
 
@@ -172,8 +192,14 @@ class BrowseHomeScreenModel(
         extensionManager.uninstallExtension(extension)
     }
 
-    private suspend fun loadSourceShelves(sourceId: Long) = kotlinx.coroutines.coroutineScope {
-        mutableState.update { it.copy(isLoadingPopular = true, isLoadingRecent = true, loadError = false) }
+    private suspend fun loadSourceShelves(sourceId: Long, showSkeletons: Boolean = true) = kotlinx.coroutines.coroutineScope {
+        mutableState.update {
+            it.copy(
+                isLoadingPopular = showSkeletons,
+                isLoadingRecent = showSkeletons,
+                loadError = false,
+            )
+        }
         val source = withContext(Dispatchers.IO) {
             sourceManager.isInitialized.first { it }
             sourceManager.getOrStub(sourceId)
@@ -197,14 +223,10 @@ class BrowseHomeScreenModel(
                     val features = exh.md.handlers.MangaDexFeatures(mangaDex)
                     val since = java.time.LocalDateTime.now(java.time.ZoneOffset.UTC).minusMonths(1)
                         .format(java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ss"))
-                    runCatching {
-                        features.request<exh.md.dto.MangaListDto>(exh.md.service.MangaDexFeatureRequests.popularNew(features.ratings, since))
-                            .data.map { exh.md.utils.MdUtil.createMangaEntry(it, features.language) }
-                    }.getOrDefault(emptyList())
+                    features.request<exh.md.dto.MangaListDto>(exh.md.service.MangaDexFeatureRequests.popularNew(features.ratings, since))
+                        .data.map { exh.md.utils.MdUtil.createMangaEntry(it, features.language) }
                 } else {
-                    runCatching {
-                        listingCache.page(ListingCache.Key(sourceId, ListingCache.Kind.Popular, 1)) { source.getPopularManga(1) }.mangas
-                    }.getOrDefault(emptyList())
+                    listingCache.page(ListingCache.Key(sourceId, ListingCache.Kind.Popular, 1)) { source.getPopularManga(1) }.mangas
                 }
                 val domainManga = popPage.map { it.toDomainManga(mangaDex?.id ?: sourceId) }.distinctBy { it.url }
                 val localManga = networkToLocalManga(domainManga, updateInfo = false)
@@ -218,9 +240,7 @@ class BrowseHomeScreenModel(
         launch(Dispatchers.IO) {
             try {
                 val latestPage = if (source.supportsLatest) {
-                    runCatching {
-                        listingCache.page(ListingCache.Key(sourceId, ListingCache.Kind.Latest, 1)) { source.getLatestUpdates(1) }.mangas
-                    }.getOrDefault(emptyList())
+                    listingCache.page(ListingCache.Key(sourceId, ListingCache.Kind.Latest, 1)) { source.getLatestUpdates(1) }.mangas
                 } else {
                     emptyList()
                 }

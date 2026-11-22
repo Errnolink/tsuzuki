@@ -11,14 +11,13 @@ import androidx.compose.material3.Shapes
 import androidx.compose.material3.Typography
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
-import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
-import dev.errnolink.tsuzuki.designsystem.LocalPressShape
 import dev.errnolink.tsuzuki.designsystem.TsuzukiTheme
-import dev.errnolink.tsuzuki.lab.DesignLab
-import dev.errnolink.tsuzuki.lab.state
+import dev.errnolink.tsuzuki.designsystem.TsuzukiTypography
+import dev.errnolink.tsuzuki.ui.shell.rememberTsuzukiComponentLabels
 import eu.kanade.domain.ui.UiPreferences
 import eu.kanade.domain.ui.model.ThemeMode
 import tachiyomi.presentation.core.util.collectAsState
@@ -31,29 +30,37 @@ fun TachiyomiTheme(
 ) {
     val preferences = remember { Injekt.get<UiPreferences>() }
     val mode by preferences.themeMode().collectAsState()
+    val tsuzukiPreferences = remember { Injekt.get<dev.errnolink.tsuzuki.preference.TsuzukiPreferences>() }
+    val coloursFromWallpaper by tsuzukiPreferences.coloursFromWallpaper().collectAsState()
     TsuzukiTheme(
         dark = when (mode) {
             ThemeMode.SYSTEM -> isSystemInDarkTheme()
             ThemeMode.LIGHT -> false
             ThemeMode.DARK -> true
         },
+        wallpaperColors = coloursFromWallpaper,
+        labels = rememberTsuzukiComponentLabels(),
     ) {
         BaseTachiyomiTheme(content)
     }
 }
 
-
 @Composable
 fun TachiyomiPreviewTheme(
     content: @Composable () -> Unit,
 ) {
-    TsuzukiTheme { BaseTachiyomiTheme(content) }
+    TsuzukiTheme(labels = rememberTsuzukiComponentLabels()) { BaseTachiyomiTheme(content) }
 }
 
 @Composable
 private fun BaseTachiyomiTheme(content: @Composable () -> Unit) {
+    val typography = remember { TsuzukiTypography() }
+    BaseTachiyomiThemeBody(typography, content)
+}
+
+@Composable
+private fun BaseTachiyomiThemeBody(tsuzukiType: TsuzukiTypography, content: @Composable () -> Unit) {
     val colors = TsuzukiTheme.colors
-    val type = TsuzukiTheme.typography
     val indication = LocalIndication.current
     val scheme = remember(colors) {
         ColorScheme(
@@ -95,23 +102,23 @@ private fun BaseTachiyomiTheme(content: @Composable () -> Unit) {
             surfaceContainerLowest = colors.background,
         )
     }
-    val typography = remember(type) {
+    val m3Typography = remember(tsuzukiType) {
         Typography(
-            displayLarge = type.largeTitle,
-            displayMedium = type.largeTitle,
-            displaySmall = type.title1,
-            headlineLarge = type.title1,
-            headlineMedium = type.title2,
-            headlineSmall = type.title3,
-            titleLarge = type.title3,
-            titleMedium = type.headline,
-            titleSmall = type.subhead,
-            bodyLarge = type.body,
-            bodyMedium = type.callout,
-            bodySmall = type.footnote,
-            labelLarge = type.headline,
-            labelMedium = type.footnote,
-            labelSmall = type.caption2,
+            displayLarge = tsuzukiType.largeTitle,
+            displayMedium = tsuzukiType.largeTitle,
+            displaySmall = tsuzukiType.title1,
+            headlineLarge = tsuzukiType.title1,
+            headlineMedium = tsuzukiType.title2,
+            headlineSmall = tsuzukiType.title3,
+            titleLarge = tsuzukiType.title3,
+            titleMedium = tsuzukiType.headline,
+            titleSmall = tsuzukiType.subhead,
+            bodyLarge = tsuzukiType.body,
+            bodyMedium = tsuzukiType.callout,
+            bodySmall = tsuzukiType.footnote,
+            labelLarge = tsuzukiType.headline,
+            labelMedium = tsuzukiType.footnote,
+            labelSmall = tsuzukiType.caption2,
         )
     }
     val shapes = remember {
@@ -123,12 +130,11 @@ private fun BaseTachiyomiTheme(content: @Composable () -> Unit) {
             extraLarge = RoundedCornerShape(28.dp),
         )
     }
-    MaterialExpressiveTheme(colorScheme = scheme, typography = typography, shapes = shapes) {
+    MaterialExpressiveTheme(colorScheme = scheme, typography = m3Typography, shapes = shapes) {
         val overscrollFactory = rememberIosOverscrollFactory()
         CompositionLocalProvider(
             LocalIndication provides indication,
             LocalOverscrollFactory provides overscrollFactory,
-            LocalPressShape provides (DesignLab.pressShape.state().value == DesignLab.PressShape.on),
             content = content,
         )
     }

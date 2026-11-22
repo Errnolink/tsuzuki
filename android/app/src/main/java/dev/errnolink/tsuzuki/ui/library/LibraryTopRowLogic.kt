@@ -6,32 +6,47 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.staticCompositionLocalOf
-import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.unit.dp
 import dev.errnolink.tsuzuki.designsystem.PullDownTriState
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import dev.icerock.moko.resources.StringResource
 import tachiyomi.core.common.preference.Preference
 import tachiyomi.core.common.preference.TriState
 import tachiyomi.domain.library.model.LibraryDisplayMode
 import tachiyomi.domain.library.model.LibraryGroup
 import tachiyomi.domain.library.model.LibrarySort
 import tachiyomi.domain.library.service.LibraryPreferences
+import tachiyomi.i18n.MR
 
 enum class QuickFilterItem(
-    val label: String,
+    val label: StringResource,
     val getPreference: (LibraryPreferences) -> Preference<TriState>,
 ) {
-    Unread("Unread", LibraryPreferences::filterUnread),
-    Started("Started", LibraryPreferences::filterStarted),
-    Downloaded("Downloaded", LibraryPreferences::filterDownloaded),
-    Bookmarked("Bookmarked", LibraryPreferences::filterBookmarked),
-    Completed("Completed", LibraryPreferences::filterCompleted),
-    Merged("Merged", LibraryPreferences::filterMerged),
-    Missing("Missing", LibraryPreferences::filterMissingChapters),
-    Unavailable("Unavailable", LibraryPreferences::filterUnavailableChapters),
+    Unread(MR.strings.action_filter_unread, LibraryPreferences::filterUnread),
+    Started(MR.strings.label_started, LibraryPreferences::filterStarted),
+    Downloaded(MR.strings.label_downloaded, LibraryPreferences::filterDownloaded),
+    Bookmarked(MR.strings.action_filter_bookmarked, LibraryPreferences::filterBookmarked),
+    Completed(MR.strings.completed, LibraryPreferences::filterCompleted),
+    Merged(MR.strings.tsuzuki_merged, LibraryPreferences::filterMerged),
+    Missing(MR.strings.tsuzuki_missing, LibraryPreferences::filterMissingChapters),
+    Unavailable(MR.strings.tsuzuki_unavailable, LibraryPreferences::filterUnavailableChapters),
 }
+
+val PrimaryQuickFilters: List<QuickFilterItem> = listOf(
+    QuickFilterItem.Unread,
+    QuickFilterItem.Downloaded,
+    QuickFilterItem.Started,
+    QuickFilterItem.Bookmarked,
+)
+
+val SecondaryQuickFilters: List<QuickFilterItem> = listOf(
+    QuickFilterItem.Completed,
+    QuickFilterItem.Merged,
+    QuickFilterItem.Missing,
+    QuickFilterItem.Unavailable,
+)
 
 fun nextFilterState(current: TriState): TriState = current.next()
 
@@ -54,6 +69,26 @@ fun LibrarySort.flipped(): LibrarySort = copy(
 fun calculateActiveFilterCount(states: Collection<TriState>): Int =
     states.count { it != TriState.DISABLED }
 
+/**
+ * LIB-05: the badge counts every filter kind the menu can set — the eight quick tri-states, the
+ * per-tracker filters, lewd and outside-release-interval, the category filter (one entry whatever
+ * the include/exclude sets hold) and the scanlator match-all switch.
+ */
+fun activeFilterCount(state: LibraryMenuOptionsState): Int =
+    calculateActiveFilterCount(state.quickFilterStates) +
+        calculateActiveFilterCount(state.trackedStates) +
+        calculateActiveFilterCount(listOf(state.lewd, state.intervalCustom)) +
+        if (
+            state.categoriesFiltered ||
+            state.categoryIncludeIds.isNotEmpty() ||
+            state.categoryExcludeIds.isNotEmpty()
+        ) {
+            1
+        } else {
+            0
+        } +
+        if (state.scanlatorMatchAll) 1 else 0
+
 fun formatFilterCount(activeCount: Int): String =
     if (activeCount > 9) "9+" else activeCount.toString()
 
@@ -68,7 +103,7 @@ data class LibraryMenuOptionsState(
     val scanlatorMatchAll: Boolean = false,
     val sortType: LibrarySort.Type = LibrarySort.default.type,
     val sortAscending: Boolean = LibrarySort.default.isAscending,
-    val displayMode: LibraryDisplayMode = LibraryDisplayMode.default,
+    val displayMode: LibraryDisplayMode = LibraryDisplayMode.CompactGrid,
     val grouping: Int = LibraryGroup.BY_DEFAULT,
     val portraitColumns: Int = 0,
     val landscapeColumns: Int = 0,
@@ -80,15 +115,13 @@ data class LibraryMenuOptionsState(
     val sourceBadge: Boolean = true,
     val continueReadingButton: Boolean = false,
     val progressRing: Boolean = true,
-    val categoryTabs: Boolean = true,
     val showHiddenCategories: Boolean = false,
-    val categoryNumberOfItems: Boolean = false,
 )
 
 private val LibraryMenuOptionsDefaults = LibraryMenuOptionsState()
 
 fun libraryOptionsAtDefaults(state: LibraryMenuOptionsState): Boolean =
-    state == LibraryMenuOptionsDefaults
+    state.copy(trackedStates = state.trackedStates.filter { it != TriState.DISABLED }) == LibraryMenuOptionsDefaults
 
 enum class LibraryTopRowCollapseState {
     Expanded,
@@ -182,30 +215,7 @@ object LibraryMenuPullDownState {
     private val mutableIsOpen = MutableStateFlow(false)
     val isOpen: StateFlow<Boolean> = mutableIsOpen.asStateFlow()
 
-    fun open() {
-        LibraryFilterSheetState.close()
-        mutableIsOpen.value = true
-    }
+    fun open() { mutableIsOpen.value = true }
     fun close() { mutableIsOpen.value = false }
-    fun toggle() {
-        if (!mutableIsOpen.value) LibraryFilterSheetState.close()
-        mutableIsOpen.value = !mutableIsOpen.value
-    }
-}
-
-object LibraryFilterSheetState {
-    private val mutableIsOpen = MutableStateFlow(false)
-    val isOpen: StateFlow<Boolean> = mutableIsOpen.asStateFlow()
-
-    var buttonBoundsInWindow by mutableStateOf<Rect?>(null)
-
-    fun open() {
-        LibraryMenuPullDownState.close()
-        mutableIsOpen.value = true
-    }
-    fun close() { mutableIsOpen.value = false }
-    fun toggle() {
-        if (!mutableIsOpen.value) LibraryMenuPullDownState.close()
-        mutableIsOpen.value = !mutableIsOpen.value
-    }
+    fun toggle() { mutableIsOpen.value = !mutableIsOpen.value }
 }

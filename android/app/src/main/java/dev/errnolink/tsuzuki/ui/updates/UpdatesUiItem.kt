@@ -27,19 +27,6 @@ import androidx.compose.foundation.shape.CornerBasedShape
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.unit.IntOffset
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Bookmark
-import androidx.compose.material.icons.outlined.ArrowDownward
-import androidx.compose.material.icons.outlined.BookmarkAdd
-import androidx.compose.material.icons.outlined.BookmarkRemove
-import androidx.compose.material.icons.outlined.Delete
-import androidx.compose.material.icons.outlined.Done
-import androidx.compose.material.icons.outlined.Download
-import androidx.compose.material.icons.outlined.ErrorOutline
-import androidx.compose.material.icons.outlined.FileDownloadOff
-import androidx.compose.material.icons.outlined.KeyboardArrowDown
-import androidx.compose.material.icons.outlined.KeyboardArrowUp
-import androidx.compose.material.icons.outlined.RemoveDone
 import androidx.compose.material3.Icon
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
@@ -48,19 +35,31 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.hapticfeedback.HapticFeedbackType
-import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.foundation.clickable
+import dev.errnolink.tsuzuki.designsystem.ArrowDown
+import dev.errnolink.tsuzuki.designsystem.Bookmark
+import dev.errnolink.tsuzuki.designsystem.BookmarkFilled
+import dev.errnolink.tsuzuki.designsystem.ChevronDown
+import dev.errnolink.tsuzuki.designsystem.ChevronUp
+import dev.errnolink.tsuzuki.designsystem.CircleAlert
+import dev.errnolink.tsuzuki.designsystem.CircleCheck
+import dev.errnolink.tsuzuki.designsystem.Download as DownloadIcon
+import dev.errnolink.tsuzuki.designsystem.RotateCcw
+import dev.errnolink.tsuzuki.designsystem.SelectionMark
+import dev.errnolink.tsuzuki.designsystem.Trash2
 import dev.errnolink.tsuzuki.designsystem.TsuzukiColors
 import dev.errnolink.tsuzuki.designsystem.TsuzukiCorners
+import dev.errnolink.tsuzuki.designsystem.TsuzukiIcons
 import dev.errnolink.tsuzuki.designsystem.TsuzukiSpacing
 import dev.errnolink.tsuzuki.designsystem.TsuzukiText
+import dev.errnolink.tsuzuki.designsystem.selectionFill
 import eu.kanade.tachiyomi.ui.updates.UpdatesItem
-import dev.errnolink.tsuzuki.designsystem.ProgressRing
+import dev.errnolink.tsuzuki.designsystem.ProgressMark
 import dev.errnolink.tsuzuki.ui.shell.ShellAction
 import dev.errnolink.tsuzuki.ui.shell.ShellCaption
+import dev.errnolink.tsuzuki.ui.motion.heroFlightLabel
 import dev.errnolink.tsuzuki.ui.shell.ShellCover
 import eu.kanade.presentation.components.relativeDateText
 import eu.kanade.presentation.manga.components.ChapterDownloadAction
@@ -70,6 +69,9 @@ import eu.kanade.tachiyomi.ui.updates.UpdatesScreenModel.UpdateSelectionOptions
 import eu.kanade.tachiyomi.ui.updates.groupByDateAndManga
 import dev.errnolink.tsuzuki.designsystem.TsuzukiTheme
 import dev.errnolink.tsuzuki.designsystem.insetDivider
+import dev.errnolink.tsuzuki.designsystem.TsuzukiSize
+import dev.errnolink.tsuzuki.designsystem.KasaneSprings
+import dev.errnolink.tsuzuki.designsystem.SectionHeader
 import me.saket.swipe.SwipeAction
 import me.saket.swipe.SwipeableActionsBox
 import tachiyomi.domain.library.service.LibraryPreferences
@@ -112,8 +114,8 @@ internal fun LazyListScope.updatesUiItems(
         },
     ) { index, model ->
         val motion = TsuzukiTheme.motion
-        val place: FiniteAnimationSpec<IntOffset>? = if (motion.reduced) null else motion.tabSpring()
-        val fade: FiniteAnimationSpec<Float>? = if (motion.reduced) null else motion.tabSpring()
+        val place: FiniteAnimationSpec<IntOffset>? = if (motion.reduced) null else KasaneSprings.tab()
+        val fade: FiniteAnimationSpec<Float>? = if (motion.reduced) null else KasaneSprings.tab()
         val animated = Modifier.animateItem(fade, place, fade)
         when (model) {
             is UpdatesUiModel.Header -> UpdatesDateHeader(model, animated)
@@ -134,6 +136,7 @@ internal fun LazyListScope.updatesUiItems(
                         divider = !lastInDay,
                         onRead = { if (selectionMode) onUpdateSelected(updatesItem, UpdateSelectionOptions(selected = !updatesItem.selected, fromLongPress = false, isGroup = false, isExpanded = isExpanded)) else onClickUpdate(updatesItem) },
                         selected = updatesItem.selected,
+                        selectionMode = selectionMode,
                         readProgress = updatesItem.update.lastPageRead
                             .takeIf {
                                 !updatesItem.update.read &&
@@ -190,24 +193,20 @@ internal fun LazyListScope.updatesUiItems(
 
 @Composable
 private fun UpdatesDateHeader(header: UpdatesUiModel.Header, modifier: Modifier = Modifier) {
-    Row(
+    SectionHeader(
+        relativeDateText(header.date),
         modifier.fillMaxWidth().padding(start = 32.dp, end = 20.dp, top = 18.dp, bottom = 8.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
-    ) {
-        TsuzukiText(
-            relativeDateText(header.date),
-            style = TsuzukiTheme.typography.footnote,
-            color = TsuzukiTheme.colors.text,
-        )
-        ShellCaption("${header.mangaCount}")
-    }
+        titleStyle = TsuzukiTheme.typography.footnote,
+        titleColor = TsuzukiTheme.colors.text,
+        titleTrailing = { ShellCaption("${header.mangaCount}") },
+    )
 }
 
 @Composable
 private fun UpdatesUiItem(
     update: UpdatesWithRelations,
     selected: Boolean,
+    selectionMode: Boolean,
     shape: CornerBasedShape,
     divider: Boolean,
     onRead: () -> Unit,
@@ -227,7 +226,7 @@ private fun UpdatesUiItem(
     collapseToggle: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val haptic = LocalHapticFeedback.current
+    val haptics = TsuzukiTheme.haptics
     val colors = TsuzukiTheme.colors
     val motion = TsuzukiTheme.motion
     val downloadState = downloadStateProvider()
@@ -249,11 +248,12 @@ private fun UpdatesUiItem(
                 .padding(horizontal = 20.dp)
                 .readerOrigin()
                 .clip(shape)
-                .background(if (selected) colors.selectedFill else colors.grouped)
+                .background(colors.grouped)
+                .selectionFill(selected)
                 .combinedClickable(
                     onClick = onClick,
                     onLongClick = {
-                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                        haptics.lift()
                         onLongClick()
                     },
                 )
@@ -262,6 +262,9 @@ private fun UpdatesUiItem(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(12.dp),
         ) {
+            if (selectionMode) {
+                SelectionMark(selected = selected, Modifier.size(24.dp))
+            }
             if (isLeader) {
                 Box(
                     Modifier.width(48.dp).clickable(enabled = onClickCover != null) { onClickCover?.invoke() },
@@ -272,6 +275,7 @@ private fun UpdatesUiItem(
                         update.mangaTitle,
                         Modifier.width(40.dp),
                         fixedRatio = 2f / 3f,
+                        hero = true,
                     )
                 }
             } else {
@@ -284,6 +288,7 @@ private fun UpdatesUiItem(
                 if (isLeader) {
                     TsuzukiText(
                         text = update.mangaTitle,
+                        modifier = Modifier.heroFlightLabel(update.mangaId),
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
                         style = TsuzukiTheme.typography.headline.copy(color = if (update.read) colors.secondary else colors.text),
@@ -295,7 +300,7 @@ private fun UpdatesUiItem(
                     }
                     if (update.bookmark) {
                         Icon(
-                            Icons.Filled.Bookmark,
+                            TsuzukiIcons.BookmarkFilled,
                             contentDescription = stringResource(MR.strings.action_filter_bookmarked),
                             modifier = Modifier.padding(end = 4.dp).size(14.dp),
                             tint = colors.accent,
@@ -315,11 +320,11 @@ private fun UpdatesUiItem(
             }
             if (isLeader && isExpandable) {
                 Box(
-                    Modifier.size(48.dp).clickable(onClick = collapseToggle),
+                    Modifier.size(TsuzukiSize.touch).clickable(onClick = collapseToggle),
                     contentAlignment = Alignment.Center,
                 ) {
                     Icon(
-                        if (expanded) Icons.Outlined.KeyboardArrowUp else Icons.Outlined.KeyboardArrowDown,
+                        if (expanded) TsuzukiIcons.ChevronUp else TsuzukiIcons.ChevronDown,
                         if (expanded) "Collapse chapters" else "Expand chapters",
                         Modifier.size(16.dp),
                         tint = colors.secondary,
@@ -347,7 +352,7 @@ private fun ShellDownloadIndicator(
     val colors = TsuzukiTheme.colors
     val state = downloadStateProvider()
     val progress = downloadProgressProvider()
-    Box(modifier.size(48.dp), contentAlignment = Alignment.Center) {
+    Box(modifier.size(TsuzukiSize.touch), contentAlignment = Alignment.Center) {
         val onClickLabel = when (state) {
             Download.State.NOT_DOWNLOADED -> stringResource(MR.strings.manga_download)
             Download.State.QUEUE, Download.State.DOWNLOADING -> stringResource(MR.strings.action_cancel)
@@ -366,20 +371,20 @@ private fun ShellDownloadIndicator(
             Download.State.ERROR -> colors.destructive
         }
         Box(
-            Modifier.size(48.dp).combinedClickable(enabled = enabled, onClickLabel = onClickLabel, onClick = { onClick(tapAction) }),
+            Modifier.size(TsuzukiSize.touch).combinedClickable(enabled = enabled, onClickLabel = onClickLabel, onClick = { onClick(tapAction) }),
             contentAlignment = Alignment.Center,
         ) {
             when (state) {
                 Download.State.QUEUE, Download.State.DOWNLOADING -> {
                     val indeterminate = state == Download.State.QUEUE || progress == 0
                     Box(contentAlignment = Alignment.Center) {
-                        ProgressRing(if (indeterminate) 0f else progress / 100f, onClickLabel)
-                        Icon(Icons.Outlined.ArrowDownward, null, Modifier.size(11.dp), tint = tint)
+                        ProgressMark(if (indeterminate) 0f else progress / 100f, onClickLabel)
+                        Icon(TsuzukiIcons.ArrowDown, null, Modifier.size(11.dp), tint = tint)
                     }
                 }
-                Download.State.DOWNLOADED -> Icon(Icons.Outlined.Delete, onClickLabel, Modifier.size(23.dp), tint = colors.secondary)
-                Download.State.ERROR -> Icon(Icons.Outlined.ErrorOutline, onClickLabel, Modifier.size(23.dp), tint = tint)
-                Download.State.NOT_DOWNLOADED -> Icon(Icons.Outlined.Download, onClickLabel, Modifier.size(23.dp), tint = tint)
+                Download.State.DOWNLOADED -> Icon(TsuzukiIcons.Trash2, onClickLabel, Modifier.size(23.dp), tint = colors.secondary)
+                Download.State.ERROR -> Icon(TsuzukiIcons.CircleAlert, onClickLabel, Modifier.size(23.dp), tint = tint)
+                Download.State.NOT_DOWNLOADED -> Icon(TsuzukiIcons.DownloadIcon, onClickLabel, Modifier.size(23.dp), tint = tint)
             }
         }
     }
@@ -394,13 +399,12 @@ private fun shellSwipeAction(
     onSwipe: () -> Unit,
 ): SwipeAction? {
     val icon: ImageVector = when (action) {
-        LibraryPreferences.ChapterSwipeAction.ToggleRead -> if (!read) Icons.Outlined.Done else Icons.Outlined.RemoveDone
+        LibraryPreferences.ChapterSwipeAction.ToggleRead -> if (!read) TsuzukiIcons.CircleCheck else TsuzukiIcons.RotateCcw
         LibraryPreferences.ChapterSwipeAction.ToggleBookmark ->
-            if (!bookmark) Icons.Outlined.BookmarkAdd else Icons.Outlined.BookmarkRemove
+            if (!bookmark) TsuzukiIcons.Bookmark else TsuzukiIcons.BookmarkFilled
         LibraryPreferences.ChapterSwipeAction.Download -> when (downloadState) {
-            Download.State.NOT_DOWNLOADED, Download.State.ERROR -> Icons.Outlined.Download
-            Download.State.QUEUE, Download.State.DOWNLOADING -> Icons.Outlined.FileDownloadOff
-            Download.State.DOWNLOADED -> Icons.Outlined.Delete
+            Download.State.NOT_DOWNLOADED, Download.State.ERROR -> TsuzukiIcons.DownloadIcon
+            Download.State.QUEUE, Download.State.DOWNLOADING, Download.State.DOWNLOADED -> TsuzukiIcons.Trash2
         }
         LibraryPreferences.ChapterSwipeAction.Disabled -> return null
     }

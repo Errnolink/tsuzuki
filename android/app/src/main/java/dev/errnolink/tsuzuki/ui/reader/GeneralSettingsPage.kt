@@ -12,14 +12,14 @@ import tachiyomi.presentation.core.i18n.pluralStringResource
 import tachiyomi.presentation.core.i18n.stringResource
 import tachiyomi.presentation.core.util.collectAsState
 
-private val themes = listOf(
+internal val themes = listOf(
     MR.strings.black_background to 1,
     MR.strings.gray_background to 2,
     MR.strings.white_background to 0,
     MR.strings.automatic_background to 3,
 )
 
-private val flashColors = listOf(
+internal val flashColors = listOf(
     MR.strings.pref_flash_style_black to ReaderPreferences.FlashColor.BLACK,
     MR.strings.pref_flash_style_white to ReaderPreferences.FlashColor.WHITE,
     MR.strings.pref_flash_style_white_black to ReaderPreferences.FlashColor.WHITE_BLACK,
@@ -28,6 +28,7 @@ private val flashColors = listOf(
 @Composable
 internal fun GeneralPage(screenModel: ReaderSettingsScreenModel) {
     val readerTheme by screenModel.preferences.readerTheme().collectAsState()
+
 
     val flashPageState by screenModel.preferences.flashOnPageChange().collectAsState()
 
@@ -74,6 +75,8 @@ internal fun GeneralPage(screenModel: ReaderSettingsScreenModel) {
     ReaderToggle(label = stringResource(MR.strings.pref_always_show_chapter_transition), pref = screenModel.preferences.alwaysShowChapterTransition())
 
 
+    ReaderToggle(label = stringResource(MR.strings.tsuzuki_eink_16bit), pref = screenModel.preferences.eInkMode())
+
     ReaderToggle(label = stringResource(MR.strings.pref_flash_page), pref = screenModel.preferences.flashOnPageChange())
 
     if (flashPageState) {
@@ -102,4 +105,5 @@ internal fun GeneralPage(screenModel: ReaderSettingsScreenModel) {
     // SY -->
     ReaderToggle(label = stringResource(SYMR.strings.auto_webtoon_mode), pref = screenModel.preferences.useAutoWebtoon())
     // SY <--
+
 }

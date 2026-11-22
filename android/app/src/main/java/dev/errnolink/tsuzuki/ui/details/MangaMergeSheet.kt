@@ -1,8 +1,5 @@
 package dev.errnolink.tsuzuki.ui.details
 
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -31,6 +28,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -49,16 +47,22 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import dev.errnolink.tsuzuki.designsystem.ArrowDown
 import dev.errnolink.tsuzuki.designsystem.ArrowUp
+import dev.errnolink.tsuzuki.designsystem.Chip
+import dev.errnolink.tsuzuki.designsystem.ChipTone
+import dev.errnolink.tsuzuki.designsystem.coverShape
 import dev.errnolink.tsuzuki.designsystem.DetentSheet
+import dev.errnolink.tsuzuki.designsystem.SheetKind
 import dev.errnolink.tsuzuki.designsystem.EmptyState
 import dev.errnolink.tsuzuki.designsystem.GroupedRow
 import dev.errnolink.tsuzuki.designsystem.InsetGroupedList
 import dev.errnolink.tsuzuki.designsystem.PillButton
-import dev.errnolink.tsuzuki.designsystem.ProgressRing
+import dev.errnolink.tsuzuki.designsystem.ProgressMark
 import dev.errnolink.tsuzuki.designsystem.PullDownAction
 import dev.errnolink.tsuzuki.designsystem.PullDownMenu
+import dev.errnolink.tsuzuki.designsystem.LocalMenuMorphSource
+import dev.errnolink.tsuzuki.designsystem.menuMorphSource
+import dev.errnolink.tsuzuki.designsystem.rememberMenuMorphSource
 import dev.errnolink.tsuzuki.designsystem.Search
-import dev.errnolink.tsuzuki.designsystem.SheetDetent
 import dev.errnolink.tsuzuki.designsystem.Trash2
 import dev.errnolink.tsuzuki.designsystem.TsuzukiCorners
 import dev.errnolink.tsuzuki.designsystem.TsuzukiIcons
@@ -68,6 +72,7 @@ import dev.errnolink.tsuzuki.designsystem.TsuzukiTheme
 import dev.errnolink.tsuzuki.designsystem.X
 import dev.errnolink.tsuzuki.designsystem.Ellipsis
 import dev.errnolink.tsuzuki.designsystem.Check
+import dev.errnolink.tsuzuki.designsystem.TsuzukiSize
 import dev.errnolink.tsuzuki.ui.shell.ShellCover
 import tachiyomi.domain.manga.model.asMangaCover
 import eu.kanade.tachiyomi.source.Source
@@ -90,6 +95,9 @@ import tachiyomi.domain.manga.model.MergedMangaReference
 import tachiyomi.domain.source.service.SourceManager
 import uy.kohesive.injekt.Injekt
 import uy.kohesive.injekt.api.get
+import tachiyomi.i18n.MR
+import tachiyomi.presentation.core.i18n.pluralStringResource
+import tachiyomi.presentation.core.i18n.stringResource
 
 sealed interface MergeSearchStatus {
     data object Loading : MergeSearchStatus
@@ -126,10 +134,16 @@ fun MangaMergeSheet(
     val ownSourceIds = remember(manga.source, mergedData?.references) {
         (mergedData?.references.orEmpty().map { it.mangaSourceId } + manga.source).toSet()
     }
-    val installedSources = remember(sourceManager, ownSourceIds) {
-        sourceManager.getVisibleOnlineSources()
-            .filter { it.id != MERGED_SOURCE_ID && it.id !in ownSourceIds }
-            .distinctBy { it.name }
+    val installedSources by produceState(
+        initialValue = emptyList<Source>(),
+        sourceManager,
+        ownSourceIds,
+    ) {
+        value = withContext(Dispatchers.Default) {
+            sourceManager.getVisibleOnlineSources()
+                .filter { it.id != MERGED_SOURCE_ID && it.id !in ownSourceIds }
+                .distinctBy { it.name }
+        }
     }
 
     var searchQuery by remember(manga.id) { mutableStateOf(manga.title) }
@@ -145,6 +159,7 @@ fun MangaMergeSheet(
     }
     val singleSource = targetSources.size == 1 && selectedSourceId != null
     val gutter = dev.errnolink.tsuzuki.designsystem.LocalGroupedListGutter.current
+    val searchFailedLabel = stringResource(MR.strings.tsuzuki_search_failed)
 
     fun executeSearch(query: String) {
         activeSearchJob?.cancel()
@@ -185,8 +200,7 @@ fun MangaMergeSheet(
                                 sourceSearchStates[source.id] = MergeSearchStatus.Success(orderedCandidates)
                             }
                         } catch (e: Exception) {
-                            if (e is CancellationException) throw e
-                            sourceSearchStates[source.id] = MergeSearchStatus.Error(e.message ?: "Search failed")
+                            sourceSearchStates[source.id] = MergeSearchStatus.Error(e.message ?: searchFailedLabel)
                         }
                     }
                 }.awaitAll()
@@ -205,10 +219,15 @@ fun MangaMergeSheet(
 
     DetentSheet(
         visible = visible,
-        title = "Merge chapters",
+        title = stringResource(MR.strings.tsuzuki_merge_chapters),
         onDismissRequest = onDismissRequest,
-        initialDetent = SheetDetent.Large,
         scrollContent = false,
+        // DET-02: a search field plus a result list — BrowseList gives it a content-independent
+        // height (half the viewport, full while the keyboard is up). Under Picker its open height
+        // came from the measured content, but this sheet's content is a fill-MaxSize LazyColumn
+        // whose measured height follows the sheet itself (0 while hidden), so the height chased
+        // itself and the present settle never left "fully hidden".
+        kind = SheetKind.BrowseList,
     ) {
         LazyColumn(
             flingBehavior = dev.errnolink.tsuzuki.designsystem.tsuzukiFlingBehavior(),
@@ -225,8 +244,8 @@ fun MangaMergeSheet(
                     }
 
                     InsetGroupedList(
-                        title = "Merged sources",
-                        footer = "When sources share a chapter, the one higher in this list is used.",
+                        title = stringResource(MR.strings.tsuzuki_merged_sources),
+                        footer = stringResource(MR.strings.tsuzuki_merge_priority_footer),
                     ) {
                         childRefs.forEachIndexed { index, child ->
                             val childManga = mergedData.manga[child.mangaId]
@@ -251,8 +270,8 @@ fun MangaMergeSheet(
 
                         if (onOpenAdvancedSettings != null) {
                             GroupedRow(
-                                title = "Advanced merge settings",
-                                subtitle = "Duplicates, downloads and sync",
+                                title = stringResource(MR.strings.tsuzuki_advanced_merge_settings),
+                                subtitle = stringResource(MR.strings.tsuzuki_advanced_merge_subtitle),
                                 chevron = true,
                                 divider = false,
                                 onClick = onOpenAdvancedSettings,
@@ -261,8 +280,8 @@ fun MangaMergeSheet(
                     }
                 } else {
                     InsetGroupedList(
-                        title = "This title",
-                        footer = "Find the same title on another source to add its chapters here.",
+                        title = stringResource(MR.strings.tsuzuki_this_title),
+                        footer = stringResource(MR.strings.tsuzuki_merge_this_title_footer),
                     ) {
                         MergeSourceRow(
                             manga = manga,
@@ -302,7 +321,7 @@ fun MangaMergeSheet(
                         Box(Modifier.weight(1f), contentAlignment = Alignment.CenterStart) {
                             if (searchQuery.isEmpty()) {
                                 TsuzukiText(
-                                    "Search for this title",
+                                    stringResource(MR.strings.tsuzuki_search_for_this_title),
                                     style = TsuzukiTheme.typography.body,
                                     color = TsuzukiTheme.colors.secondary,
                                     maxLines = 1,
@@ -335,7 +354,7 @@ fun MangaMergeSheet(
                             ) {
                                 Icon(
                                     TsuzukiIcons.X,
-                                    contentDescription = "Clear search",
+                                    contentDescription = stringResource(MR.strings.tsuzuki_clear_search),
                                     modifier = Modifier.size(16.dp),
                                     tint = TsuzukiTheme.colors.secondary,
                                 )
@@ -348,7 +367,7 @@ fun MangaMergeSheet(
                         horizontalArrangement = Arrangement.spacedBy(8.dp),
                     ) {
                         item("all") {
-                            SourceChip("All sources", !singleSource) { selectedSourceId = null }
+                            SourceChip(stringResource(MR.strings.tsuzuki_all_sources), !singleSource) { selectedSourceId = null }
                         }
                         items(installedSources, key = { it.id }) { src ->
                             SourceChip(src.name, singleSource && targetSources.single().id == src.id) { selectedSourceId = src.id }
@@ -361,8 +380,8 @@ fun MangaMergeSheet(
             if (queryEmpty) {
                 item("search_empty_state") {
                     EmptyState(
-                        title = "Search other sources",
-                        description = "Find this title on another source to add its chapters. Nothing changes until you tap Merge.",
+                        title = stringResource(MR.strings.tsuzuki_search_other_sources),
+                        description = stringResource(MR.strings.tsuzuki_search_other_sources_desc),
                         icon = { Icon(TsuzukiIcons.Search, null, Modifier.size(28.dp), tint = TsuzukiTheme.colors.secondary) },
                     )
                 }
@@ -375,9 +394,9 @@ fun MangaMergeSheet(
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.spacedBy(10.dp),
                         ) {
-                            ProgressRing(0f, "Searching sources")
+                            ProgressMark(0f, stringResource(MR.strings.tsuzuki_searching_sources))
                             TsuzukiText(
-                                "Searching $pendingCount ${if (pendingCount == 1) "source" else "sources"}…",
+                                pluralStringResource(MR.plurals.tsuzuki_searching_sources, pendingCount, pendingCount),
                                 style = TsuzukiTheme.typography.footnote,
                                 color = TsuzukiTheme.colors.secondary,
                             )
@@ -392,11 +411,11 @@ fun MangaMergeSheet(
                         InsetGroupedList(title = source.name) {
                             when (status) {
                                 is MergeSearchStatus.Empty -> MergeMessageRow(
-                                    "No matches on ${source.name}. Try a shorter or alternative title.",
+                                    stringResource(MR.strings.tsuzuki_no_matches_on_source, source.name),
                                     TsuzukiTheme.colors.secondary,
                                 )
                                 is MergeSearchStatus.Error -> MergeMessageRow(
-                                    "Couldn't search ${source.name}: ${status.message}",
+                                    stringResource(MR.strings.tsuzuki_couldnt_search_source, source.name, status.message),
                                     TsuzukiTheme.colors.destructive,
                                 )
                                 is MergeSearchStatus.Success -> status.candidates.forEachIndexed { index, candidate ->
@@ -422,8 +441,8 @@ fun MangaMergeSheet(
                 if (allEmpty) {
                     item("all_empty") {
                         EmptyState(
-                            title = "No matches",
-                            description = "None of your sources found this title. Try a shorter or alternative title.",
+                            title = stringResource(MR.strings.tsuzuki_no_matches),
+                            description = stringResource(MR.strings.tsuzuki_no_matches_any_source),
                             icon = { Icon(TsuzukiIcons.Search, null, Modifier.size(28.dp), tint = TsuzukiTheme.colors.secondary) },
                         )
                     }
@@ -439,9 +458,9 @@ fun MangaMergeSheet(
         }
         DetentSheet(
             visible = true,
-            title = "Remove merge",
+            title = stringResource(MR.strings.tsuzuki_remove_merge),
             onDismissRequest = { pendingDeleteRef = null },
-            initialDetent = SheetDetent.FitContent,
+            kind = SheetKind.Confirm,
         ) {
             Column(
                 modifier = Modifier
@@ -450,7 +469,7 @@ fun MangaMergeSheet(
                 verticalArrangement = Arrangement.spacedBy(16.dp),
             ) {
                 TsuzukiText(
-                    "Remove $deleteSourceName from merged chapters? Existing chapters from this source will no longer appear in the chapter list.",
+                    stringResource(MR.strings.tsuzuki_remove_merge_confirm, deleteSourceName),
                     style = TsuzukiTheme.typography.body,
                     color = TsuzukiTheme.colors.text,
                 )
@@ -461,7 +480,7 @@ fun MangaMergeSheet(
                 ) {
                     Box(modifier = Modifier.weight(1f)) {
                         PillButton(
-                            label = "Cancel",
+                            label = stringResource(MR.strings.action_cancel),
                             onClick = { pendingDeleteRef = null },
                             modifier = Modifier.fillMaxWidth(),
                         )
@@ -469,7 +488,7 @@ fun MangaMergeSheet(
 
                     Box(modifier = Modifier.weight(1f)) {
                         PillButton(
-                            label = "Remove",
+                            label = stringResource(MR.strings.action_remove),
                             destructive = true,
                             onClick = {
                                 pendingDeleteRef = null
@@ -523,32 +542,34 @@ private fun MergeSourceRow(
                         overflow = TextOverflow.Ellipsis,
                         modifier = Modifier.weight(1f, fill = false),
                     )
-                    if (main) MergeTag("Main", colors.accent)
+                    if (main) MergeTag(stringResource(MR.strings.tsuzuki_merge_main), colors.accent)
                 }
             }
             if (onRemove != null) {
-                Box {
+                // The options circle is the drop: its menu pours from it and returns into it.
+                val optionsSource = rememberMenuMorphSource(borderless = true)
+                Box(Modifier.menuMorphSource(optionsSource)) {
                     Box(
                         modifier = Modifier
-                            .size(44.dp)
-                            .clip(CircleShape)
-                            .clickable(role = Role.Button, onClickLabel = "Source options") { menuOpen = true },
+                            .size(TsuzukiSize.control)
+                            .clickable(role = Role.Button, onClickLabel = stringResource(MR.strings.tsuzuki_source_options)) { menuOpen = true },
                         contentAlignment = Alignment.Center,
                     ) {
-                        Icon(TsuzukiIcons.Ellipsis, contentDescription = "Options for $sourceName", Modifier.size(20.dp), tint = colors.secondary)
+                        Icon(TsuzukiIcons.Ellipsis, contentDescription = stringResource(MR.strings.tsuzuki_options_for, sourceName), Modifier.size(20.dp), tint = colors.secondary)
                     }
                     PullDownMenu(
                         expanded = menuOpen,
                         onDismissRequest = { menuOpen = false },
                         paneTitle = sourceName,
+                        morphSource = optionsSource,
                         actions = buildList {
                             if (onMoveUp != null) {
-                                add(PullDownAction(label = "Move up", icon = TsuzukiIcons.ArrowUp, enabled = canMoveUp, onClick = { menuOpen = false; onMoveUp() }))
+                                add(PullDownAction(label = stringResource(MR.strings.tsuzuki_move_up), icon = TsuzukiIcons.ArrowUp, enabled = canMoveUp, onClick = { menuOpen = false; onMoveUp() }))
                             }
                             if (onMoveDown != null) {
-                                add(PullDownAction(label = "Move down", icon = TsuzukiIcons.ArrowDown, enabled = canMoveDown, onClick = { menuOpen = false; onMoveDown() }))
+                                add(PullDownAction(label = stringResource(MR.strings.tsuzuki_move_down), icon = TsuzukiIcons.ArrowDown, enabled = canMoveDown, onClick = { menuOpen = false; onMoveDown() }))
                             }
-                            add(PullDownAction(label = "Remove from merge", icon = TsuzukiIcons.Trash2, group = 1, destructive = true, onClick = { menuOpen = false; onRemove() }))
+                            add(PullDownAction(label = stringResource(MR.strings.tsuzuki_remove_from_merge), icon = TsuzukiIcons.Trash2, group = 1, destructive = true, onClick = { menuOpen = false; onRemove() }))
                         },
                     )
                 }
@@ -571,7 +592,7 @@ private fun MergeCover(manga: Manga?, title: String) {
     Box(
         Modifier
             .size(width = 44.dp, height = 64.dp)
-            .clip(RoundedCornerShape(TsuzukiCorners.cover))
+            .clip(coverShape())
             .background(TsuzukiTheme.colors.elevated),
     ) {
         if (manga != null) {
@@ -594,20 +615,15 @@ private fun MergeTag(label: String, tint: Color) {
 
 @Composable
 private fun SourceChip(label: String, selected: Boolean, onClick: () -> Unit) {
-    val colors = TsuzukiTheme.colors
-    Row(
-        modifier = Modifier
-            .height(36.dp)
-            .clip(CircleShape)
-            .background(if (selected) colors.accent.copy(alpha = 0.18f) else colors.grouped)
-            .clickable(role = Role.Tab, onClick = onClick)
-            .padding(horizontal = 14.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(6.dp),
-    ) {
-        if (selected) Icon(TsuzukiIcons.Check, null, Modifier.size(14.dp), tint = colors.accent)
-        TsuzukiText(label, style = TsuzukiTheme.typography.footnote, color = if (selected) colors.accent else colors.text, maxLines = 1)
-    }
+    Chip(
+        label = label,
+        selected = selected,
+        onClick = onClick,
+        tone = ChipTone.Neutral,
+        minHeight = 36.dp,
+        horizontalPadding = 14.dp,
+        textStyle = TsuzukiTheme.typography.footnote,
+    )
 }
 
 @Composable
@@ -650,26 +666,25 @@ private fun CandidateRow(
                 )
                 val details = listOfNotNull(
                     candidate.manga.author?.takeIf { it.isNotBlank() },
-                    candidate.chapterCount?.let { "$it chapters" },
+                    candidate.chapterCount?.let { pluralStringResource(MR.plurals.manga_num_chapters, it, it) },
                 ).joinToString(" · ")
                 if (details.isNotEmpty()) {
                     TsuzukiText(details, style = TsuzukiTheme.typography.footnote, color = colors.secondary, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
             }
             when {
-                merged -> MergeTag("Merged", colors.secondary)
-                isMerging -> Box(Modifier.size(44.dp), contentAlignment = Alignment.Center) { ProgressRing(0f, "Merging") }
+                merged -> MergeTag(stringResource(MR.strings.tsuzuki_merged), colors.secondary)
+                isMerging -> Box(Modifier.size(TsuzukiSize.control), contentAlignment = Alignment.Center) { ProgressMark(0f, stringResource(MR.strings.tsuzuki_merging)) }
                 else -> Box(
                     modifier = Modifier
                         .heightIn(min = 36.dp)
                         .clip(CircleShape)
-                        .background(colors.accent.copy(alpha = if (mergeEnabled) 0.18f else 0.08f))
-                        .clickable(enabled = mergeEnabled, role = Role.Button, onClickLabel = "Merge ${candidate.manga.title}", onClick = onMergeClick)
+                        .clickable(enabled = mergeEnabled, role = Role.Button, onClickLabel = stringResource(MR.strings.tsuzuki_merge_title, candidate.manga.title), onClick = onMergeClick)
                         .padding(horizontal = 16.dp),
                     contentAlignment = Alignment.Center,
                 ) {
                     TsuzukiText(
-                        "Merge",
+                        stringResource(MR.strings.tsuzuki_merge),
                         style = TsuzukiTheme.typography.footnote,
                         color = colors.accent.copy(alpha = if (mergeEnabled) 1f else 0.4f),
                     )

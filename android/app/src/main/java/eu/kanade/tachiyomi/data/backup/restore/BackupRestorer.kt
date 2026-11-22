@@ -73,6 +73,17 @@ class BackupRestorer(
     private var sourceMapping: Map<Long, String> = emptyMap()
 
     suspend fun restore(uri: Uri, options: RestoreOptions): List<Pair<Date, String>> {
+        // KMK -->
+        // Kotatsu backup compatibility: convert the zip into the app's own
+        // Backup model and run the normal pipeline (dev.errnolink.tsuzuki.backup.kotatsu)
+        if (dev.errnolink.tsuzuki.backup.kotatsu.KotatsuRestoreSupport.isKotatsuBackup(context, uri)) {
+            val conversion = dev.errnolink.tsuzuki.backup.kotatsu.KotatsuRestoreSupport.convert(context, uri)
+            errors.addAll(conversion.warnings.map { Date() to it })
+            return restoreWith(options) {
+                restoreBackup(conversion.backup, conversion.backup.backupManga.size, null, options)
+            }
+        }
+        // KMK <--
         val metadata = BackupDecoder(context).decodeMetadata(uri)
         return restoreWith(options) { restoreBackup(metadata.backup, metadata.entryCount, uri, options) }
     }
@@ -86,6 +97,10 @@ class BackupRestorer(
         handler.holdingSubscriptions { body() }
 
         val time = System.currentTimeMillis() - startTime
+
+        if (options.libraryEntries) {
+            dev.errnolink.tsuzuki.mangadex.AutoTrackBackfillJob.tryStart(context)
+        }
 
         val logFile = writeErrorLog()
 
@@ -234,7 +249,10 @@ class BackupRestorer(
             NekoBackupMapper.SourceIdentity(it.id, it.name, it.lang, (it as? HttpSource)?.baseUrl)
         }
         if (uri != null) {
-            BackupDecoder(context).decodeEntries(uri)
+            BackupDecoder(context).decodeEntries(
+                uri = uri,
+                onDamagedEntry = { e -> errors.add(Date() to "Damaged backup entry skipped: ${e.message}") },
+            )
                 .chunked(100)
                 .collect { chunk -> restoreMangaBatch(chunk, backupCategories, sourceIdentities) }
         } else {

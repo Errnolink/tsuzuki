@@ -16,6 +16,7 @@ import androidx.compose.ui.unit.dp
 import dev.errnolink.tsuzuki.designsystem.TsuzukiCorners
 import dev.errnolink.tsuzuki.designsystem.TsuzukiSpacing
 import dev.errnolink.tsuzuki.designsystem.TsuzukiTheme
+import dev.errnolink.tsuzuki.designsystem.animateItemRespectingMotion
 import dev.errnolink.tsuzuki.ui.shell.ShellEmpty
 import dev.errnolink.tsuzuki.ui.shell.ShellList
 import eu.kanade.tachiyomi.ui.category.CategoryScreenState
@@ -41,9 +42,13 @@ fun CategoryScreen(
     val lazyListState = rememberLazyListState()
     val categoriesState = remember { state.categories.toMutableStateList() }
     val reorderableState = rememberReorderableLazyListState(lazyListState) { from, to ->
-        val item = categoriesState.removeAt(from.index)
-        categoriesState.add(to.index, item)
-        onChangeOrder(item, to.index)
+        val fromIndex = categoriesState.indexOfFirst { it.key == from.key }
+        val toIndex = categoriesState.indexOfFirst { it.key == to.key }
+        if (fromIndex >= 0 && toIndex >= 0) {
+            val item = categoriesState.removeAt(fromIndex)
+            categoriesState.add(toIndex, item)
+            onChangeOrder(item, toIndex)
+        }
     }
 
     LaunchedEffect(state.categories) {
@@ -52,6 +57,8 @@ fun CategoryScreen(
             categoriesState.addAll(state.categories)
         }
     }
+
+    val reduced = TsuzukiTheme.motion.reduced
 
     ShellList(
         title = stringResource(MR.strings.categories),
@@ -70,7 +77,7 @@ fun CategoryScreen(
             ) { index, category ->
                 ReorderableItem(reorderableState, category.key) {
                     CategoryListItem(
-                        modifier = Modifier.animateItem().padding(horizontal = TsuzukiSpacing.gutter),
+                        modifier = animateItemRespectingMotion(reduced).padding(horizontal = TsuzukiSpacing.gutter),
                         category = category,
                         shape = RoundedCornerShape(
                             topStart = if (index == 0) TsuzukiCorners.group else 0.dp, topEnd = if (index == 0) TsuzukiCorners.group else 0.dp,

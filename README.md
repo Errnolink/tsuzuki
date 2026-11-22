@@ -11,10 +11,10 @@ Tsuzuki is not affiliated with MangaDex or with any extension source.
 
 ## Download
 
-Releases are on the [Releases page](../../releases). Android builds are tagged `android-v*`; Windows builds are tagged `windows-v*`.
+Releases are on the [Releases page](../../releases). Each release carries both apps and is tagged `v<version>` (for example `v0.2.2`).
 
-- **Android:** install `tsuzuki-arm64-v8a.apk` (almost every phone from the last few years), or `tsuzuki-universal.apk` for other CPUs. Android asks you to allow installs from your browser or file manager once. The app checks for new `android-v*` releases itself. If you used a Tsuzuki beta, 0.1.0 installs over it and keeps your library.
-- **Windows 10 or 11 (64-bit):** run `Tsuzuki-<version>-windows-setup.exe`. The installer is not code-signed, so SmartScreen asks once: choose **More info**, then **Run anyway**. On first run, allow Tsuzuki on private networks when Windows asks, or the phone cannot reach it. The app installs updates itself on restart.
+- **Android:** install `tsuzuki-arm64-v8a.apk` (almost every phone from the last few years), or `tsuzuki-universal.apk` for other CPUs. Android asks you to allow installs from your browser or file manager once. The app checks for new releases itself. Each release installs over the previous one and keeps your library.
+- **Windows 10 or 11 (64-bit):** run `TsuzukiReader-win-Setup.exe`. The installer is not code-signed, so SmartScreen asks once: choose **More info**, then **Run anyway**. On first run, allow Tsuzuki on private networks when Windows asks, or the phone cannot reach it. The app installs updates itself on restart.
 
 ## Pairing
 
@@ -30,7 +30,7 @@ Both devices must be on the same network, and Windows must treat that network as
 | Android | JDK 17 or 21, Android SDK (`local.properties` or `ANDROID_HOME`) | `./gradlew :app:assembleRelease` |
 | Windows | .NET 10 SDK, Windows SDK 10.0.26100 | `dotnet build src/Tsuzuki.App -c Release` |
 
-Tests: `./gradlew :app:testDebugUnitTest :data:testDebugUnitTest` in `android/`. In `windows/`, build `tests/Tsuzuki.Core.Tests` with `dotnet build tests/Tsuzuki.Core.Tests -c Release` and run `tests/Tsuzuki.Core.Tests/bin/Release/net10.0/Tsuzuki.Core.Tests.exe` (`dotnet test` does not run the xUnit v3 suite on SDK 10).
+Tests: `./gradlew :designsystem:testDebugUnitTest :data:testDebugUnitTest :domain:testDebugUnitTest :app:testDebugUnitTest` in `android/`. In `windows/`, build `tests/Tsuzuki.Core.Tests` with `dotnet build tests/Tsuzuki.Core.Tests -c Release` and run `tests/Tsuzuki.Core.Tests/bin/Release/net10.0/Tsuzuki.Core.Tests.exe` (`dotnet test` does not run the xUnit v3 suite on SDK 10).
 
 Release signing for Android is read from a properties file passed with `-Ptsuzuki.signing=<path>` or `TSUZUKI_SIGNING`; without it, release builds are unsigned.
 

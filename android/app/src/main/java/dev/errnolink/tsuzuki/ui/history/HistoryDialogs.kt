@@ -6,6 +6,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import dev.errnolink.tsuzuki.designsystem.DetentSheet
+import dev.errnolink.tsuzuki.designsystem.SheetKind
 import dev.errnolink.tsuzuki.designsystem.GroupedRow
 import dev.errnolink.tsuzuki.designsystem.PillButton
 import dev.errnolink.tsuzuki.designsystem.TsuzukiText
@@ -16,7 +17,7 @@ import tachiyomi.presentation.core.i18n.stringResource
 @Composable
 fun HistoryDeleteDialog(onDismissRequest: () -> Unit, onDelete: (Boolean) -> Unit) {
     var removeEverything by remember { mutableStateOf(false) }
-    DetentSheet(true, stringResource(MR.strings.action_remove), onDismissRequest) {
+    DetentSheet(true, stringResource(MR.strings.action_remove), onDismissRequest, kind = SheetKind.Confirm) {
         TsuzukiText(stringResource(MR.strings.dialog_with_checkbox_remove_description))
         GroupedRow(
             title = stringResource(MR.strings.dialog_with_checkbox_reset),

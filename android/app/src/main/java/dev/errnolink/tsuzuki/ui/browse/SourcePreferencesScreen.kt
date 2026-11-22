@@ -1,6 +1,10 @@
 package dev.errnolink.tsuzuki.ui.browse
 
 import android.content.Context
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.mutableIntStateOf
@@ -9,9 +13,12 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.getValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.TextFieldValue
+import androidx.compose.ui.unit.dp
 import androidx.preference.EditTextPreference
 import androidx.preference.ListPreference
 import androidx.preference.MultiSelectListPreference
@@ -25,9 +32,12 @@ import androidx.preference.TwoStatePreference
 import cafe.adriel.voyager.navigator.LocalNavigator
 import cafe.adriel.voyager.navigator.currentOrThrow
 import dev.errnolink.tsuzuki.designsystem.DetentSheet
+import dev.errnolink.tsuzuki.designsystem.SheetKind
 import dev.errnolink.tsuzuki.designsystem.GroupedRow
 import dev.errnolink.tsuzuki.designsystem.InsetGroupedList
 import dev.errnolink.tsuzuki.designsystem.PillButton
+import dev.errnolink.tsuzuki.designsystem.TsuzukiText
+import dev.errnolink.tsuzuki.designsystem.TsuzukiTheme
 import dev.errnolink.tsuzuki.ui.settings.SettingsScaffold
 import dev.errnolink.tsuzuki.ui.settings.SettingsTextField
 import dev.errnolink.tsuzuki.ui.shell.ShellEmpty
@@ -149,6 +159,7 @@ fun SourcePreferencesContent(
                 true,
                 current.pref.dialogTitle?.toString() ?: current.pref.title?.toString().orEmpty(),
                 { dialog = null },
+                kind = SheetKind.Picker,
             ) {
                 SettingsTextField(
                     value = TextFieldValue(text),
@@ -170,6 +181,7 @@ fun SourcePreferencesContent(
                 true,
                 current.pref.dialogTitle?.toString() ?: current.pref.title?.toString().orEmpty(),
                 { dialog = null },
+                kind = SheetKind.Picker,
             ) {
                 val entries = current.pref.entries.orEmpty()
                 val entryValues = current.pref.entryValues.orEmpty()
@@ -198,6 +210,7 @@ fun SourcePreferencesContent(
                 true,
                 current.pref.dialogTitle?.toString() ?: current.pref.title?.toString().orEmpty(),
                 { dialog = null },
+                kind = SheetKind.Picker,
             ) {
                 val entries = current.pref.entries.orEmpty()
                 val entryValues = current.pref.entryValues.orEmpty()

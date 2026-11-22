@@ -3,10 +3,11 @@ package eu.kanade.tachiyomi.data.track.mangaupdates
 import eu.kanade.tachiyomi.data.database.models.Track
 import eu.kanade.tachiyomi.data.track.mangaupdates.MangaUpdates.Companion.READING_LIST
 import eu.kanade.tachiyomi.data.track.mangaupdates.MangaUpdates.Companion.WISH_LIST
-import eu.kanade.tachiyomi.data.track.mangaupdates.dto.MUContext
-import eu.kanade.tachiyomi.data.track.mangaupdates.dto.MUListItem
 import eu.kanade.tachiyomi.data.track.mangaupdates.dto.MULoginResponse
 import eu.kanade.tachiyomi.data.track.mangaupdates.dto.MURating
+import eu.kanade.tachiyomi.data.track.mangaupdates.dto.MUContext
+import eu.kanade.tachiyomi.data.track.mangaupdates.dto.MUCurrentUser
+import eu.kanade.tachiyomi.data.track.mangaupdates.dto.MUListItem
 import eu.kanade.tachiyomi.data.track.mangaupdates.dto.MURecord
 import eu.kanade.tachiyomi.data.track.mangaupdates.dto.MUSearchResult
 import eu.kanade.tachiyomi.network.DELETE
@@ -202,6 +203,31 @@ class MangaUpdatesApi(
             client.newCall(GET("$BASE_URL/v1/series/$remoteId"))
                 .awaitSuccess()
                 .parseAs<MURecord>()
+        }
+    }
+
+    suspend fun getSeriesDetails(id: Long): MURecord? {
+        return withIOContext {
+            val url = "$BASE_URL/v1/series/$id"
+
+            val response = client.newCall(GET(url))
+                .await()
+
+            if (response.code == 404) {
+                null
+            } else {
+                with(json) {
+                    response.parseAs<MURecord>()
+                }
+            }
+        }
+    }
+
+    suspend fun getCurrentUser(): MUCurrentUser {
+        return with(json) {
+            authClient.newCall(GET("$BASE_URL/v1/account/profile"))
+                .awaitSuccess()
+                .parseAs<MUCurrentUser>()
         }
     }
 

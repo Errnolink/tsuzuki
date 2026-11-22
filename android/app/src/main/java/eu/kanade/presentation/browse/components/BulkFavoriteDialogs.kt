@@ -12,7 +12,7 @@ import androidx.compose.ui.unit.dp
 import cafe.adriel.voyager.core.screen.Screen
 import cafe.adriel.voyager.navigator.LocalNavigator
 import cafe.adriel.voyager.navigator.Navigator
-import eu.kanade.presentation.category.components.ChangeCategoryDialog
+import dev.errnolink.tsuzuki.ui.category.ChangeCategoryDialog
 import eu.kanade.presentation.components.AppBar
 import eu.kanade.presentation.manga.DuplicateMangaDialog
 import eu.kanade.tachiyomi.ui.browse.BulkFavoriteScreenModel

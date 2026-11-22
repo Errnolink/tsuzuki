@@ -375,8 +375,17 @@ class MangaScreenModel(
                             it.copy(
                                 manga = manga,
                                 chapters = chapterItems,
-                                chaptersPending = false,
                                 // SY -->
+                                // KMK -->
+                                // DET-01: an empty emission while a fetch is running does not
+                                // make the list known — only a non-empty result or a finished
+                                // fetch does.
+                                chaptersPending = dev.errnolink.tsuzuki.ui.details.chaptersPendingAfterEmission(
+                                    chapterItems.isEmpty(),
+                                    it.chaptersPending,
+                                    it.isRefreshingData,
+                                ),
+                                // KMK <--
                                 meta = raiseMetadata(flatMetadata, it.source),
                                 mergedData = mergedData,
                                 // SY <--
@@ -386,7 +395,19 @@ class MangaScreenModel(
                         throw e
                     } catch (e: Exception) {
                         logcat(LogPriority.ERROR, e) { "Manga details chapter mapping failed" }
-                        updateSuccessState { it.copy(chaptersPending = false) }
+                        // KMK -->
+                        // DET-01: a failed mapping leaves the previous list in place; the same
+                        // pending rule applies to it.
+                        updateSuccessState {
+                            it.copy(
+                                chaptersPending = dev.errnolink.tsuzuki.ui.details.chaptersPendingAfterEmission(
+                                    it.chapters.isEmpty(),
+                                    it.chaptersPending,
+                                    it.isRefreshingData,
+                                ),
+                            )
+                        }
+                        // KMK <--
                     }
                 }
         }
@@ -463,6 +484,11 @@ class MangaScreenModel(
                     availableScanlators = persistentSetOf(),
                     excludedScanlators = persistentSetOf(),
                     chaptersPending = true,
+                    // KMK -->
+                    // DET-01: a fetch decision is imminent — keeps the pending flag alive if the
+                    // chapters subscription emits an empty list before the decision lands.
+                    isRefreshingData = true,
+                    // KMK <--
                     hideMissingChapters = libraryPreferences.hideMissingChapters().get(),
                     showRecommendationsInOverflow = uiPreferences.recommendsInOverflow().get(),
                     showMergeInOverflow = uiPreferences.mergeInOverflow().get(),
@@ -488,59 +514,68 @@ class MangaScreenModel(
             val needRefreshChapter = detailsFreshness.chaptersDue(manga.id, chapters.isNotEmpty(), manga.lastUpdate)
 
             // Show what we have earlier
-            mutableState.update {
-                // SY -->
+            // KMK -->
+            // DET-01: this used to construct a second State.Success from scratch, dropping
+            // chaptersPending (back to false with an empty list), the tracking state, related
+            // manga and any open dialog. It is a copy of the live state instead.
+            updateSuccessState {
                 val source = sourceManager.getOrStub(manga.source)
-                // SY <--
-                State.Success(
+                it.copy(
                     manga = manga,
                     source = source,
                     isFromSource = isFromSource,
                     chapters = chapters,
-                    // SY -->
                     availableScanlators = if (manga.source == MERGED_SOURCE_ID) {
                         getAvailableScanlators.awaitMerge(mangaId)
                     } else {
                         getAvailableScanlators.await(mangaId)
                     }.toImmutableSet(),
-                    // SY <--
                     excludedScanlators = getExcludedScanlators.await(mangaId).toImmutableSet(),
                     isRefreshingData = needRefreshInfo || needRefreshChapter,
-                    dialog = null,
+                    chaptersPending = dev.errnolink.tsuzuki.ui.details.chaptersPendingAfterInitialShow(
+                        it.chaptersPending,
+                        chapters.isEmpty(),
+                        needRefreshChapter,
+                    ),
                     hideMissingChapters = libraryPreferences.hideMissingChapters().get(),
-                    // SY -->
                     showRecommendationsInOverflow = uiPreferences.recommendsInOverflow().get(),
                     showMergeInOverflow = uiPreferences.mergeInOverflow().get(),
                     showMergeWithAnother = smartSearched,
                     mergedData = mergedData,
                     meta = raiseMetadata(meta, source),
-                    alwaysShowReadingProgress = false,
-                    // SY <--
                 )
             }
+            // KMK <--
 
             // Start observe tracking since it only needs mangaId
             observeTrackers()
 
             // Fetch info-chapters when needed
+            // KMK -->
+            var wroteChapters = false
             if (screenModelScope.isActive) {
-                // KMK -->
                 if (needRefreshInfo || needRefreshChapter) {
-                    // KMK <--
-                    fetchAllFromSource(
+                    wroteChapters = fetchAllFromSource(
                         manualFetch = false,
                         fetchDetails = needRefreshInfo,
                         fetchChapters = needRefreshChapter,
                     )
                 }
-                // KMK -->
                 launch { syncTrackers() }
                 launch { fetchRelatedMangasFromSource() }
-                // KMK <--
             }
 
             // Initial loading finished
-            updateSuccessState { it.copy(isRefreshingData = false) }
+            updateSuccessState {
+                it.copy(
+                    isRefreshingData = false,
+                    // DET-01: a chapters write re-emits from the DB subscription, which clears
+                    // the pending flag together with the data; a fetch that wrote nothing never
+                    // re-emits, so the flag clears here — no "0 chapters" frame either way.
+                    chaptersPending = it.chaptersPending && wroteChapters,
+                )
+            }
+            // KMK <--
         }
     }
 
@@ -617,12 +652,16 @@ class MangaScreenModel(
         }
     }
 
+    // KMK -->
+    /** Returns true when the fetch wrote chapter rows, so the DB subscription re-emits. */
+    // KMK <--
     private suspend fun fetchAllFromSource(
         manualFetch: Boolean,
         fetchDetails: Boolean,
         fetchChapters: Boolean,
-    ) {
-        val state = successState ?: return
+    ): Boolean {
+        val state = successState ?: return false
+        var wroteChapters = false
         try {
             withIOContext {
                 val update = updateMangaFromRemote(
@@ -636,6 +675,7 @@ class MangaScreenModel(
 
                 // KMK -->
                 clearErrorFromDB(state.manga.id)
+                wroteChapters = fetchChapters && update.newChapters.isNotEmpty()
                 // KMK <--
                 if (fetchChapters) detailsFreshness.markChecked(state.manga.id)
 
@@ -660,6 +700,7 @@ class MangaScreenModel(
             writeErrorToDB(state.manga to with(context) { e.formattedMessage })
             // KMK <--
         }
+        return wroteChapters
     }
 
     // KMK -->
@@ -1471,7 +1512,7 @@ class MangaScreenModel(
      * Downloads the given list of chapters with the manager.
      * @param chapters the list of chapters to download.
      */
-    private fun downloadChapters(chapters: List<Chapter>) {
+    private suspend fun downloadChapters(chapters: List<Chapter>) {
         // SY -->
         val state = successState ?: return
         if (state.source is MergedSource) {

@@ -74,50 +74,30 @@ class ReaderBarLogicTest {
         assertEquals(1, calculateSliderValueAt(250f, width, pad, range, reversed = true))
     }
 
-    @Test
-    fun `calculateBubbleOffsetPx keeps bubble within container bounds`() {
-        val maxW = 300f
-        val bubbleW = 96f
-
-        // Fraction 0f should clamp to 0
-        assertEquals(0f, calculateBubbleOffsetPx(0f, maxW, bubbleW))
-
-        // Fraction 1f should clamp to maxW - bubbleW
-        assertEquals(204f, calculateBubbleOffsetPx(1f, maxW, bubbleW))
-
-        // Fraction 0.5f centers around 150f -> offset = 150 - 48 = 102f
-        assertEquals(102f, calculateBubbleOffsetPx(0.5f, maxW, bubbleW))
-
-        // Container smaller than bubble clamps to 0
-        assertEquals(0f, calculateBubbleOffsetPx(0.5f, 50f, bubbleW))
-    }
-
     // ─────────────────────────────────────────────────────────────────────────
     // 2. Page-chip and chapter text formatting
     // ─────────────────────────────────────────────────────────────────────────
 
     @Test
-    fun `page chip and count formatting`() {
-        assertEquals("Page 1 of 1", formatPageChipText(1, 1))
-        assertEquals("Page 18 of 29", formatPageChipText(18, 29))
-
+    fun `page count formatting stays numeric`() {
         assertEquals("1 / 1", formatPageCountText(1, 1))
         assertEquals("12 / 29", formatPageCountText(12, 29))
     }
 
     @Test
     fun `formatChapterShortName formats integer and decimal chapters`() {
-        assertEquals("Ch. 1", formatChapterShortName(1.0, isRecognized = true, name = "First"))
-        assertEquals("Ch. 12", formatChapterShortName(12.0, isRecognized = true, name = "A Long Night"))
-        assertEquals("Ch. 12.5", formatChapterShortName(12.5, isRecognized = true, name = "Extra"))
+        assertEquals("Ch. 1", formatChapterShortName(1.0, isRecognized = true, name = "First", chapterShortPattern = "Ch. %1\$s"))
+        assertEquals("Ch. 12", formatChapterShortName(12.0, isRecognized = true, name = "A Long Night", chapterShortPattern = "Ch. %1\$s"))
+        assertEquals("Ch. 12.5", formatChapterShortName(12.5, isRecognized = true, name = "Extra", chapterShortPattern = "Ch. %1\$s"))
+        assertEquals("Kap. 12", formatChapterShortName(12.0, isRecognized = true, name = "A Long Night", chapterShortPattern = "Kap. %1\$s"))
     }
 
     @Test
     fun `formatChapterShortName falls back to name for unrecognized chapters`() {
-        assertEquals("Prologue", formatChapterShortName(-1.0, isRecognized = false, name = "Prologue"))
-        assertEquals("Oneshot", formatChapterShortName(0.0, isRecognized = false, name = "Oneshot"))
-        assertNull(formatChapterShortName(-1.0, isRecognized = false, name = "   "))
-        assertNull(formatChapterShortName(-1.0, isRecognized = false, name = null))
+        assertEquals("Prologue", formatChapterShortName(-1.0, isRecognized = false, name = "Prologue", chapterShortPattern = "Ch. %1\$s"))
+        assertEquals("Oneshot", formatChapterShortName(0.0, isRecognized = false, name = "Oneshot", chapterShortPattern = "Ch. %1\$s"))
+        assertNull(formatChapterShortName(-1.0, isRecognized = false, name = "   ", chapterShortPattern = "Ch. %1\$s"))
+        assertNull(formatChapterShortName(-1.0, isRecognized = false, name = null, chapterShortPattern = "Ch. %1\$s"))
     }
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -160,42 +140,42 @@ class ReaderBarLogicTest {
     @Test
     fun `resolveLeftArrow and resolveRightArrow map correctly in LTR`() {
         // Both enabled
-        val left = resolveLeftArrow(isRtl = false, enabledPrevious = true, enabledNext = false)
+        val left = resolveLeftArrow(isRtl = false, enabledPrevious = true, enabledNext = false, previousLabel = "Previous chapter", nextLabel = "Next chapter")
         assertEquals("Previous chapter", left.contentDescription)
         assertTrue(left.enabled)
         assertFalse(left.isNext)
 
-        val right = resolveRightArrow(isRtl = false, enabledPrevious = false, enabledNext = true)
+        val right = resolveRightArrow(isRtl = false, enabledPrevious = false, enabledNext = true, previousLabel = "Previous chapter", nextLabel = "Next chapter")
         assertEquals("Next chapter", right.contentDescription)
         assertTrue(right.enabled)
         assertTrue(right.isNext)
 
         // Neither enabled
-        val leftDisabled = resolveLeftArrow(isRtl = false, enabledPrevious = false, enabledNext = true)
+        val leftDisabled = resolveLeftArrow(isRtl = false, enabledPrevious = false, enabledNext = true, previousLabel = "Previous chapter", nextLabel = "Next chapter")
         assertFalse(leftDisabled.enabled)
 
-        val rightDisabled = resolveRightArrow(isRtl = false, enabledPrevious = true, enabledNext = false)
+        val rightDisabled = resolveRightArrow(isRtl = false, enabledPrevious = true, enabledNext = false, previousLabel = "Previous chapter", nextLabel = "Next chapter")
         assertFalse(rightDisabled.enabled)
     }
 
     @Test
     fun `resolveLeftArrow and resolveRightArrow swap actions and descriptions in RTL`() {
         // In RTL, left arrow triggers next chapter, right arrow triggers previous chapter
-        val left = resolveLeftArrow(isRtl = true, enabledPrevious = false, enabledNext = true)
+        val left = resolveLeftArrow(isRtl = true, enabledPrevious = false, enabledNext = true, previousLabel = "Previous chapter", nextLabel = "Next chapter")
         assertEquals("Next chapter", left.contentDescription)
         assertTrue(left.enabled)
         assertTrue(left.isNext)
 
-        val right = resolveRightArrow(isRtl = true, enabledPrevious = true, enabledNext = false)
+        val right = resolveRightArrow(isRtl = true, enabledPrevious = true, enabledNext = false, previousLabel = "Previous chapter", nextLabel = "Next chapter")
         assertEquals("Previous chapter", right.contentDescription)
         assertTrue(right.enabled)
         assertFalse(right.isNext)
 
         // When opposite is disabled
-        val leftDisabled = resolveLeftArrow(isRtl = true, enabledPrevious = true, enabledNext = false)
+        val leftDisabled = resolveLeftArrow(isRtl = true, enabledPrevious = true, enabledNext = false, previousLabel = "Previous chapter", nextLabel = "Next chapter")
         assertFalse(leftDisabled.enabled)
 
-        val rightDisabled = resolveRightArrow(isRtl = true, enabledPrevious = false, enabledNext = true)
+        val rightDisabled = resolveRightArrow(isRtl = true, enabledPrevious = false, enabledNext = true, previousLabel = "Previous chapter", nextLabel = "Next chapter")
         assertFalse(rightDisabled.enabled)
     }
 
@@ -219,11 +199,10 @@ class ReaderBarLogicTest {
     }
 
     @org.junit.jupiter.api.Test
-    fun `chrome counts the pages left in the current chapter`() {
-        org.junit.jupiter.api.Assertions.assertEquals("27 pages left in chapter", pagesLeftInChapter(3, 30))
-        org.junit.jupiter.api.Assertions.assertEquals("1 page left in chapter", pagesLeftInChapter(29, 30))
-        org.junit.jupiter.api.Assertions.assertEquals("Last page in chapter", pagesLeftInChapter(30, 30))
-        org.junit.jupiter.api.Assertions.assertEquals(null, pagesLeftInChapter(-1, 30))
-        org.junit.jupiter.api.Assertions.assertEquals(null, pagesLeftInChapter(1, 0))
+    fun `chrome shows the page as current over total and nothing before pages load`() {
+        org.junit.jupiter.api.Assertions.assertEquals("9 / 30", readerPageCount(9, 30))
+        org.junit.jupiter.api.Assertions.assertEquals("30 / 30", readerPageCount(30, 30))
+        org.junit.jupiter.api.Assertions.assertEquals(null, readerPageCount(-1, 30))
+        org.junit.jupiter.api.Assertions.assertEquals(null, readerPageCount(1, 0))
     }
 }

@@ -1,5 +1,7 @@
 package dev.errnolink.tsuzuki.ui.details
 
+import androidx.compose.animation.Crossfade
+
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.snap
 import androidx.compose.animation.core.tween
@@ -19,6 +21,8 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
+import dev.errnolink.tsuzuki.designsystem.M3Motion
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Icon
 import androidx.compose.ui.Alignment
@@ -35,9 +39,8 @@ import eu.kanade.tachiyomi.data.cache.CoverCache
 import uy.kohesive.injekt.Injekt
 import uy.kohesive.injekt.api.get
 import dev.errnolink.tsuzuki.designsystem.Copy
-import dev.errnolink.tsuzuki.designsystem.TsuzukiCorners
 import dev.errnolink.tsuzuki.designsystem.CoverImage
-import dev.errnolink.tsuzuki.designsystem.LucideLibrary
+import dev.errnolink.tsuzuki.designsystem.coverShape
 import dev.errnolink.tsuzuki.designsystem.GlassMenu
 import dev.errnolink.tsuzuki.designsystem.RefreshCw
 import dev.errnolink.tsuzuki.designsystem.Search
@@ -48,7 +51,8 @@ import dev.errnolink.tsuzuki.designsystem.rememberCoverArrivalState
 import dev.errnolink.tsuzuki.mangadex.MangaDexHeroStats
 import dev.errnolink.tsuzuki.mangadex.rememberMangaDexHeroStats
 import dev.errnolink.tsuzuki.ui.shell.LocalShellArrivals
-import dev.errnolink.tsuzuki.ui.shell.mangaHeroTarget
+import dev.errnolink.tsuzuki.reader.readerFallbackOrigin
+import dev.errnolink.tsuzuki.ui.motion.mangaHeroTarget
 import tachiyomi.domain.manga.model.asMangaCover
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.text.BasicText
@@ -100,7 +104,7 @@ fun MangaInfoBox(
     coverRatio: MutableFloatState,
     showMangaDexRating: Boolean = false,
     mergedSourceCount: Int = 0,
-    chapterCount: Int = 0,
+    chapterCount: Int? = null,
     lastChapterUpdate: Long = 0L,
     onRatingClick: () -> Unit = {},
     onCoverLoaded: () -> Unit = {},
@@ -132,8 +136,8 @@ fun MangaInfoBox(
             ContextMenu(
                 manga.title,
                 listOf(
-                    ContextMenuAction("Search library", icon = { Icon(TsuzukiIcons.LucideLibrary, null, tint = TsuzukiTheme.colors.text) }) { librarySearch(manga.title) },
-                    ContextMenuAction("Search all sources", icon = { Icon(TsuzukiIcons.Globe, null, tint = TsuzukiTheme.colors.text) }) { doSearch(manga.title, true) },
+                    ContextMenuAction(stringResource(MR.strings.tsuzuki_search_library), icon = { Icon(TsuzukiIcons.Library, null, tint = TsuzukiTheme.colors.text) }) { librarySearch(manga.title) },
+                    ContextMenuAction(stringResource(MR.strings.tsuzuki_search_all_sources), icon = { Icon(TsuzukiIcons.Globe, null, tint = TsuzukiTheme.colors.text) }) { doSearch(manga.title, true) },
                 ),
                 onClick = { titleExpanded = !titleExpanded },
             ) {
@@ -165,10 +169,11 @@ fun MangaInfoBox(
                 chapterCount = chapterCount,
             )
             TsuzukiText(
-                if (lastChapterUpdate > 0L) "Updated ${relativeTimeSpanString(lastChapterUpdate)}" else " ",
+                if (lastChapterUpdate > 0L) stringResource(MR.strings.tsuzuki_updated_relative, relativeTimeSpanString(lastChapterUpdate)) else " ",
                 style = TsuzukiTheme.typography.subhead,
                 color = TsuzukiTheme.colors.secondary,
                 maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
             )
             if (isSourceIncognito) TsuzukiText(stringResource(MR.strings.pref_incognito_mode), style = TsuzukiTheme.typography.caption1, color = TsuzukiTheme.colors.secondary)
             SourceLine(
@@ -199,28 +204,86 @@ private fun mangaStatusColor(status: StringResource?): Color {
     }
 }
 
+@Composable
 private fun sourceLineLabel(
     sourceName: String,
     sourceLanguage: String,
     mergedSourceCount: Int,
     isStubSource: Boolean,
 ): String = when {
-    mergedSourceCount > 1 -> "Merged from $mergedSourceCount sources"
+    mergedSourceCount > 1 -> pluralStringResource(MR.plurals.tsuzuki_merged_from_sources, mergedSourceCount, mergedSourceCount)
     else -> listOfNotNull(sourceName.takeIf { it.isNotBlank() }, sourceLanguage.takeIf { it.isNotBlank() }).joinToString(" · ")
-} + if (isStubSource) " · Unavailable" else ""
+} + if (isStubSource) " · " + stringResource(MR.strings.tsuzuki_unavailable) else ""
 
 @Composable
-private fun StatusChaptersRow(statusText: String?, statusColor: Color, chapterCount: Int) {
+private fun StatusChaptersRow(statusText: String?, statusColor: Color, chapterCount: Int?) {
     val colors = TsuzukiTheme.colors
     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(TsuzukiTheme.spacing.tiny)) {
-        statusText?.let { TsuzukiText(it, style = TsuzukiTheme.typography.subhead, color = statusColor, maxLines = 1) }
-        if (chapterCount > 0) {
+        statusText?.let {
+            TsuzukiText(
+                it,
+                Modifier.weight(1f, fill = false),
+                style = TsuzukiTheme.typography.subhead,
+                color = statusColor,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+        if (chapterCount != null || statusText != null) {
             if (statusText != null) TsuzukiText("·", style = TsuzukiTheme.typography.subhead, color = colors.secondary)
-            TsuzukiText(pluralStringResource(MR.plurals.manga_num_chapters, chapterCount, chapterCount), style = TsuzukiTheme.typography.subhead, color = colors.secondary, maxLines = 1)
+            ChapterCountText(chapterCount)
         }
     }
 }
 
+/**
+ * N12: the chapter-count segment of a metadata line. Known → the count; unknown → its slot is
+ * reserved with a quiet skeleton so nothing reflows and no placeholder label ever swaps.
+ */
+@Composable
+private fun ChapterCountText(chapterCount: Int?) {
+    ChapterCountSlot(known = chapterCount != null, skeletonWidth = 72.dp, skeletonHeight = 12.dp) {
+        if (chapterCount != null) {
+            TsuzukiText(
+                pluralStringResource(MR.plurals.manga_num_chapters, chapterCount, chapterCount),
+                style = TsuzukiTheme.typography.subhead,
+                color = TsuzukiTheme.colors.secondary,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+    }
+}
+
+/**
+ * DET-12: the chapter count and its loading skeleton cross-fade inside a slot reserved at the
+ * skeleton's size, so the count arriving neither pops in nor re-centres the line it sits in.
+ */
+@Composable
+internal fun ChapterCountSlot(
+    known: Boolean,
+    skeletonWidth: Dp,
+    skeletonHeight: Dp,
+    content: @Composable () -> Unit,
+) {
+    Box(Modifier.widthIn(min = skeletonWidth), contentAlignment = Alignment.CenterStart) {
+        Crossfade(
+            targetState = known,
+            animationSpec = if (TsuzukiTheme.motion.reduced) {
+                androidx.compose.animation.core.snap()
+            } else {
+                androidx.compose.animation.core.tween(M3Motion.Short3)
+            },
+            label = "chapterCount",
+        ) { show ->
+            if (show) {
+                content()
+            } else {
+                dev.errnolink.tsuzuki.designsystem.Skeleton(Modifier.size(skeletonWidth, skeletonHeight))
+            }
+        }
+    }
+}
 @Composable
 fun MangaInfoHeaderApple(
     appBarPadding: Dp,
@@ -236,20 +299,20 @@ fun MangaInfoHeaderApple(
     onSourceClick: () -> Unit,
     coverRatio: MutableFloatState,
     onCoverLoaded: () -> Unit,
-    chapterCount: Int,
+    chapterCount: Int?,
     mergedSourceCount: Int = 0,
     actionRow: @Composable () -> Unit,
 ) {
     val context = LocalContext.current
     val colors = TsuzukiTheme.colors
     Column(
-        Modifier.fillMaxWidth().padding(start = 20.dp, end = 20.dp, top = appBarPadding + 12.dp),
+        Modifier.fillMaxWidth().padding(top = appBarPadding + 12.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(TsuzukiTheme.spacing.medium),
     ) {
         val knownRatio = remember(manga.id) { knownCoverRatio(manga.id) }
         var ratio by remember(manga.id) { mutableFloatStateOf(detailsCoverRatio(knownRatio)) }
-        DetailsCoverSlot(centered = true, ratio = ratio) { slot ->
+        DetailsCoverSlot(centered = true, ratio = ratio, modifier = Modifier.padding(horizontal = 20.dp)) { slot ->
             DetailsCover(
                 cover = manga.asMangaCover(),
                 title = manga.title,
@@ -267,9 +330,10 @@ fun MangaInfoHeaderApple(
         ContextMenu(
             manga.title,
             listOf(
-                ContextMenuAction("Search library", icon = { Icon(TsuzukiIcons.LucideLibrary, null, tint = colors.text) }) { librarySearch(manga.title) },
-                ContextMenuAction("Search all sources", icon = { Icon(TsuzukiIcons.Globe, null, tint = colors.text) }) { doSearch(manga.title, true) },
+                ContextMenuAction(stringResource(MR.strings.tsuzuki_search_library), icon = { Icon(TsuzukiIcons.Library, null, tint = colors.text) }) { librarySearch(manga.title) },
+                ContextMenuAction(stringResource(MR.strings.tsuzuki_search_all_sources), icon = { Icon(TsuzukiIcons.Globe, null, tint = colors.text) }) { doSearch(manga.title, true) },
             ),
+            modifier = Modifier.padding(horizontal = 20.dp),
             onClick = { titleExpanded = !titleExpanded },
         ) {
             TsuzukiText(
@@ -288,7 +352,8 @@ fun MangaInfoHeaderApple(
                 artist = artist?.let(::titleCaseAllCapsWords),
                 onBrowse = { doSearch(it, true) },
                 onCopy = { context.copyToClipboard(it, it) },
-                color = accent ?: colors.accent,
+                color = ContinueActionColor.readableOn(accent ?: colors.accent, colors.background),
+                modifier = Modifier.padding(horizontal = 20.dp),
             )
         }
         val statusRes = mangaStatusRes(manga)
@@ -298,8 +363,16 @@ fun MangaInfoHeaderApple(
             chapterCount = chapterCount,
             sourceLabel = sourceLineLabel(sourceName, sourceLanguage, mergedSourceCount, isStubSource),
             onSourceClick = onSourceClick,
+            modifier = Modifier.padding(horizontal = 20.dp),
         )
-        if (isSourceIncognito) TsuzukiText(stringResource(MR.strings.pref_incognito_mode), style = TsuzukiTheme.typography.caption1, color = colors.secondary)
+        if (isSourceIncognito) {
+            TsuzukiText(
+                stringResource(MR.strings.pref_incognito_mode),
+                modifier = Modifier.padding(horizontal = 20.dp),
+                style = TsuzukiTheme.typography.caption1,
+                color = colors.secondary,
+            )
+        }
         actionRow()
     }
 }
@@ -308,34 +381,43 @@ fun MangaInfoHeaderApple(
 private fun AppleMetaLine(
     statusText: String?,
     statusColor: Color,
-    chapterCount: Int,
+    chapterCount: Int?,
     sourceLabel: String,
     onSourceClick: () -> Unit,
+    modifier: Modifier = Modifier,
 ) {
     val colors = TsuzukiTheme.colors
     Row(
+        modifier = modifier,
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(TsuzukiTheme.spacing.tiny),
     ) {
         var emitted = false
         statusText?.let {
-            TsuzukiText(it, style = TsuzukiTheme.typography.subhead, color = statusColor, maxLines = 1)
+            TsuzukiText(it, style = TsuzukiTheme.typography.subhead, color = statusColor, maxLines = 1, overflow = TextOverflow.Ellipsis)
             emitted = true
         }
-        if (chapterCount > 0) {
-            if (emitted) TsuzukiText("·", style = TsuzukiTheme.typography.subhead, color = colors.secondary)
-            TsuzukiText(pluralStringResource(MR.plurals.manga_num_chapters, chapterCount, chapterCount), style = TsuzukiTheme.typography.subhead, color = colors.secondary, maxLines = 1)
-            emitted = true
-        }
+        // N12: the count's slot is always present (skeleton until known) so the line never reflows
+        // and no `Chapters` placeholder swaps for `31 chapters` after arrival.
         if (emitted) TsuzukiText("·", style = TsuzukiTheme.typography.subhead, color = colors.secondary)
+        ChapterCountText(chapterCount)
+        TsuzukiText("·", style = TsuzukiTheme.typography.subhead, color = colors.secondary)
         Row(
             Modifier
+                .weight(1f, fill = false)
                 .clip(RoundedCornerShape(6.dp))
                 .clickable(onClick = onSourceClick),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(2.dp),
         ) {
-            TsuzukiText(sourceLabel, style = TsuzukiTheme.typography.subhead, color = colors.secondary, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            TsuzukiText(
+                sourceLabel,
+                modifier = Modifier.weight(1f, fill = false),
+                style = TsuzukiTheme.typography.subhead,
+                color = colors.secondary,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
             Icon(TsuzukiIcons.ChevronRight, null, Modifier.size(12.dp), tint = colors.secondary)
         }
     }
@@ -362,7 +444,14 @@ private fun SourceLine(label: String, onClick: () -> Unit) {
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(2.dp),
     ) {
-        TsuzukiText(label, style = TsuzukiTheme.typography.subhead, color = colors.secondary, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        TsuzukiText(
+            label,
+            Modifier.weight(1f, fill = false),
+            style = TsuzukiTheme.typography.subhead,
+            color = colors.secondary,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
         Icon(TsuzukiIcons.ChevronRight, null, Modifier.size(14.dp), tint = colors.secondary)
     }
 }
@@ -373,11 +462,12 @@ private fun Byline(
     artist: String?,
     onBrowse: (String) -> Unit,
     onCopy: (String) -> Unit,
+    modifier: Modifier = Modifier,
     color: Color = TsuzukiTheme.colors.secondary,
 ) {
     var expanded by remember { mutableStateOf(false) }
     val label = listOfNotNull(author, artist).joinToString(" · ")
-    Box {
+    Box(modifier) {
         TsuzukiText(
             label,
             Modifier
@@ -393,12 +483,12 @@ private fun Byline(
             label,
             buildList {
                 author?.let {
-                    add(ContextMenuAction("Browse author", icon = { Icon(TsuzukiIcons.Search, null, tint = TsuzukiTheme.colors.text) }) { onBrowse(it) })
+                    add(ContextMenuAction(stringResource(MR.strings.tsuzuki_browse_author), icon = { Icon(TsuzukiIcons.Search, null, tint = TsuzukiTheme.colors.text) }) { onBrowse(it) })
                 }
                 artist?.let {
-                    add(ContextMenuAction("Browse artist", icon = { Icon(TsuzukiIcons.Search, null, tint = TsuzukiTheme.colors.text) }) { onBrowse(it) })
+                    add(ContextMenuAction(stringResource(MR.strings.tsuzuki_browse_artist), icon = { Icon(TsuzukiIcons.Search, null, tint = TsuzukiTheme.colors.text) }) { onBrowse(it) })
                 }
-                add(ContextMenuAction("Copy name", icon = { Icon(TsuzukiIcons.Copy, null, tint = TsuzukiTheme.colors.text) }) { onCopy(label) })
+                add(ContextMenuAction(stringResource(MR.strings.tsuzuki_copy_name), icon = { Icon(TsuzukiIcons.Copy, null, tint = TsuzukiTheme.colors.text) }) { onCopy(label) })
             },
             onDismissRequest = { expanded = false },
         )
@@ -418,12 +508,14 @@ private fun RatingLine(mangaId: Long, onClick: () -> Unit) {
         horizontalArrangement = Arrangement.spacedBy(TsuzukiTheme.spacing.tiny),
     ) {
         Icon(TsuzukiIcons.StarFilled, null, Modifier.size(14.dp), tint = if (TsuzukiTheme.colors.isDark) RatingStarDark else RatingStarLight)
-        stats.rating?.let { TsuzukiText(String.format("%.2f", it), style = TsuzukiTheme.typography.subhead) }
+        stats.rating?.let { TsuzukiText(String.format("%.2f", it), style = TsuzukiTheme.typography.subhead, maxLines = 1) }
         stats.follows?.let { follows ->
             TsuzukiText(
-                (if (stats.rating != null) "· " else "") + formatFollowsCompact(follows) + " follows",
+                (if (stats.rating != null) "· " else "") + stringResource(MR.strings.tsuzuki_follows, formatFollowsCompact(follows)),
                 style = TsuzukiTheme.typography.subhead,
                 color = TsuzukiTheme.colors.secondary,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
             )
         }
     }
@@ -431,7 +523,9 @@ private fun RatingLine(mangaId: Long, onClick: () -> Unit) {
 
 internal fun formatFollowsCompact(follows: Long): String = when {
     follows >= 1_000_000 -> {
-        val millions = follows / 100_000f
+        // C-follows: millions are divided by a million — the old 100_000f printed 1 234 567
+        // follows as "12.3M".
+        val millions = follows / 1_000_000f
         if (millions % 1f == 0f) "${millions.toInt()}M" else String.format("%.1fM", millions)
     }
     follows >= 1_000 -> "${follows / 1_000}K"
@@ -490,11 +584,12 @@ private fun DetailsCover(
         animationSpec = if (motion.reduced) snap() else tween(durationMillis = 300),
         label = "details_cover_crossfade",
     )
-    val heroBitmap = remember(cover.mangaId) { dev.errnolink.tsuzuki.ui.shell.MangaHero.source(cover.mangaId)?.image }
+    val heroBitmap = remember(cover.mangaId) { dev.errnolink.tsuzuki.ui.motion.MangaHero.source(cover.mangaId)?.image }
     Box(
         modifier
+            .readerFallbackOrigin()
             .mangaHeroTarget(cover.mangaId)
-            .shadow(6.dp, RoundedCornerShape(TsuzukiCorners.cover)),
+            .shadow(6.dp, coverShape()),
     ) {
         CoverImage(
             imageKey = key,
@@ -550,8 +645,8 @@ private fun DetailsCover(
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.spacedBy(6.dp),
             ) {
-                Icon(TsuzukiIcons.RefreshCw, "Retry cover", Modifier.size(24.dp), tint = TsuzukiTheme.colors.secondary)
-                TsuzukiText("Cover unavailable · Tap to retry", style = TsuzukiTheme.typography.caption1, color = TsuzukiTheme.colors.secondary)
+                Icon(TsuzukiIcons.RefreshCw, stringResource(MR.strings.tsuzuki_retry_cover), Modifier.size(24.dp), tint = TsuzukiTheme.colors.secondary)
+                TsuzukiText(stringResource(MR.strings.tsuzuki_cover_unavailable_retry), style = TsuzukiTheme.typography.caption1, color = TsuzukiTheme.colors.secondary)
             }
         }
     }
@@ -579,9 +674,9 @@ internal fun TagChip(
             expanded,
             label,
             listOf(
-                ContextMenuAction("Search this source", icon = { Icon(TsuzukiIcons.Search, null, tint = colors.text) }) { onSearch(query) },
-                ContextMenuAction("Search all sources", icon = { Icon(TsuzukiIcons.Globe, null, tint = colors.text) }) { onGlobalSearch(query, true) },
-                ContextMenuAction("Copy tag", icon = { Icon(TsuzukiIcons.Copy, null, tint = colors.text) }) { onCopy(query) },
+                ContextMenuAction(stringResource(MR.strings.tsuzuki_search_this_source), icon = { Icon(TsuzukiIcons.Search, null, tint = colors.text) }) { onSearch(query) },
+                ContextMenuAction(stringResource(MR.strings.tsuzuki_search_all_sources), icon = { Icon(TsuzukiIcons.Globe, null, tint = colors.text) }) { onGlobalSearch(query, true) },
+                ContextMenuAction(stringResource(MR.strings.tsuzuki_copy_tag), icon = { Icon(TsuzukiIcons.Copy, null, tint = colors.text) }) { onCopy(query) },
             ),
             onDismissRequest = { expanded = false },
         )

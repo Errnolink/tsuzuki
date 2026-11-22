@@ -11,7 +11,13 @@ import coil3.decode.ImageSource
 import coil3.fetch.SourceFetchResult
 import coil3.request.Options
 import coil3.request.bitmapConfig
+import coil3.request.maxBitmapSize
+import coil3.util.component1
+import coil3.util.component2
 import com.hippo.unifile.UniFile
+import dev.errnolink.tsuzuki.reader.engine.decode.byteLimitedMaxSize
+import dev.errnolink.tsuzuki.reader.engine.decode.isByteLimited
+import dev.errnolink.tsuzuki.reader.engine.decode.maxBitmapBytes
 import mihon.core.archive.CbzCrypto
 import mihon.core.archive.CbzCrypto.getCoverStream
 import mihon.core.archive.archiveReader
@@ -50,8 +56,20 @@ class TachiyomiImageDecoder(private val resources: ImageSource, private val opti
         val srcWidth = decoder.width
         val srcHeight = decoder.height
 
-        val dstWidth = options.size.widthPx(options.scale) { srcWidth }
-        val dstHeight = options.size.heightPx(options.scale) { srcHeight }
+        val limit =
+            byteLimitedMaxSize(srcWidth, srcHeight, options.maxBitmapSize, options.maxBitmapBytes)
+        val (dstWidth, dstHeight) =
+            DecodeUtils.computeDstSize(srcWidth, srcHeight, options.size, options.scale, limit)
+        val byteLimited =
+            isByteLimited(
+                srcWidth,
+                srcHeight,
+                options.size,
+                options.scale,
+                options.precision,
+                options.maxBitmapSize,
+                limit,
+            )
 
         val sampleSize = DecodeUtils.calculateInSampleSize(
             srcWidth = srcWidth,
@@ -79,7 +97,7 @@ class TachiyomiImageDecoder(private val resources: ImageSource, private val opti
 
         return DecodeResult(
             image = bitmap.asImage(),
-            isSampled = sampleSize > 1,
+            isSampled = sampleSize > 1 && !byteLimited,
         )
     }
 

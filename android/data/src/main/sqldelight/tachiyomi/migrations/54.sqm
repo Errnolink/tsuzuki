@@ -1,0 +1,4 @@
+DROP VIEW IF EXISTS updatesView;
+
+CREATE INDEX IF NOT EXISTS chapters_date_fetch_index ON chapters(date_fetch);
+CREATE INDEX IF NOT EXISTS chapters_manga_date_fetch_index ON chapters(manga_id, date_fetch);

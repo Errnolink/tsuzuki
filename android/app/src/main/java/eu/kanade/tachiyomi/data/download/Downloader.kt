@@ -20,29 +20,33 @@ import exh.source.MERGED_SOURCE_ID
 import exh.util.DataSaver
 import exh.util.DataSaver.Companion.getImage
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.DelicateCoroutinesApi
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.asFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.filter
+import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.flow.flatMapMerge
 import kotlinx.coroutines.flow.flow
-import kotlinx.coroutines.flow.flowOn
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.retryWhen
 import kotlinx.coroutines.flow.transformLatest
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.supervisorScope
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.withContext
 import logcat.LogPriority
 import mihon.core.archive.CbzCrypto
 import mihon.core.archive.ZipWriter
@@ -52,7 +56,6 @@ import tachiyomi.core.common.i18n.stringResource
 import tachiyomi.core.common.storage.extension
 import tachiyomi.core.common.util.lang.launchIO
 import tachiyomi.core.common.util.lang.launchNow
-import tachiyomi.core.common.util.lang.withIOContext
 import tachiyomi.core.common.util.system.ImageUtil
 import tachiyomi.core.common.util.system.logcat
 import tachiyomi.core.metadata.comicinfo.COMIC_INFO_FILE
@@ -68,6 +71,7 @@ import uy.kohesive.injekt.Injekt
 import uy.kohesive.injekt.api.get
 import uy.kohesive.injekt.injectLazy
 import java.io.File
+import java.util.concurrent.ConcurrentHashMap
 import java.util.Locale
 
 /**
@@ -109,13 +113,17 @@ class Downloader(
     private val notifier by lazy { DownloadNotifier(context) }
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+
+    @Volatile
     private var downloaderJob: Job? = null
+
+    private val queueLock = Any()
 
     /**
      * Whether the downloader is running.
      */
     val isRunning: Boolean
-        get() = downloaderJob?.isActive ?: false
+        get() = synchronized(queueLock) { downloaderJob?.isActive ?: false }
 
     /**
      * Whether the downloader is paused
@@ -207,7 +215,12 @@ class Downloader(
     private fun launchDownloaderJob() {
         if (isRunning) return
 
+        val previousJob = downloaderJob
         downloaderJob = scope.launch {
+            // Page writes block, so a canceled job can still be writing the pages this one would start on. Not
+            // cancelable, so a job canceled while waiting still finishes after the one before it.
+            withContext(NonCancellable) { previousJob?.join() }
+
             val activeDownloadsFlow = combine(
                 queueState,
                 downloadPreferences.parallelSourceLimit().changes(),
@@ -235,27 +248,70 @@ class Downloader(
 
             // Use supervisorScope to cancel child jobs when the downloader job is cancelled
             supervisorScope {
-                val downloadJobs = mutableMapOf<Download, Job>()
+                val sourceJobs = mutableMapOf<HttpSource, Job>()
+                val downloadJobs = ConcurrentHashMap<Download, Job>()
+
+                // A source runs several of its chapters at once, so a removed one is stopped by itself
+                launch {
+                    queueState.collect { queue ->
+                        downloadJobs.keys.filter { it !in queue }.forEach { downloadJobs.remove(it)?.cancel() }
+                    }
+                }
 
                 activeDownloadsFlow.collectLatest { activeDownloads ->
-                    val downloadJobsToStop = downloadJobs.filter { it.key !in activeDownloads }
-                    downloadJobsToStop.forEach { (download, job) ->
+                    val activeSources = activeDownloads.map { it.source }
+                    val sourceJobsToStop = sourceJobs.filter { it.key !in activeSources }
+                    sourceJobsToStop.forEach { (source, job) ->
                         job.cancel()
-                        downloadJobs.remove(download)
+                        sourceJobs.remove(source)
                     }
 
-                    val downloadsToStart = activeDownloads.filter { it !in downloadJobs }
-                    downloadsToStart.forEach { download ->
-                        downloadJobs[download] = launchDownloadJob(download)
+                    val sourcesToStart = activeSources.filter { it !in sourceJobs }
+                    sourcesToStart.forEach { source ->
+                        sourceJobs[source] = launchSourceJob(source, downloadJobs)
                     }
                 }
             }
         }
     }
 
-    private fun CoroutineScope.launchDownloadJob(download: Download) = launchIO {
+    /**
+     * Downloads the queued chapters of [source] in queue order. They share the source's page slots, and the next
+     * chapter starts once every page of the current one has a slot, so slots don't sit idle while a chapter's last
+     * pages finish and it's archived.
+     */
+    private fun CoroutineScope.launchSourceJob(
+        source: HttpSource,
+        downloadJobs: MutableMap<Download, Job>,
+    ) = launchIO {
+        val slots = Semaphore(downloadPreferences.parallelPageLimit().get())
+        while (true) {
+            // A canceled job can mark a chapter as downloading after it's been reset, so that counts as waiting too
+            val download = queueState
+                .map { queue ->
+                    queue.firstOrNull {
+                        it.source == source &&
+                            (it.status == Download.State.QUEUE || it.status == Download.State.DOWNLOADING) &&
+                            it !in downloadJobs
+                    }
+                }
+                .filterNotNull()
+                .first()
+            val pagesStarted = CompletableDeferred<Unit>()
+            val job = launchDownloadJob(download, slots, pagesStarted)
+            downloadJobs[download] = job
+            job.invokeOnCompletion { downloadJobs.remove(download, job) }
+            pagesStarted.await()
+        }
+    }
+
+    private fun CoroutineScope.launchDownloadJob(
+        download: Download,
+        slots: Semaphore,
+        pagesStarted: CompletableDeferred<Unit>,
+    ) = launchIO {
         try {
-            downloadChapter(download)
+            downloadChapter(download, slots, pagesStarted)
 
             // Remove successful download from queue
             if (download.status == Download.State.DOWNLOADED) {
@@ -269,6 +325,9 @@ class Downloader(
             logcat(LogPriority.ERROR, e)
             notifier.onError(e.message)
             stop()
+        } finally {
+            // Also when the chapter fails before its pages, so the source moves on to the next one
+            pagesStarted.complete(Unit)
         }
     }
 
@@ -277,7 +336,6 @@ class Downloader(
      */
     private fun cancelDownloaderJob() {
         downloaderJob?.cancel()
-        downloaderJob = null
     }
 
     /**
@@ -287,7 +345,7 @@ class Downloader(
      * @param chapters the list of chapters to download.
      * @param autoStart whether to start the downloader after enqueing the chapters.
      */
-    fun queueChapters(manga: Manga, chapters: List<Chapter>, autoStart: Boolean) {
+    suspend fun queueChapters(manga: Manga, chapters: List<Chapter>, autoStart: Boolean) {
         if (chapters.isEmpty()) return
 
         val source = sourceManager.get(manga.source) as? HttpSource ?: return
@@ -296,45 +354,48 @@ class Downloader(
         if (source.id == MERGED_SOURCE_ID) return
         // KMK <--
 
-        val wasEmpty = queueState.value.isEmpty()
-        val chaptersToQueue = chapters.asSequence()
-            // Filter out those already downloaded.
-            .filter {
-                provider.findChapterDir(it.name, it.scanlator, it.url, /* SY --> */ manga.ogTitle /* SY <-- */, source) == null
-            }
-            // Add chapters to queue from the start.
-            .sortedByDescending { it.sourceOrder }
-            // Filter out those already enqueued.
-            .filter { chapter -> queueState.value.none { it.chapter.id == chapter.id } }
-            // Create a download for each one.
-            .map { Download(source, manga, it) }
-            .toList()
+        val downloadedChapterIds = provider.findDownloadedChapterIds(chapters, manga, source)
 
-        if (chaptersToQueue.isNotEmpty()) {
-            addAllToQueue(chaptersToQueue)
+        synchronized(queueLock) {
+            val wasEmpty = queueState.value.isEmpty()
+            val queuedChapterIds = queueState.value.mapTo(HashSet()) { it.chapter.id }
+            val chaptersToQueue = chapters.asSequence()
+                // Filter out those already downloaded.
+                .filter { it.id !in downloadedChapterIds }
+                // Add chapters to queue from the start.
+                .sortedByDescending { it.sourceOrder }
+                // Filter out those already enqueued.
+                .filter { it.id !in queuedChapterIds }
+                // Create a download for each one.
+                .map { Download(source, manga, it) }
+                .toList()
 
-            // Start downloader if needed
-            if (autoStart && wasEmpty) {
-                val queuedDownloads = queueState.value.count { it.source !is UnmeteredSource }
-                val maxDownloadsFromSource = queueState.value
-                    .groupBy { it.source }
-                    .filterKeys { it !is UnmeteredSource }
-                    .maxOfOrNull { it.value.size }
-                    ?: 0
-                if (
-                    queuedDownloads > DOWNLOADS_QUEUED_WARNING_THRESHOLD ||
-                    maxDownloadsFromSource > CHAPTERS_PER_SOURCE_QUEUE_WARNING_THRESHOLD
-                ) {
-                    notifier.onWarning(
-                        context.stringResource(
-                            MR.strings.download_queue_size_warning,
-                            context.stringResource(MR.strings.app_name),
-                        ),
-                        WARNING_NOTIF_TIMEOUT_MS,
-                        NotificationHandler.openUrl(context, LibraryUpdateNotifier.HELP_WARNING_URL),
-                    )
+            if (chaptersToQueue.isNotEmpty()) {
+                addAllToQueue(chaptersToQueue)
+
+                // Start downloader if needed
+                if (autoStart && wasEmpty) {
+                    val queuedDownloads = queueState.value.count { it.source !is UnmeteredSource }
+                    val maxDownloadsFromSource = queueState.value
+                        .groupBy { it.source }
+                        .filterKeys { it !is UnmeteredSource }
+                        .maxOfOrNull { it.value.size }
+                        ?: 0
+                    if (
+                        queuedDownloads > DOWNLOADS_QUEUED_WARNING_THRESHOLD ||
+                        maxDownloadsFromSource > CHAPTERS_PER_SOURCE_QUEUE_WARNING_THRESHOLD
+                    ) {
+                        notifier.onWarning(
+                            context.stringResource(
+                                MR.strings.download_queue_size_warning,
+                                context.stringResource(MR.strings.app_name),
+                            ),
+                            WARNING_NOTIF_TIMEOUT_MS,
+                            NotificationHandler.openUrl(context, LibraryUpdateNotifier.HELP_WARNING_URL),
+                        )
+                    }
+                    DownloadJob.start(context)
                 }
-                DownloadJob.start(context)
             }
         }
     }
@@ -343,8 +404,14 @@ class Downloader(
      * Downloads a chapter.
      *
      * @param download the chapter to be downloaded.
+     * @param slots the page download slots of the chapter's source.
+     * @param pagesStarted completed once every page has a slot.
      */
-    private suspend fun downloadChapter(download: Download) {
+    private suspend fun downloadChapter(
+        download: Download,
+        slots: Semaphore,
+        pagesStarted: CompletableDeferred<Unit>,
+    ) {
         // KMK -->
         if (download.source.id == MERGED_SOURCE_ID) return
         // KMK <--
@@ -403,27 +470,27 @@ class Downloader(
             download.status = Download.State.DOWNLOADING
 
             // Start downloading images, consider we can have downloaded images already
-            pageList.asFlow().flatMapMerge(concurrency = downloadPreferences.parallelPageLimit().get()) { page ->
-                flow {
-                    // Fetch image URL if necessary
-                    if (page.imageUrl.isNullOrEmpty()) {
-                        page.status = Page.State.LoadPage
-                        try {
-                            page.imageUrl = download.source.getImageUrl(page)
-                        } catch (e: Throwable) {
-                            page.status = Page.State.Error(e)
+            coroutineScope {
+                pageList.forEach { page ->
+                    slots.acquire()
+                    // Released on completion, since a page canceled before it starts never runs its body
+                    launch(Dispatchers.IO) {
+                        // Fetch image URL if necessary
+                        if (page.imageUrl.isNullOrEmpty()) {
+                            page.status = Page.State.LoadPage
+                            try {
+                                page.imageUrl = download.source.getImageUrl(page)
+                            } catch (e: Throwable) {
+                                page.status = Page.State.Error(e)
+                            }
                         }
-                    }
 
-                    withIOContext { getOrDownloadImage(page, download, tmpDir, dataSaver) }
-                    emit(page)
+                        getOrDownloadImage(page, download, tmpDir, dataSaver)
+                        notifier.onProgressChange(download)
+                    }.invokeOnCompletion { slots.release() }
                 }
-                    .flowOn(Dispatchers.IO)
+                pagesStarted.complete(Unit)
             }
-                .collect {
-                    // Do when page is downloaded.
-                    notifier.onProgressChange(download)
-                }
 
             // Do after download completes
 
@@ -490,6 +557,7 @@ class Downloader(
                 imageFile != null -> imageFile
                 chapterCache.isImageInCache(page.imageUrl!!) ->
                     copyImageFromCache(chapterCache.getImageFile(page.imageUrl!!), tmpDir, filename)
+                        ?: downloadImage(page, download.source, tmpDir, filename, dataSaver)
                 else -> downloadImage(page, download.source, tmpDir, filename, dataSaver)
             }
 
@@ -527,17 +595,7 @@ class Downloader(
         page.progress = 0
         return flow {
             val response = dev.errnolink.tsuzuki.network.HostGate.pages.pass(page.imageUrl) { source.getImage(page, dataSaver) }
-            val file = tmpDir.createFile("$filename.tmp")!!
-            try {
-                response.body.source().saveTo(file.openOutputStream())
-                val extension = getImageExtension(response, file)
-                file.renameTo("$filename.$extension")
-            } catch (e: Exception) {
-                response.close()
-                file.delete()
-                throw e
-            }
-            emit(file)
+            emit(saveImage(response, tmpDir, filename))
         }
             // Retry 3 times, waiting 2, 4 and 8 seconds between attempts.
             .retryWhen { _, attempt ->
@@ -553,35 +611,48 @@ class Downloader(
     }
 
     /**
-     * Copies the image from cache to file in tmpDir.
-     *
-     * @param cacheFile the file from cache.
-     * @param tmpDir the temporary directory of the download.
-     * @param filename the filename of the image.
+     * Saves the image in the network response to a file in tmpDir.
      */
-    private fun copyImageFromCache(cacheFile: File, tmpDir: UniFile, filename: String): UniFile {
+    private fun saveImage(
+        response: Response,
+        tmpDir: UniFile,
+        filename: String,
+    ): UniFile = response.use {
+        if (!response.isSuccessful) {
+            throw Exception("HTTP ${response.code} from ${response.request.url.host}")
+        }
+        val file = tmpDir.createFile("$filename.tmp")!!
+        try {
+            response.body.source().saveTo(file.openOutputStream())
+            val extension = ImageUtil.findImageType { file.openInputStream() }?.extension
+                ?: throw Exception("The page is not an image")
+            if (!file.renameTo("$filename.$extension")) {
+                throw Exception("Failed to rename the downloaded page")
+            }
+        } catch (e: Exception) {
+            file.delete()
+            throw e
+        }
+        file
+    }
+
+    /**
+     * Copies the image from cache to file in tmpDir.
+     */
+    private fun copyImageFromCache(cacheFile: File, tmpDir: UniFile, filename: String): UniFile? {
+        val extension = ImageUtil.findImageType { cacheFile.inputStream() } ?: run {
+            cacheFile.delete()
+            return null
+        }
         val tmpFile = tmpDir.createFile("$filename.tmp")!!
         cacheFile.inputStream().use { input ->
             tmpFile.openOutputStream().use { output ->
                 input.copyTo(output)
             }
         }
-        val extension = ImageUtil.findImageType(cacheFile.inputStream()) ?: return tmpFile
         tmpFile.renameTo("$filename.${extension.extension}")
         cacheFile.delete()
         return tmpFile
-    }
-
-    /**
-     * Returns the extension of the downloaded image from the network response, or if it's null,
-     * analyze the file. If everything fails, assume it's a jpg.
-     *
-     * @param response the network response of the image.
-     * @param file the file where the image is already downloaded.
-     */
-    private fun getImageExtension(response: Response, file: UniFile): String {
-        val mime = response.body.contentType()?.run { if (type == "image") "image/$subtype" else null }
-        return ImageUtil.getExtensionFromMimeType(mime) { file.openInputStream() }
     }
 
     private fun splitTallImageIfNeeded(page: Page, tmpDir: UniFile) {
@@ -649,14 +720,23 @@ class Downloader(
         val encrypt = CbzCrypto.getPasswordProtectDlPref() && CbzCrypto.isPasswordSet()
         // SY <--
 
-        val zip = mangaDir.createFile("$dirname.cbz$TMP_DIR_SUFFIX")
+        val zipName = "$dirname.cbz$TMP_DIR_SUFFIX"
+        mangaDir.findFile(zipName)?.takeIf { it.isFile }?.delete()
+        val zip = mangaDir.createFile(zipName)
         if (zip?.isFile != true) throw Exception("Failed to create CBZ file for downloaded chapter")
-        ZipWriter(context, zip, /* SY --> */ encrypt /* SY <-- */).use { writer ->
-            tmpDir.listFiles()?.forEach { file ->
-                writer.write(file)
+        try {
+            ZipWriter(context, zip, /* SY --> */ encrypt /* SY <-- */).use { writer ->
+                tmpDir.listFiles()?.forEach { file ->
+                    writer.write(file)
+                }
             }
+            if (!zip.renameTo("$dirname.cbz")) {
+                throw Exception("Failed to create CBZ file for downloaded chapter")
+            }
+        } catch (e: Exception) {
+            zip.delete()
+            throw e
         }
-        zip.renameTo("$dirname.cbz")
         tmpDir.delete()
     }
 
@@ -702,11 +782,14 @@ class Downloader(
 
     private fun addAllToQueue(downloads: List<Download>) {
         _queueState.update {
-            downloads.forEach { download ->
+            // Callers filter off the queue's thread, so a chapter may have been queued in the meantime
+            val queuedChapterIds = it.mapTo(HashSet()) { download -> download.chapter.id }
+            val toAdd = downloads.filter { download -> download.chapter.id !in queuedChapterIds }
+            toAdd.forEach { download ->
                 download.status = Download.State.QUEUE
             }
-            store.addAll(downloads)
-            it + downloads
+            store.addAll(toAdd)
+            it + toAdd
         }
     }
 
@@ -738,6 +821,43 @@ class Downloader(
         removeFromQueueIf { it.chapter.id in chapterIds }
     }
 
+    /**
+     * Removes [chapters] from the queue. A running downloader is paused and started again, or
+     * stopped when the queue is left empty.
+     */
+    fun removeFromQueueAndRestart(chapters: List<Chapter>) {
+        if (chapters.isEmpty()) return
+        val chapterIds = chapters.mapTo(HashSet(chapters.size)) { it.id }
+        removeFromQueueAndRestartIf { it.chapter.id in chapterIds }
+    }
+
+    /**
+     * Removes every download of [manga] from the queue. A running downloader is paused and started
+     * again, or stopped when the queue is left empty.
+     */
+    fun removeFromQueueAndRestart(manga: Manga) {
+        removeFromQueueAndRestartIf { it.manga.id == manga.id }
+    }
+
+    private inline fun removeFromQueueAndRestartIf(predicate: (Download) -> Boolean) {
+        synchronized(queueLock) {
+            if (queueState.value.none(predicate)) return
+
+            val wasRunning = isRunning
+            if (wasRunning) {
+                pause()
+            }
+
+            removeFromQueueIf(predicate)
+
+            if (queueState.value.isEmpty()) {
+                stop()
+            } else if (wasRunning) {
+                start()
+            }
+        }
+    }
+
     fun removeFromQueue(manga: Manga) {
         removeFromQueueIf { it.manga.id == manga.id }
     }
@@ -754,21 +874,30 @@ class Downloader(
         }
     }
 
-    fun updateQueue(downloads: List<Download>) {
-        val wasRunning = isRunning
+    /**
+     * Replaces the queue with the list [reorder] builds from the current queue, or leaves it alone
+     * when [reorder] returns null.
+     */
+    fun updateQueue(reorder: (List<Download>) -> List<Download>?) {
+        synchronized(queueLock) {
+            val downloads =
+                reorder(queueState.value)?.filter { it.status != Download.State.DOWNLOADED }
+                    ?: return
+            val wasRunning = isRunning
 
-        if (downloads.isEmpty()) {
-            clearQueue()
-            stop()
-            return
-        }
+            if (downloads.isEmpty()) {
+                clearQueue()
+                stop()
+                return
+            }
 
-        pause()
-        internalClearQueue()
-        addAllToQueue(downloads)
+            pause()
+            internalClearQueue()
+            addAllToQueue(downloads)
 
-        if (wasRunning) {
-            start()
+            if (wasRunning) {
+                start()
+            }
         }
     }
 

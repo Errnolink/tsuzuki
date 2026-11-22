@@ -5,6 +5,8 @@ import android.util.LruCache
 import logcat.LogPriority
 import tachiyomi.core.common.util.system.logcat
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.EnterTransition
+import androidx.compose.animation.ExitTransition
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.snap
 import androidx.compose.animation.core.tween
@@ -12,6 +14,7 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleIn
 import androidx.compose.animation.scaleOut
+import dev.errnolink.tsuzuki.designsystem.M3Motion
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -37,15 +40,11 @@ import androidx.compose.foundation.lazy.staggeredgrid.LazyVerticalStaggeredGrid
 import androidx.compose.foundation.lazy.staggeredgrid.StaggeredGridCells
 import androidx.compose.foundation.lazy.staggeredgrid.rememberLazyStaggeredGridState
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.outlined.ArrowBack
-import androidx.compose.material.icons.outlined.Check
-import androidx.compose.material.icons.outlined.MenuBook
 import androidx.compose.material3.Icon
-import androidx.compose.material3.SnackbarHostState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
@@ -80,6 +79,7 @@ import androidx.compose.ui.platform.LocalContext
 import coil3.decode.DataSource
 import coil3.toBitmap
 import androidx.compose.ui.graphics.asImageBitmap
+import dev.errnolink.tsuzuki.designsystem.BookOpen
 import dev.errnolink.tsuzuki.designsystem.CoverArrivalState
 import dev.errnolink.tsuzuki.designsystem.CoverImage
 import dev.errnolink.tsuzuki.designsystem.DetentSheet
@@ -88,9 +88,13 @@ import dev.errnolink.tsuzuki.designsystem.tsuzukiFlingBehavior
 import dev.errnolink.tsuzuki.designsystem.GlassContext
 import dev.errnolink.tsuzuki.designsystem.floatingNavigationScroll
 import dev.errnolink.tsuzuki.designsystem.TsuzukiIcons
+import dev.errnolink.tsuzuki.designsystem.PillButton
+import dev.errnolink.tsuzuki.designsystem.TriangleAlert
 import dev.errnolink.tsuzuki.designsystem.IconButton
 import dev.errnolink.tsuzuki.designsystem.LargeTitleScaffold
+import dev.errnolink.tsuzuki.designsystem.ToastHostState
 import dev.errnolink.tsuzuki.designsystem.TopBarSearch
+import dev.errnolink.tsuzuki.designsystem.ProgressMark
 import dev.errnolink.tsuzuki.designsystem.ProgressRing
 import dev.errnolink.tsuzuki.designsystem.TsuzukiText
 import dev.errnolink.tsuzuki.designsystem.TsuzukiTheme
@@ -105,6 +109,10 @@ import androidx.compose.foundation.layout.asPaddingValues
 import tachiyomi.domain.manga.model.Manga
 import tachiyomi.domain.manga.model.MangaCover
 import tachiyomi.domain.manga.model.asMangaCover
+import dev.errnolink.tsuzuki.ui.library.heroTapSeed
+import dev.errnolink.tsuzuki.ui.motion.mangaHeroSource
+import tachiyomi.i18n.MR
+import tachiyomi.presentation.core.i18n.stringResource
 
 val LocalShellBottomPadding = staticCompositionLocalOf { 0.dp }
 val LocalShellGlass = staticCompositionLocalOf<GlassContext?> { null }
@@ -132,11 +140,12 @@ fun ShellList(
     modifier: Modifier = Modifier,
     state: LazyListState = rememberLazyListState(),
     reselectKey: String? = null,
+    toasts: ToastHostState? = null,
     navigateUp: (() -> Unit)? = null,
-    snackbar: SnackbarHostState? = null,
     actions: List<ShellTopAction> = emptyList(),
     search: TopBarSearch? = null,
     itemSpacing: androidx.compose.ui.unit.Dp = TsuzukiTheme.spacing.section,
+    capContent: Boolean = true,
     content: LazyListScope.() -> Unit,
 ) {
     val clearance = shellBottomPadding()
@@ -144,6 +153,13 @@ fun ShellList(
     val glass = shellGlass ?: rememberGlassContext()
     val largeTitles = dev.errnolink.tsuzuki.designsystem.largeTitlesEnabled()
     val collapse = dev.errnolink.tsuzuki.designsystem.rememberLargeTitleCollapse(state, largeTitles)
+    val density = LocalDensity.current
+    val scrolledUnderProvider = remember(state, density) {
+        val rampPx = with(density) { 24.dp.toPx() }
+        derivedStateOf {
+            scrolledUnderFraction(state.firstVisibleItemIndex, state.firstVisibleItemScrollOffset.toFloat(), rampPx)
+        }
+    }
     LaunchedEffect(reselectKey, state) {
         HomeScreen.reselectEvents.collect { if (it == reselectKey) state.scrollToItem(0) }
     }
@@ -154,6 +170,7 @@ fun ShellList(
         actions = actions,
         search = search,
         inlineTitle = { if (largeTitles) collapse.value else 1f },
+        scrolledUnderFraction = { scrolledUnderProvider.value },
     )
     Box(modifier.fillMaxSize()) {
         LargeTitleScaffold(
@@ -164,9 +181,10 @@ fun ShellList(
             collapse = collapse,
             bottomPadding = clearance,
             itemSpacing = itemSpacing,
+            capContent = capContent,
             content = content,
         )
-        ShellSnackbar(snackbar, Modifier.align(Alignment.BottomCenter).statusSnackbarPadding())
+        ShellToasts(toasts, Modifier.align(Alignment.BottomCenter).statusToastPadding())
     }
 }
 
@@ -218,9 +236,11 @@ fun rememberPageTotals(): Map<Long, Int> =
     remember { PageTotals() }.inProgressTotals().collectAsState(initial = emptyMap()).value
 
 @Composable
-fun ShellScrollEdge(alpha: Float, modifier: Modifier = Modifier) {
+fun ShellScrollEdge(alpha: () -> Float, modifier: Modifier = Modifier) {
     val colors = TsuzukiTheme.colors
-    if (alpha <= 0.01f) return
+    // TOP-02: the alpha is read in draw; the early-out only flips when the edge appears/vanishes.
+    val alphaNow = remember(alpha) { derivedStateOf { alpha().coerceIn(0f, 1f) } }
+    if (alphaNow.value <= 0.01f) return
     val brush = remember(colors.background) {
         Brush.verticalGradient(
             0f to colors.background,
@@ -234,11 +254,15 @@ fun ShellScrollEdge(alpha: Float, modifier: Modifier = Modifier) {
     Spacer(
         modifier.drawWithCache {
             onDrawBehind {
-                drawRect(brush = brush, alpha = alpha.coerceIn(0f, 1f))
+                drawRect(brush = brush, alpha = alphaNow.value)
             }
         },
     )
 }
+
+/** Float callers (Library's scrim) ride the same implementation. */
+@Composable
+fun ShellScrollEdge(alpha: Float, modifier: Modifier = Modifier) = ShellScrollEdge({ alpha }, modifier)
 
 @Composable
 fun ShellCaption(text: String, modifier: Modifier = Modifier) {
@@ -254,28 +278,49 @@ fun ShellCaption(text: String, modifier: Modifier = Modifier) {
 fun ShellEmpty(
     title: String,
     description: String,
+    icon: ImageVector = TsuzukiIcons.BookOpen,
     secondaryActions: List<dev.errnolink.tsuzuki.designsystem.EmptyTextAction> = emptyList(),
     action: (@Composable () -> Unit)? = null,
 ) {
     EmptyState(title, description, icon = {
-        Icon(Icons.Outlined.MenuBook, null, Modifier.size(42.dp), tint = TsuzukiTheme.colors.secondary)
+        Icon(icon, null, Modifier.size(42.dp), tint = TsuzukiTheme.colors.secondary)
     }, action = action, secondaryActions = secondaryActions)
 }
 
 @Composable
-fun ShellLoading(label: String = "Loading…") {
+fun ShellError(
+    title: String,
+    description: String,
+    onRetry: (() -> Unit)? = null,
+    retryLabel: String? = null,
+    retryProminent: Boolean = true,
+    secondaryActions: List<dev.errnolink.tsuzuki.designsystem.EmptyTextAction> = emptyList(),
+) {
+    val resolvedRetryLabel = retryLabel ?: stringResource(MR.strings.action_retry)
+    EmptyState(
+        title,
+        description,
+        icon = { Icon(TsuzukiIcons.TriangleAlert, null, Modifier.size(36.dp), tint = TsuzukiTheme.colors.secondary) },
+        action = onRetry?.let { retry -> { PillButton(resolvedRetryLabel, retry, prominent = retryProminent) } },
+        secondaryActions = secondaryActions,
+    )
+}
+
+@Composable
+fun ShellLoading(label: String? = null) {
+    val resolvedLabel = label ?: stringResource(MR.strings.tsuzuki_loading_ellipsis)
     Row(
         Modifier.fillMaxWidth().padding(TsuzukiTheme.spacing.section),
         horizontalArrangement = Arrangement.spacedBy(TsuzukiTheme.spacing.medium),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        ProgressRing(0f, label)
-        TsuzukiText(label, color = TsuzukiTheme.colors.secondary)
+        ProgressMark(0f, resolvedLabel)
+        TsuzukiText(resolvedLabel, color = TsuzukiTheme.colors.secondary)
     }
 }
 
 @Composable
-fun ShellCover(cover: MangaCover, title: String, modifier: Modifier = Modifier, fixedRatio: Float? = null, hero: Boolean = true) {
+fun ShellCover(cover: MangaCover, title: String, modifier: Modifier = Modifier, fixedRatio: Float? = null, hero: Boolean = true, tapSeed: dev.errnolink.tsuzuki.ui.motion.HeroTapSeed? = null) {
     val key = "${cover.sourceId}:${cover.mangaId}:${cover.url}:${cover.lastModified}"
     val arrivals = LocalShellArrivals.current ?: rememberCoverArrivalState()
     var ratio by remember(key) {
@@ -299,7 +344,7 @@ fun ShellCover(cover: MangaCover, title: String, modifier: Modifier = Modifier, 
             .crossfade(false)
             .build()
     }
-    Box(if (hero) modifier.mangaHeroSource(cover.mangaId, heroImage) else modifier) {
+    Box(if (hero) modifier.mangaHeroSource(cover.mangaId, heroImage, tapSeed) else modifier) {
         CoverImage(key, fixedRatio ?: ratio, loaded, arrivals, cached = cached, label = title, modifier = Modifier.fillMaxWidth()) {
             AsyncImage(
                 model = request,
@@ -326,8 +371,8 @@ fun ShellCover(cover: MangaCover, title: String, modifier: Modifier = Modifier, 
         }
         if (failed) {
             Icon(
-                Icons.Outlined.MenuBook,
-                "Cover unavailable",
+                TsuzukiIcons.BookOpen,
+                stringResource(MR.strings.tsuzuki_cover_unavailable),
                 Modifier.align(Alignment.Center).size(28.dp),
                 tint = TsuzukiTheme.colors.secondary,
             )
@@ -349,7 +394,7 @@ fun ShellMangaTile(
 ) {
     Column(modifier, verticalArrangement = Arrangement.spacedBy(7.dp)) {
         Box {
-            ShellCover(manga.asMangaCover(), manga.title, Modifier.fillMaxWidth())
+            ShellCover(manga.asMangaCover(), manga.title, Modifier.fillMaxWidth(), tapSeed = overlays.heroTapSeed())
             dev.errnolink.tsuzuki.ui.library.LibraryTileOverlayStack(
                 overlays = overlays,
                 badges = badges,
@@ -364,14 +409,18 @@ fun ShellMangaTile(
 
 @Composable
 fun ShellBadge(label: String) {
-    TsuzukiText(
-        label,
-        Modifier.clip(RoundedCornerShape(7.dp))
+    Box(
+        Modifier
+            .clip(RoundedCornerShape(7.dp))
             .background(androidx.compose.ui.graphics.Color.Black.copy(alpha = 0.58f))
             .padding(horizontal = 6.dp, vertical = 3.dp),
-        TsuzukiTheme.typography.caption2.copy(fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold),
-        color = androidx.compose.ui.graphics.Color.White,
-    )
+    ) {
+        dev.errnolink.tsuzuki.ui.library.BadgeNumberText(
+            label,
+            TsuzukiTheme.typography.caption2.copy(fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold),
+            androidx.compose.ui.graphics.Color.White,
+        )
+    }
 }
 
 @Composable
@@ -388,15 +437,25 @@ fun ShellMasonry(
     val shellGlass = LocalShellGlass.current
     val glass = shellGlass ?: rememberGlassContext()
     val clearance = shellBottomPadding()
+    val density = LocalDensity.current
+    val scrolledUnderProvider = remember(state, density) {
+        val rampPx = with(density) { 24.dp.toPx() }
+        derivedStateOf {
+            scrolledUnderFraction(state.firstVisibleItemIndex, state.firstVisibleItemScrollOffset.toFloat(), rampPx)
+        }
+    }
     LaunchedEffect(reselectKey, state) {
         HomeScreen.reselectEvents.collect { if (it == reselectKey) state.scrollToItem(0) }
     }
-    DeclareShellTop(title = title, glass = glass, navigateUp = navigateUp, actions = actions)
+    DeclareShellTop(title = title, glass = glass, navigateUp = navigateUp, actions = actions, scrolledUnderFraction = { scrolledUnderProvider.value })
     val topBodyDp = remember { mutableFloatStateOf(dev.errnolink.tsuzuki.designsystem.TsuzukiTopBar.bodyHeightDp) }
     if (dev.errnolink.tsuzuki.designsystem.TsuzukiTopBar.bodyHeightDp > topBodyDp.floatValue) {
         topBodyDp.floatValue = dev.errnolink.tsuzuki.designsystem.TsuzukiTopBar.bodyHeightDp
     }
-    Box(Modifier.fillMaxSize().background(colors.background).statusBarsPadding()) {
+    androidx.compose.runtime.CompositionLocalProvider(dev.errnolink.tsuzuki.designsystem.LocalGlassContext provides glass) {
+    // TOP-01: no statusBarsPadding — tiles scroll under the band and blur (the inset rides the
+    // content padding instead, so the grid still starts below the row at rest).
+    Box(Modifier.fillMaxSize().background(colors.background)) {
         LazyVerticalStaggeredGrid(
             columns = columns,
             state = state,
@@ -407,12 +466,13 @@ fun ShellMasonry(
             contentPadding = PaddingValues(
                 start = TsuzukiTheme.spacing.gutter,
                 end = TsuzukiTheme.spacing.gutter,
-                top = topBodyDp.floatValue.dp + 8.dp,
+                top = statusBarTopInset() + topBodyDp.floatValue.dp + 8.dp,
                 bottom = clearance + TsuzukiTheme.spacing.section,
             ),
         ) {
             content()
         }
+    }
     }
 }
 
@@ -421,11 +481,13 @@ fun ShellRefresh(
     refreshing: Boolean,
     enabled: Boolean = true,
     onRefresh: () -> Unit,
-    pullLabel: String = "Pull to update",
+    pullLabel: String? = null,
     content: @Composable () -> Unit,
 ) {
+    val resolvedPullLabel = pullLabel ?: stringResource(MR.strings.tsuzuki_pull_to_update)
     val threshold = with(LocalDensity.current) { 88.dp.toPx() }
     var pulled by remember { mutableFloatStateOf(0f) }
+    var crossedTrigger by remember { mutableStateOf(false) }
     val currentRefresh by rememberUpdatedState(onRefresh)
     val connection = remember(enabled, refreshing, threshold) {
         object : NestedScrollConnection {
@@ -441,6 +503,10 @@ fun ShellRefresh(
             override fun onPostScroll(consumed: Offset, available: Offset, source: NestedScrollSource): Offset {
                 if (!enabled || refreshing || available.y <= 0 || source != NestedScrollSource.UserInput) return Offset.Zero
                 pulled = (pulled + available.y * 0.5f).coerceAtMost(threshold * 1.5f)
+                val crossed = pulled >= threshold
+                if (crossed != crossedTrigger) {
+                    crossedTrigger = crossed
+                }
                 return Offset(0f, available.y)
             }
 
@@ -448,16 +514,28 @@ fun ShellRefresh(
                 if (pulled == 0f) return Velocity.Zero
                 if (pulled >= threshold) currentRefresh()
                 pulled = 0f
+                crossedTrigger = false
                 return Velocity(0f, available.y)
             }
         }
     }
+    val reduced = TsuzukiTheme.motion.reduced
     Box(Modifier.fillMaxSize().nestedScroll(connection)) {
         content()
         AnimatedVisibility(
-            visible = pulled > 0 && !refreshing,
-            enter = fadeIn(tween(150)) + scaleIn(tween(150), initialScale = 0.8f),
-            exit = fadeOut(tween(150)) + scaleOut(tween(150), targetScale = 0.8f),
+            visible = pulled > 0 || refreshing,
+            enter = fadeIn(if (reduced) M3Motion.reducedFade() else tween(M3Motion.Short3)) +
+                if (reduced) {
+                    EnterTransition.None
+                } else {
+                    scaleIn(tween(M3Motion.Short3), initialScale = 0.8f)
+                },
+            exit = fadeOut(if (reduced) M3Motion.reducedFade() else tween(M3Motion.Short3)) +
+                if (reduced) {
+                    ExitTransition.None
+                } else {
+                    scaleOut(tween(M3Motion.Short3), targetScale = 0.8f)
+                },
             modifier = Modifier.align(Alignment.TopCenter),
         ) {
             Box(
@@ -468,7 +546,7 @@ fun ShellRefresh(
                     .background(TsuzukiTheme.colors.elevated)
                     .padding(10.dp),
             ) {
-                ProgressRing(pulled / threshold, pullLabel)
+                ProgressRing(if (refreshing) 0f else pulled / threshold, resolvedPullLabel)
             }
         }
     }
@@ -484,9 +562,9 @@ fun ShellFilterRow(
     dev.errnolink.tsuzuki.designsystem.GroupedRow(
         title = label,
         value = when (state) {
-            tachiyomi.core.common.preference.TriState.DISABLED -> "Any"
-            tachiyomi.core.common.preference.TriState.ENABLED_IS -> "Include"
-            tachiyomi.core.common.preference.TriState.ENABLED_NOT -> "Exclude"
+            tachiyomi.core.common.preference.TriState.DISABLED -> stringResource(MR.strings.tsuzuki_any)
+            tachiyomi.core.common.preference.TriState.ENABLED_IS -> stringResource(MR.strings.tsuzuki_include)
+            tachiyomi.core.common.preference.TriState.ENABLED_NOT -> stringResource(MR.strings.tsuzuki_exclude)
         },
         enabled = enabled,
         onClick = onClick,

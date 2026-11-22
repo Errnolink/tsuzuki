@@ -7,12 +7,14 @@ import dev.errnolink.tsuzuki.designsystem.Download
 import dev.errnolink.tsuzuki.designsystem.EyeOff
 import dev.errnolink.tsuzuki.designsystem.Info
 import dev.errnolink.tsuzuki.designsystem.Layers
-import dev.errnolink.tsuzuki.designsystem.PullDownDivider
+import dev.errnolink.tsuzuki.designsystem.PullDownSectionDivider
 import dev.errnolink.tsuzuki.designsystem.PullDownMenu
 import dev.errnolink.tsuzuki.designsystem.PullDownMenuItem
-import dev.errnolink.tsuzuki.designsystem.SettingsLucide
+import dev.errnolink.tsuzuki.designsystem.Gear
 import dev.errnolink.tsuzuki.designsystem.TriangleAlert
 import dev.errnolink.tsuzuki.designsystem.TsuzukiIcons
+import tachiyomi.i18n.MR
+import tachiyomi.presentation.core.i18n.stringResource
 
 @Composable
 fun LibraryMenuPullDown(
@@ -32,10 +34,10 @@ fun LibraryMenuPullDown(
     PullDownMenu(
         expanded = expanded,
         onDismissRequest = onDismissRequest,
-        paneTitle = "Library pull-down menu",
+        paneTitle = stringResource(MR.strings.tsuzuki_library_pull_down),
     ) {
         PullDownMenuItem(
-            text = "Incognito",
+            text = stringResource(MR.strings.tsuzuki_incognito),
             icon = TsuzukiIcons.EyeOff,
             selected = incognito,
             onClick = {
@@ -43,16 +45,16 @@ fun LibraryMenuPullDown(
             },
         )
         PullDownMenuItem(
-            text = "Downloaded only",
+            text = stringResource(MR.strings.label_downloaded_only),
             icon = TsuzukiIcons.Download,
             selected = downloadedOnly,
             onClick = {
                 onToggleDownloadedOnly()
             },
         )
-        PullDownDivider()
+        PullDownSectionDivider()
         PullDownMenuItem(
-            text = "Download queue",
+            text = stringResource(MR.strings.label_download_queue),
             icon = TsuzukiIcons.Layers,
             onClick = {
                 onDismissRequest()
@@ -60,34 +62,32 @@ fun LibraryMenuPullDown(
             },
         )
         PullDownMenuItem(
-            text = "Library update errors",
+            text = stringResource(MR.strings.tsuzuki_update_errors),
             icon = TsuzukiIcons.TriangleAlert,
             onClick = {
                 onDismissRequest()
                 onOpenLibraryUpdateErrors()
             },
         )
-        PullDownDivider()
+        PullDownSectionDivider()
         PullDownMenuItem(
-            text = "Settings",
-            icon = TsuzukiIcons.SettingsLucide,
+            text = stringResource(MR.strings.label_settings),
+            icon = TsuzukiIcons.Gear,
             onClick = {
                 onDismissRequest()
                 onOpenSettings()
             },
         )
-        PullDownDivider()
         PullDownMenuItem(
-            text = "Stats",
+            text = stringResource(MR.strings.tsuzuki_stats),
             icon = TsuzukiIcons.ChartLine,
             onClick = {
                 onDismissRequest()
                 onOpenStats()
             },
         )
-        PullDownDivider()
         PullDownMenuItem(
-            text = "About",
+            text = stringResource(MR.strings.pref_category_about),
             icon = TsuzukiIcons.Info,
             onClick = {
                 onDismissRequest()
@@ -95,7 +95,7 @@ fun LibraryMenuPullDown(
             },
         )
         PullDownMenuItem(
-            text = "Help",
+            text = stringResource(MR.strings.label_help),
             icon = TsuzukiIcons.BookOpen,
             onClick = {
                 onDismissRequest()

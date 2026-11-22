@@ -1,10 +1,12 @@
 package dev.errnolink.tsuzuki.designsystem
-
 import androidx.compose.animation.core.CubicBezierEasing
 import androidx.compose.animation.core.Easing
 import androidx.compose.animation.core.FiniteAnimationSpec
 import androidx.compose.animation.core.PathEasing
+import androidx.compose.animation.core.snap
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.lazy.LazyItemScope
+import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.unit.dp
 
@@ -79,4 +81,18 @@ object M3Motion {
     /** Incoming alpha for fade-through at transition [fraction] (0..1). */
     fun fadeThroughIn(fraction: Float): Float =
         ((fraction - FadeThroughThreshold) / (1f - FadeThroughThreshold)).coerceIn(0f, 1f)
+}
+
+/**
+ * Lazy item placement honouring reduced motion: placement snaps instead of sliding and the
+ * fades shorten to the reduced fade; otherwise the Compose defaults are kept exactly.
+ */
+fun LazyItemScope.animateItemRespectingMotion(reduced: Boolean): Modifier = if (reduced) {
+    Modifier.animateItem(
+        fadeInSpec = M3Motion.reducedFade<Float>(),
+        placementSpec = snap(),
+        fadeOutSpec = M3Motion.reducedFade<Float>(),
+    )
+} else {
+    Modifier.animateItem()
 }

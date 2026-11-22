@@ -22,11 +22,13 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.unit.dp
 import dev.errnolink.tsuzuki.designsystem.GripVertical
+import dev.errnolink.tsuzuki.designsystem.TsuzukiCorners
 import dev.errnolink.tsuzuki.designsystem.IconButton
 import dev.errnolink.tsuzuki.designsystem.Trash2
 import dev.errnolink.tsuzuki.designsystem.TsuzukiIcons
 import dev.errnolink.tsuzuki.designsystem.TsuzukiText
 import dev.errnolink.tsuzuki.designsystem.TsuzukiTheme
+import dev.errnolink.tsuzuki.designsystem.animateItemRespectingMotion
 import dev.errnolink.tsuzuki.ui.shell.ShellContentScaffold
 import dev.errnolink.tsuzuki.ui.shell.ShellEmpty
 import dev.errnolink.tsuzuki.ui.shell.ShellLoading
@@ -76,6 +78,8 @@ fun SourceFeedOrderContent(
                     }
                 }
 
+                val reduced = TsuzukiTheme.motion.reduced
+
                 LazyColumn(
                     flingBehavior = dev.errnolink.tsuzuki.designsystem.tsuzukiFlingBehavior(),
                     modifier = Modifier.fillMaxSize(),
@@ -94,7 +98,7 @@ fun SourceFeedOrderContent(
                     ) { feed ->
                         ReorderableItem(reorderableState, feed.feed.key) {
                             FeedOrderRow(
-                                modifier = Modifier.animateItem(),
+                                modifier = animateItemRespectingMotion(reduced),
                                 title = feed.title,
                                 onDelete = { onClickDelete(feed.feed) },
                             )
@@ -116,7 +120,7 @@ private fun ReorderableCollectionItemScope.FeedOrderRow(
     Row(
         modifier = modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(14.dp))
+            .clip(RoundedCornerShape(TsuzukiCorners.field))
             .background(colors.grouped)
             .padding(horizontal = 8.dp, vertical = 4.dp),
         verticalAlignment = Alignment.CenterVertically,

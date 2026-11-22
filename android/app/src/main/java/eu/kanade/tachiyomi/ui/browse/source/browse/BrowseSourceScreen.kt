@@ -23,7 +23,7 @@ import androidx.compose.ui.Alignment
 import dev.errnolink.tsuzuki.designsystem.ProgressRing
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.SnackbarHost
-import androidx.compose.material3.SnackbarHostState
+import dev.errnolink.tsuzuki.designsystem.ToastHostState
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -175,7 +175,7 @@ data class BrowseSourceScreen(
         val scope = rememberCoroutineScope()
         val haptic = LocalHapticFeedback.current
         val uriHandler = LocalUriHandler.current
-        val snackbarHostState = remember { SnackbarHostState() }
+        val toasts = remember { ToastHostState() }
 
         val onHelpClick = { uriHandler.openUri(LocalSource.HELP_URL) }
         val onWebViewClick = f@{
@@ -242,7 +242,8 @@ data class BrowseSourceScreen(
         ShellContentScaffold(
             title = if (bulkFavoriteState.selectionMode) "${bulkFavoriteState.selection.size} selected" else screenModel.source.name,
             navigateUp = navigateUp,
-            snackbar = snackbarHostState,
+            capContent = false,
+            toasts = toasts,
             actions = if (bulkFavoriteState.selectionMode) {
                 listOf(
                     ShellTopAction(
@@ -315,7 +316,7 @@ data class BrowseSourceScreen(
                 columns = screenModel.getColumnsPreference(LocalConfiguration.current.orientation),
 
                 displayMode = screenModel.displayMode,
-                snackbarHostState = snackbarHostState,
+                toasts = toasts,
                 contentPadding = paddingValues,
                 onWebViewClick = onWebViewClick,
                 onHelpClick = { uriHandler.openUri(Constants.URL_HELP) },

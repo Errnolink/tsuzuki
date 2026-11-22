@@ -1,8 +1,9 @@
 package dev.errnolink.tsuzuki.ui.settings
 
+import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.dp
 import eu.kanade.presentation.more.settings.Preference
 import kotlinx.collections.immutable.toImmutableList
-import tachiyomi.core.common.preference.Preference as PreferenceData
 
 internal fun List<Preference>.preferenceGroups(): List<Preference.PreferenceGroup> =
     filterIsInstance<Preference.PreferenceGroup>()
@@ -43,6 +44,13 @@ internal fun Preference.PreferenceItem<*, *>.storeKey(): String? = when (this) {
 internal fun List<Preference.PreferenceItem<out Any, out Any>>.byStoreKey(
     key: String,
 ): Preference.PreferenceItem<*, *>? = firstOrNull { it.storeKey() == key }
+
+/** S6: search highlight keys a row by its backing store key when it has one, else by its title. */
+internal fun Preference.PreferenceItem<*, *>.highlightIdentity(): String = storeKey() ?: title
+
+/** S1: section dividers start at the text edge of the row above; preference rows lead with the 24 dp icon. */
+internal fun Preference.PreferenceItem<*, *>.leadingWidthForDivider(): Dp =
+    if (icon != null) PreferenceLeadingIconWidth else 0.dp
 
 internal fun Preference.PreferenceItem<*, *>.withRetitle(newTitle: String): Preference.PreferenceItem<*, *> = when (this) {
     is Preference.PreferenceItem.SwitchPreference -> copy(title = newTitle)

@@ -2,6 +2,11 @@ package dev.errnolink.tsuzuki.ui.next
 
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.waitForUpOrCancellation
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.PressInteraction
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -10,13 +15,13 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
-import androidx.compose.ui.Alignment
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -24,10 +29,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
-import dev.errnolink.tsuzuki.designsystem.Check
-import androidx.compose.material3.Icon
 import dev.errnolink.tsuzuki.designsystem.ContinueButton
-import dev.errnolink.tsuzuki.designsystem.TsuzukiIcons
+import dev.errnolink.tsuzuki.designsystem.SelectionMark
 import dev.errnolink.tsuzuki.designsystem.TsuzukiText
 import dev.errnolink.tsuzuki.designsystem.TsuzukiTheme
 import dev.errnolink.tsuzuki.reader.readerOrigin
@@ -36,12 +39,18 @@ import dev.errnolink.tsuzuki.ui.library.LibraryTileBadgeValue
 import dev.errnolink.tsuzuki.ui.library.LibraryTileBadges
 import dev.errnolink.tsuzuki.ui.library.LibraryTileOverlays
 import dev.errnolink.tsuzuki.ui.library.resolvedBadges
+import dev.errnolink.tsuzuki.ui.library.libraryBadgeWords
 import dev.errnolink.tsuzuki.ui.shell.ShellCover
 import eu.kanade.domain.extension.interactor.GetExtensionLanguages
 import eu.kanade.tachiyomi.R
 import tachiyomi.domain.library.model.LibraryDisplayMode
 import tachiyomi.domain.manga.model.Manga
 import tachiyomi.domain.manga.model.asMangaCover
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.launch
+import tachiyomi.i18n.MR
+import tachiyomi.presentation.core.i18n.pluralStringResource
+import tachiyomi.presentation.core.i18n.stringResource
 
 fun NextLibraryAutoCellWidth(displayMode: LibraryDisplayMode): Dp = when (displayMode) {
     LibraryDisplayMode.CompactGrid -> 112.dp
@@ -63,89 +72,82 @@ fun NextLibraryTile(
     showText: Boolean = true,
     progressRing: Boolean = true,
 ) {
-    val colors = TsuzukiTheme.colors
-    Column(modifier, verticalArrangement = Arrangement.spacedBy(6.dp)) {
-        Box(Modifier.clip(RoundedCornerShape(12.dp))) {
-            ShellCover(manga.asMangaCover(), manga.title, Modifier.fillMaxWidth())
-            if (badges.unread && overlays.unread > 0) {
-                TsuzukiText(
-                    overlays.unread.toString(),
-                    Modifier
-                        .align(Alignment.TopEnd)
-                        .padding(8.dp)
-                        .clip(RoundedCornerShape(8.dp))
-                        .background(colors.accent)
-                        .padding(horizontal = 7.dp, vertical = 2.dp)
-                        .semantics { contentDescription = "${overlays.unread} unread" },
-                    TsuzukiTheme.typography.caption1.copy(fontWeight = FontWeight.SemiBold),
-                    color = colors.onAccent,
-                )
-            }
-            if (selected) {
-                Box(
-                    Modifier.align(Alignment.TopStart).padding(8.dp).size(26.dp).background(colors.accent, CircleShape),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Icon(TsuzukiIcons.Check, "Selected", Modifier.size(17.dp), tint = colors.onAccent)
+    TileCurrent(manga, progress, overlays, badges, selected, onResume, modifier, showText, progressRing)
+}
+
+@Composable
+internal fun rememberTilePressSource(): MutableInteractionSource = remember { MutableInteractionSource() }
+
+internal fun Modifier.tilePress(source: MutableInteractionSource): Modifier = pointerInput(source) {
+    coroutineScope {
+        val scope = this
+        awaitEachGesture {
+            val down = awaitFirstDown(requireUnconsumed = false)
+            val press = PressInteraction.Press(down.position)
+            scope.launch { source.emit(press) }
+            val up = waitForUpOrCancellation()
+            scope.launch {
+                if (up != null) {
+                    source.emit(PressInteraction.Release(press))
+                } else {
+                    source.emit(PressInteraction.Cancel(press))
                 }
-            }
-            val badgeValues = overlays.resolvedBadges(badges).filterNot { it.kind == LibraryTileBadgeKind.Unread }
-            if (badgeValues.isNotEmpty()) {
-                Column(
-                    Modifier.align(Alignment.BottomStart).padding(8.dp),
-                    verticalArrangement = Arrangement.spacedBy(4.dp),
-                ) {
-                    badgeValues.chunked(2).forEach { rowBadges ->
-                        Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                            rowBadges.forEach { badge ->
-                                NextTileBadgePill(badge, overlays)
-                            }
-                        }
-                    }
-                }
-            }
-            if (badges.continueButton && onResume != null) {
-                ContinueButton(
-                    progress = if (progressRing) overlays.continueProgress else null,
-                    onClick = onResume,
-                    modifier = Modifier.align(Alignment.BottomEnd).padding(2.dp).readerOrigin(),
-                    onImage = true,
-                    contentDescription = "Resume next chapter",
-                )
-            }
-        }
-        if (showText) {
-            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                TsuzukiText(
-                    manga.title,
-                    style = TsuzukiTheme.typography.subhead.copy(fontWeight = FontWeight.SemiBold),
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis,
-                )
-                TsuzukiText(
-                    progress.caption,
-                    style = TsuzukiTheme.typography.caption1,
-                    color = colors.secondary,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
             }
         }
     }
 }
 
 @Composable
-private fun NextTileBadgePill(
+internal fun TileUnreadPill(overlays: LibraryTileOverlays, modifier: Modifier = Modifier) {
+    val unreadDescription = pluralStringResource(MR.plurals.tsuzuki_num_unread, overlays.unread.toInt(), overlays.unread)
+    Box(
+        modifier
+            .clip(RoundedCornerShape(8.dp))
+            .background(TsuzukiTheme.colors.accent)
+            .padding(horizontal = 7.dp, vertical = 2.dp)
+            .semantics { contentDescription = unreadDescription },
+    ) {
+        dev.errnolink.tsuzuki.ui.library.BadgeNumberText(
+            overlays.unread.toString(),
+            TsuzukiTheme.typography.caption1.copy(fontWeight = FontWeight.SemiBold),
+            TsuzukiTheme.colors.onAccent,
+        )
+    }
+}
+
+@Composable
+internal fun TileSelectionMark(modifier: Modifier = Modifier) {
+    SelectionMark(selected = true, modifier = modifier)
+}
+
+@Composable
+internal fun TileBadgePills(overlays: LibraryTileOverlays, badges: LibraryTileBadges, modifier: Modifier = Modifier) {
+    val words = libraryBadgeWords()
+    val values = overlays.resolvedBadges(badges, words.localLabel).filterNot { it.kind == LibraryTileBadgeKind.Unread }
+    if (values.isEmpty()) return
+    Column(modifier, verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        values.chunked(2).forEach { rowBadges ->
+            Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                rowBadges.forEach { badge ->
+                    NextTileBadgePill(badge, overlays)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+internal fun NextTileBadgePill(
     badge: LibraryTileBadgeValue,
     overlays: LibraryTileOverlays,
     modifier: Modifier = Modifier,
 ) {
     val description = when (badge.kind) {
-        LibraryTileBadgeKind.Download -> "${overlays.downloads} downloads"
-        LibraryTileBadgeKind.Unread -> "${overlays.unread} unread"
-        LibraryTileBadgeKind.Local -> "Local source"
-        LibraryTileBadgeKind.Language -> "Language ${badge.label}"
-        LibraryTileBadgeKind.Source -> "Source ${badge.label}"
+        LibraryTileBadgeKind.Download -> pluralStringResource(MR.plurals.tsuzuki_num_downloads, overlays.downloads.toInt(), overlays.downloads)
+        LibraryTileBadgeKind.Unread -> pluralStringResource(MR.plurals.tsuzuki_num_unread, overlays.unread.toInt(), overlays.unread)
+        LibraryTileBadgeKind.Local -> stringResource(MR.strings.local_source)
+        LibraryTileBadgeKind.Language -> stringResource(MR.strings.tsuzuki_language_label, badge.label)
+        LibraryTileBadgeKind.Source -> stringResource(MR.strings.tsuzuki_source_label, badge.label)
     }
     Box(
         modifier = modifier

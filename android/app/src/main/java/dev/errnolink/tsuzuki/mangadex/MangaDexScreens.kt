@@ -33,6 +33,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
+import dev.errnolink.tsuzuki.ui.motion.heroFlightLabel
 import dev.errnolink.tsuzuki.ui.shell.ShellList
 import dev.errnolink.tsuzuki.ui.shell.ShellTopAction
 import dev.errnolink.tsuzuki.ui.shell.ShellMasonry
@@ -80,7 +81,7 @@ import dev.errnolink.tsuzuki.designsystem.GlassButton
 import dev.errnolink.tsuzuki.designsystem.RefreshCw
 import androidx.compose.foundation.layout.size
 import dev.errnolink.tsuzuki.designsystem.PillButton
-import dev.errnolink.tsuzuki.designsystem.ProgressRing
+import dev.errnolink.tsuzuki.designsystem.ProgressMark
 import dev.errnolink.tsuzuki.designsystem.TsuzukiCorners
 import dev.errnolink.tsuzuki.designsystem.TsuzukiIcons
 import dev.errnolink.tsuzuki.designsystem.X
@@ -519,6 +520,7 @@ private fun MangaDexMangaTile(
         }
         TsuzukiText(
             manga.title,
+            Modifier.heroFlightLabel(manga.id),
             style = TsuzukiTheme.typography.subhead,
             maxLines = 2,
             overflow = TextOverflow.Ellipsis,
@@ -793,7 +795,7 @@ class MangaDexCoverGalleryScreen(private val mangaId: Long) : Screen() {
             val favorite = state.manga?.favorite == true
             if (state.working) {
                 GlassButton(context = null, onClick = {}, enabled = false, modifier = Modifier.fillMaxWidth()) {
-                    ProgressRing(0f, "Setting cover", Modifier.size(18.dp))
+                    ProgressMark(0f, "Setting cover", Modifier.size(18.dp))
                     TsuzukiText("Setting cover…", style = TsuzukiTheme.typography.headline)
                 }
             } else {

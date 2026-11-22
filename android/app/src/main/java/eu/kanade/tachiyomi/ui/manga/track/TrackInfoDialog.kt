@@ -34,7 +34,7 @@ import cafe.adriel.voyager.navigator.currentOrThrow
 import dev.errnolink.tsuzuki.designsystem.TsuzukiCorners
 import dev.errnolink.tsuzuki.designsystem.TsuzukiIcons
 import dev.errnolink.tsuzuki.designsystem.TsuzukiTheme
-import dev.errnolink.tsuzuki.ui.details.ShimmerBox
+import dev.errnolink.tsuzuki.designsystem.Skeleton
 import dev.errnolink.tsuzuki.ui.manga.track.TrackChapterSelectorScreen as TsuzukiTrackChapterSelectorScreen
 import dev.errnolink.tsuzuki.ui.manga.track.TrackDateRemoverScreen as TsuzukiTrackDateRemoverScreen
 import dev.errnolink.tsuzuki.ui.manga.track.TrackDateSelectorScreen as TsuzukiTrackDateSelectorScreen
@@ -125,7 +125,6 @@ data class TrackInfoDialogHomeScreen(
         val context = LocalContext.current
         val dateFormat = remember { UiPreferences.dateFormat(Injekt.get<UiPreferences>().dateFormat().get()) }
         val state by screenModel.state.collectAsState()
-
         if (state.isLoading) {
             TrackingSkeleton(modifier.fillMaxWidth().padding(horizontal = 20.dp))
         } else {
@@ -503,8 +502,8 @@ private fun TrackingSkeleton(modifier: Modifier = Modifier) {
                     .padding(16.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
-                ShimmerBox(Modifier.fillMaxWidth(0.42f).height(14.dp))
-                repeat(4) { ShimmerBox(Modifier.fillMaxWidth().height(24.dp)) }
+                Skeleton(Modifier.fillMaxWidth(0.42f).height(14.dp))
+                repeat(4) { Skeleton(Modifier.fillMaxWidth().height(24.dp)) }
             }
         }
     }

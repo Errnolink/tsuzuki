@@ -10,6 +10,10 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.graphics.BlendMode
+import androidx.compose.ui.graphics.Paint
 import androidx.compose.ui.graphics.drawscope.ContentDrawScope
 import androidx.compose.ui.graphics.drawscope.scale
 import androidx.compose.ui.node.DelegatableNode
@@ -64,16 +68,24 @@ private class PressNode(
                 } else if (cover) {
                     scale.animateTo(1f, tween(motion.coverReleaseMillis))
                 } else {
-                    scale.animateTo(1f, motion.pressSpring())
+                    scale.animateTo(1f, KasaneSprings.press<Float>())
                 }
             }
         }
     }
 
     override fun ContentDrawScope.draw() {
+        if (pressed && motion.reduced) {
+            // The tint lands only on pixels the control drew (SrcAtop in its own layer), so it
+            // keeps the control's shape instead of a grey rectangle over rounded corners.
+            drawContext.canvas.saveLayer(Rect(Offset.Zero, size), Paint())
+            drawContent()
+            drawRect(Color.Gray.copy(alpha = 0.16f), blendMode = BlendMode.SrcAtop)
+            drawContext.canvas.restore()
+            return
+        }
         scale(scale.value.coerceAtMost(1f)) {
             this@draw.drawContent()
-            if (pressed && motion.reduced) drawRect(Color.Gray.copy(alpha = 0.16f))
         }
     }
 }

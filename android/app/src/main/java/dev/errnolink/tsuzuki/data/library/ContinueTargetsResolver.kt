@@ -25,7 +25,12 @@ class ContinueTargetsResolver(
 
     data class Candidate(val libraryItemId: Long, val manga: Manga)
 
-    data class TargetRow(val chapterId: Long, val lastPageRead: Long)
+    data class TargetRow(
+        val chapterId: Long,
+        val lastPageRead: Long,
+        val chapterNumber: Double,
+        val chapterName: String,
+    )
 
     data class CandidateKey(
         val libraryItemId: Long,
@@ -106,7 +111,7 @@ class ContinueTargetsResolver(
             val chapter = rowsByManga[candidate.manga.id].orEmpty()
                 .getNextUnread(candidate.manga, downloadManager, emptyMap())
                 ?: continue
-            result[candidate.libraryItemId] = TargetRow(chapter.id, chapter.lastPageRead)
+            result[candidate.libraryItemId] = TargetRow(chapter.id, chapter.lastPageRead, chapter.chapterNumber, chapter.name)
         }
         return result
     }
@@ -118,7 +123,7 @@ class ContinueTargetsResolver(
             val chapter = getMergedChaptersByMangaId.await(candidate.manga.id, applyFilter = true)
                 .getNextUnread(candidate.manga, downloadManager, mergedManga)
                 ?: continue
-            result[candidate.libraryItemId] = TargetRow(chapter.id, chapter.lastPageRead)
+            result[candidate.libraryItemId] = TargetRow(chapter.id, chapter.lastPageRead, chapter.chapterNumber, chapter.name)
         }
         return result
     }

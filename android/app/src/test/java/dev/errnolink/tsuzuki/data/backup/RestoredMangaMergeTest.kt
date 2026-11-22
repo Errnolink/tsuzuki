@@ -38,14 +38,14 @@ class RestoredMangaMergeTest {
         )
 
     @Test
-    fun `a losing restore entry keeps the library date added`() {
+    fun `a losing restore entry keeps the earliest date added`() {
         val local = manga(version = 5, dateAdded = 1_700_000_000_000, favorite = true)
         val older = manga(version = 4, dateAdded = 1_600_000_000_000)
 
         val result = RestoredMangaMerge.merge(older, local, isSync = false)
 
         assertFalse(result.backupWins)
-        assertEquals(1_700_000_000_000, result.manga.dateAdded)
+        assertEquals(1_600_000_000_000, result.manga.dateAdded)
         assertTrue(result.manga.favorite)
         assertEquals(5, result.manga.version)
     }
@@ -59,14 +59,14 @@ class RestoredMangaMergeTest {
     }
 
     @Test
-    fun `a winning backup entry keeps a stored date added over an older one`() {
+    fun `a winning backup entry keeps the earliest date added`() {
         val local = manga(version = 4, dateAdded = 1_700_000_000_000)
         val newer = manga(version = 5, dateAdded = 1_600_000_000_000)
 
         val result = RestoredMangaMerge.merge(newer, local, isSync = false)
 
         assertTrue(result.backupWins)
-        assertEquals(1_700_000_000_000, result.manga.dateAdded)
+        assertEquals(1_600_000_000_000, result.manga.dateAdded)
     }
 
     @Test
@@ -89,6 +89,17 @@ class RestoredMangaMergeTest {
 
         assertTrue(result.backupWins)
         assertTrue(result.manga.favorite)
+    }
+
+    @Test
+    fun `a sync reply keeps the stored date added outright`() {
+        val local = manga(version = 5, dateAdded = 1_700_000_000_000)
+        val newerHub = manga(version = 6, dateAdded = 1_600_000_000_000)
+
+        val result = RestoredMangaMerge.merge(newerHub, local, isSync = true)
+
+        assertTrue(result.backupWins)
+        assertEquals(1_700_000_000_000, result.manga.dateAdded)
     }
 
     @Test

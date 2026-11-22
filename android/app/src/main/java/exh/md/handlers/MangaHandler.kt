@@ -1,6 +1,7 @@
 package exh.md.handlers
 
 import dev.errnolink.tsuzuki.mangadex.MangaDexSharedFetch
+import dev.errnolink.tsuzuki.mangadex.MangaDexUpdatePrefetch
 import eu.kanade.tachiyomi.data.database.models.Track
 import eu.kanade.tachiyomi.source.model.SChapter
 import eu.kanade.tachiyomi.source.model.SManga
@@ -30,14 +31,17 @@ class MangaHandler(
         altTitlesInDesc: Boolean,
         finalChapterInDesc: Boolean,
         preferExtensionLangTitle: Boolean,
+        simpleChapters: List<String>? = null,
     ): SManga {
         return coroutineScope {
             val mangaId = MdUtil.getMangaId(manga.url)
-            val response = async(Dispatchers.IO) { MangaDexSharedFetch.viewManga(service.client, mangaId) }
-            val simpleChapters = async(Dispatchers.IO) { getSimpleChapters(manga) }
+            val prefetched = MangaDexUpdatePrefetch.takeManga(mangaId)
+            val prefetchedStatistics = MangaDexUpdatePrefetch.takeStatistics(mangaId)
+            val response = async(Dispatchers.IO) { prefetched ?: MangaDexSharedFetch.viewManga(service.client, mangaId) }
+            val simpleChaptersDef = async(Dispatchers.IO) { simpleChapters ?: getSimpleChapters(manga) }
             val statistics =
                 async(Dispatchers.IO) {
-                    kotlin.runCatching { service.mangasRating(mangaId) }.getOrNull()?.statistics?.get(mangaId)
+                    prefetchedStatistics ?: kotlin.runCatching { service.mangasRating(mangaId) }.getOrNull()?.statistics?.get(mangaId)
                 }
             val responseData = response.await()
             val coverFileName = if (tryUsingFirstVolumeCover) {
@@ -51,7 +55,7 @@ class MangaHandler(
                 manga,
                 sourceId,
                 responseData,
-                simpleChapters.await(),
+                simpleChaptersDef.await(),
                 statistics.await(),
                 coverFileName?.await(),
                 altTitlesInDesc,
@@ -97,23 +101,29 @@ class MangaHandler(
         blockedUploaders: String,
         languages: List<String>,
         includeUnavailable: Boolean,
-    ): List<SChapter> {
+    ): List<SChapter> = getChapterListWithNumbers(manga, blockedGroups, blockedUploaders, languages, includeUnavailable).first
+
+    /** The chapter list plus its raw chapter numbers ("12", "12.5"), which stand in for the aggregate. */
+    suspend fun getChapterListWithNumbers(
+        manga: SManga,
+        blockedGroups: String,
+        blockedUploaders: String,
+        languages: List<String>,
+        includeUnavailable: Boolean,
+    ): Pair<List<SChapter>, List<String>> {
         return withIOContext {
-            if (languages.isEmpty()) return@withIOContext emptyList()
-            val results = mdListCall {
-                service.viewChapters(
-                    MdUtil.getMangaId(manga.url),
-                    languages,
-                    it,
-                    blockedGroups,
-                    blockedUploaders,
-                    includeUnavailable,
-                )
+            if (languages.isEmpty()) return@withIOContext emptyList<SChapter>() to emptyList()
+            val mangaId = MdUtil.getMangaId(manga.url)
+            suspend fun fetch(withUnavailable: Boolean) = mdListCall {
+                service.viewChapters(mangaId, languages, it, blockedGroups, blockedUploaders, withUnavailable)
+            }
+            val results = fetch(includeUnavailable).ifEmpty {
+                if (includeUnavailable) emptyList() else fetch(withUnavailable = true)
             }
 
-            val mangaId = MdUtil.getMangaId(manga.url)
             MangaDexArtworkStore.saveChapters(mangaId, results)
-            apiMangaParser.chapterListParse(results, getGroupMap(results), languages.size > 1)
+            apiMangaParser.chapterListParse(results, getGroupMap(results), languages.size > 1) to
+                results.mapNotNull { it.attributes.chapter }.distinct()
         }
     }
 

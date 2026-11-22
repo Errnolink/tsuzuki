@@ -99,7 +99,7 @@ fun Screen.sourcesTab(
             }
         },
         // SY <--
-        content = { contentPadding, snackbarHostState ->
+        content = { contentPadding, toasts ->
             SourcesScreen(
                 state = state,
                 contentPadding = contentPadding,
@@ -175,7 +175,7 @@ fun Screen.sourcesTab(
                 screenModel.events.collectLatest { event ->
                     when (event) {
                         SourcesScreenModel.Event.FailedFetchingSources -> {
-                            launch { snackbarHostState.showSnackbar(internalErrString) }
+                            toasts.show(internalErrString)
                         }
                     }
                 }

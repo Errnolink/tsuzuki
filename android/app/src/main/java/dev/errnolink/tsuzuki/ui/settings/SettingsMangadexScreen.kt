@@ -14,8 +14,8 @@ import tachiyomi.core.common.preference.AndroidPreferenceStore
 import androidx.compose.foundation.Image
 import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.foundation.layout.size
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.PeopleAlt
+import dev.errnolink.tsuzuki.designsystem.TsuzukiIcons
+import dev.errnolink.tsuzuki.designsystem.Users
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.ReadOnlyComposable
 import androidx.compose.runtime.getValue
@@ -41,6 +41,7 @@ import exh.md.utils.MdUtil
 import kotlinx.collections.immutable.toImmutableMap
 import logcat.LogPriority
 import tachiyomi.core.common.util.lang.launchIO
+import tachiyomi.core.common.util.lang.launchNonCancellable
 import tachiyomi.core.common.util.lang.withUIContext
 import tachiyomi.core.common.util.system.logcat
 import tachiyomi.i18n.MR
@@ -214,7 +215,7 @@ object TsuzukiSettingsMangadexScreen : SearchableSettings {
                     "On adding to library",
                 ),
                 Preference.PreferenceItem.MultiSelectListPreference(
-                    parity.autoTrackServices(),
+                    parity.autoTrackEnabledServices(),
                     mapOf("al" to "AniList", "mal" to "MyAnimeList", "kt" to "Kitsu", "mu" to "MangaUpdates").toImmutableMap(),
                     "Auto-add linked trackers",
                 ),
@@ -328,7 +329,7 @@ object TsuzukiSettingsMangadexScreen : SearchableSettings {
                     divider = false,
                     leading = {
                         Image(
-                            imageVector = Icons.Outlined.PeopleAlt,
+                            imageVector = TsuzukiIcons.Users,
                             contentDescription = null,
                             modifier = Modifier.size(24.dp),
                             colorFilter = ColorFilter.tint(dev.errnolink.tsuzuki.designsystem.TsuzukiTheme.colors.secondary),
@@ -429,6 +430,7 @@ object TsuzukiSettingsMangadexScreen : SearchableSettings {
     @Composable
     fun syncMangaDexIntoThis(sourcePreferences: SourcePreferences): Preference.PreferenceItem.TextPreference {
         val context = LocalContext.current
+        val scope = rememberCoroutineScope()
         var dialogOpen by remember { mutableStateOf(false) }
         if (dialogOpen) {
             SyncMangaDexDialog(
@@ -439,10 +441,12 @@ object TsuzukiSettingsMangadexScreen : SearchableSettings {
                     sourcePreferences.mangadexSyncToLibraryIndexes().set(
                         items.mapNotNull { item -> options.indexOf(item).takeIf { it >= 0 }?.let { (it + 1).toString() } }.toSet(),
                     )
-                    LibraryUpdateJob.startNow(
-                        context,
-                        target = LibraryUpdateJob.Target.SYNC_FOLLOWS,
-                    )
+                    scope.launchNonCancellable {
+                        LibraryUpdateJob.startNow(
+                            context,
+                            target = LibraryUpdateJob.Target.SYNC_FOLLOWS,
+                        )
+                    }
                 },
             )
         }
@@ -456,14 +460,17 @@ object TsuzukiSettingsMangadexScreen : SearchableSettings {
     @Composable
     fun syncLibraryToMangaDex(): Preference.PreferenceItem.TextPreference {
         val context = LocalContext.current
+        val scope = rememberCoroutineScope()
         return Preference.PreferenceItem.TextPreference(
             title = stringResource(SYMR.strings.mangadex_push_favorites_to_mangadex),
             subtitle = stringResource(SYMR.strings.mangadex_push_favorites_to_mangadex_summary),
             onClick = {
-                LibraryUpdateJob.startNow(
-                    context,
-                    target = LibraryUpdateJob.Target.PUSH_FAVORITES,
-                )
+                scope.launchNonCancellable {
+                    LibraryUpdateJob.startNow(
+                        context,
+                        target = LibraryUpdateJob.Target.PUSH_FAVORITES,
+                    )
+                }
             },
         )
     }

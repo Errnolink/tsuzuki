@@ -66,7 +66,10 @@ class TrackingSyncJob(context: Context, params: WorkerParameters) : CoroutineWor
                 completed = done
                 failed = failures
                 setProgress(progressData())
-                setForeground(getForegroundInfo())
+                try {
+                    setForeground(getForegroundInfo())
+                } catch (_: IllegalStateException) {
+                }
             },
         )
         completed = summary.completed

@@ -1,11 +1,5 @@
 package dev.errnolink.tsuzuki.ui.details
 
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.core.snap
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.slideInVertically
-import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -42,11 +36,15 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.foundation.layout.size
 import dev.errnolink.tsuzuki.designsystem.DetentSheet
 import dev.errnolink.tsuzuki.designsystem.GlassContext
+import dev.errnolink.tsuzuki.designsystem.TsuzukiCorners
 import dev.errnolink.tsuzuki.designsystem.GlassSurface
 import dev.errnolink.tsuzuki.designsystem.GroupedRow
-import dev.errnolink.tsuzuki.designsystem.PillButton
 import dev.errnolink.tsuzuki.designsystem.TsuzukiText
+import dev.errnolink.tsuzuki.designsystem.PillButton
 import dev.errnolink.tsuzuki.designsystem.TsuzukiTheme
+import dev.errnolink.tsuzuki.designsystem.minimumTouchTarget
+import tachiyomi.i18n.MR
+import tachiyomi.presentation.core.i18n.stringResource
 import kotlinx.coroutines.delay
 
 @Composable
@@ -83,19 +81,28 @@ internal fun DetailLabeledAction(
 ) {
     val expand = LocalDensity.current.fontScale >= 1.5f
     Column(
-        modifier.clip(RoundedCornerShape(50))
-            .background(if (active) TsuzukiTheme.colors.accent.copy(alpha = 0.22f) else Color.Transparent)
-            .clickable(role = Role.Button, onClick = onClick).padding(horizontal = 4.dp, vertical = 8.dp),
+        modifier
+            .minimumTouchTarget()
+            .clickable(role = Role.Button, onClick = onClick),
         horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(4.dp),
     ) {
-        Icon(icon, null, Modifier.size(22.dp), tint = TsuzukiTheme.colors.text)
-        TsuzukiText(
-            label,
-            style = TsuzukiTheme.typography.caption1.copy(textAlign = TextAlign.Center),
-            maxLines = if (expand) 2 else 1,
-            overflow = TextOverflow.Ellipsis,
-        )
+        // the tinted capsule stays hugging the icon+label inside the 48 dp hit box
+        Column(
+            Modifier
+                .clip(RoundedCornerShape(TsuzukiCorners.capsulePercent))
+                .background(if (active) TsuzukiTheme.colors.accent.copy(alpha = 0.22f) else Color.Transparent)
+                .padding(horizontal = 4.dp, vertical = 8.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(4.dp),
+        ) {
+            Icon(icon, null, Modifier.size(22.dp), tint = TsuzukiTheme.colors.text)
+            TsuzukiText(
+                label,
+                style = TsuzukiTheme.typography.caption1.copy(textAlign = TextAlign.Center),
+                maxLines = if (expand) 2 else 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
     }
 }
 
@@ -122,7 +129,7 @@ fun DetailField(
             keyboardOptions = keyboardOptions,
             textStyle = TsuzukiTheme.typography.body.copy(color = TsuzukiTheme.colors.text),
             cursorBrush = SolidColor(TsuzukiTheme.colors.accent),
-            modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp))
+            modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(TsuzukiCorners.field))
                 .background(TsuzukiTheme.colors.elevated).padding(14.dp)
                 .semantics { contentDescription = label },
         )
@@ -131,7 +138,7 @@ fun DetailField(
 
 @Composable
 fun DetailChoice(label: String, selected: Boolean, onClick: () -> Unit, enabled: Boolean = true) {
-    GroupedRow(label, value = if (selected) "Selected" else null, onClick = onClick, enabled = enabled)
+    GroupedRow(label, value = if (selected) stringResource(MR.strings.tsuzuki_selected) else null, onClick = onClick, enabled = enabled)
 }
 
 @Composable

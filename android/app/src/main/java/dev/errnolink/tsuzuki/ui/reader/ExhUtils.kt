@@ -25,11 +25,11 @@ import dev.errnolink.tsuzuki.designsystem.ContextMenuAction
 import dev.errnolink.tsuzuki.designsystem.DetentSheet
 import dev.errnolink.tsuzuki.designsystem.GlassMenu
 import dev.errnolink.tsuzuki.designsystem.GroupedRow
-import dev.errnolink.tsuzuki.designsystem.SheetDetent
 import dev.errnolink.tsuzuki.designsystem.TsuzukiText
 import dev.errnolink.tsuzuki.designsystem.TsuzukiTheme
 import tachiyomi.i18n.sy.SYMR
 import tachiyomi.presentation.core.i18n.stringResource
+import tachiyomi.i18n.MR
 
 @Composable
 fun ExhUtils(
@@ -46,7 +46,7 @@ fun ExhUtils(
     onClickBoostPage: () -> Unit,
     onClickBoostPageHelp: () -> Unit,
 ) {
-    DetentSheet(isVisible, "Reader tools", { onSetExhUtilsVisibility(false) }, initialDetent = SheetDetent.FitContent) {
+    DetentSheet(isVisible, stringResource(MR.strings.tsuzuki_reader_tools), { onSetExhUtilsVisibility(false) }) {
         GroupedRow(stringResource(SYMR.strings.eh_autoscroll), checked = isAutoScroll, onCheckedChange = onToggleAutoscroll, enabled = isAutoScrollEnabled)
         var helpExpanded by remember { mutableStateOf(false) }
         IntervalStepperRow(autoScrollFrequency, onSetAutoScrollFrequency)
@@ -54,10 +54,10 @@ fun ExhUtils(
         GroupedRow(stringResource(SYMR.strings.eh_retry_all), onClick = onClickRetryAll)
         GroupedRow(stringResource(SYMR.strings.eh_boost_page), onClick = onClickBoostPage)
         Box {
-            GroupedRow("Help", chevron = true, onClick = { helpExpanded = true })
+            GroupedRow(stringResource(MR.strings.label_help), chevron = true, onClick = { helpExpanded = true })
             GlassMenu(
                 expanded = helpExpanded,
-                label = "Help",
+                label = stringResource(MR.strings.label_help),
                 listOf(
                     ContextMenuAction(stringResource(SYMR.strings.eh_autoscroll_help)) { helpExpanded = false; onClickAutoScrollHelp() },
                     ContextMenuAction(stringResource(SYMR.strings.eh_retry_all_help)) { helpExpanded = false; onClickRetryAllHelp() },
@@ -78,8 +78,8 @@ private fun IntervalStepperRow(frequency: String, onSet: (String) -> Unit) {
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        TsuzukiText("Interval", Modifier.weight(1f))
-        StepperButton("Decrease interval") {
+        TsuzukiText(stringResource(MR.strings.tsuzuki_interval), Modifier.weight(1f))
+        StepperButton(stringResource(MR.strings.tsuzuki_decrease_interval), decrease = true) {
             onSet(formatInterval((seconds - 0.5).coerceAtLeast(0.5)))
         }
         TsuzukiText(
@@ -87,7 +87,7 @@ private fun IntervalStepperRow(frequency: String, onSet: (String) -> Unit) {
             style = TsuzukiTheme.typography.subhead,
             color = TsuzukiTheme.colors.text,
         )
-        StepperButton("Increase interval") {
+        StepperButton(stringResource(MR.strings.tsuzuki_increase_interval), decrease = false) {
             onSet(formatInterval((seconds + 0.5).coerceAtMost(60.0)))
         }
     }
@@ -97,7 +97,7 @@ private fun formatInterval(value: Double): String =
     if (value == value.toLong().toDouble()) value.toLong().toString() else value.toString()
 
 @Composable
-private fun StepperButton(label: String, onClick: () -> Unit) {
+private fun StepperButton(label: String, decrease: Boolean, onClick: () -> Unit) {
     Box(
         Modifier
             .sizeIn(minWidth = 48.dp, minHeight = 48.dp)
@@ -111,7 +111,7 @@ private fun StepperButton(label: String, onClick: () -> Unit) {
                 .background(TsuzukiTheme.colors.elevated),
             contentAlignment = Alignment.Center,
         ) {
-            TsuzukiText(if (label.startsWith("Decrease")) "−" else "+", style = TsuzukiTheme.typography.headline, color = TsuzukiTheme.colors.text)
+            TsuzukiText(if (decrease) "−" else "+", style = TsuzukiTheme.typography.headline, color = TsuzukiTheme.colors.text)
         }
     }
 }

@@ -22,6 +22,8 @@ import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.transform
 
 class AndroidDatabaseHandler(
     val db: Database,
@@ -33,6 +35,7 @@ class AndroidDatabaseHandler(
     val suspendingTransactionId = ThreadLocal<Int>()
 
     private val holds = MutableStateFlow(0)
+    private val paces = MutableStateFlow(0)
 
     override suspend fun <T> holdingSubscriptions(block: suspend () -> T): T {
         holds.update { it + 1 }
@@ -40,6 +43,15 @@ class AndroidDatabaseHandler(
             return block()
         } finally {
             holds.update { it - 1 }
+        }
+    }
+
+    override suspend fun <T> pacingSubscriptions(block: suspend () -> T): T {
+        paces.update { it + 1 }
+        try {
+            return block()
+        } finally {
+            paces.update { it - 1 }
         }
     }
 
@@ -53,6 +65,13 @@ class AndroidDatabaseHandler(
                 .filterNotNull(),
         )
     }
+        // Paced: emit a change at once, then hold the pipeline for the window; changes in between
+        // collapse into the latest one.
+        .conflate()
+        .transform { query ->
+            emit(query)
+            if (paces.value > 0) delay(SUBSCRIPTION_PACE_MILLIS)
+        }
 
     override suspend fun <T> await(inTransaction: Boolean, block: suspend Database.() -> T): T {
         return dispatch(inTransaction, block)
@@ -160,3 +179,5 @@ class AndroidDatabaseHandler(
         return withContext(context) { block(db) }
     }
 }
+
+private const val SUBSCRIPTION_PACE_MILLIS = 2_000L

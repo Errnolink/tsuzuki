@@ -15,6 +15,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import dev.errnolink.tsuzuki.designsystem.Banner
 import dev.errnolink.tsuzuki.designsystem.DetentSheet
+import dev.errnolink.tsuzuki.designsystem.SheetKind
 import dev.errnolink.tsuzuki.designsystem.GroupedRow
 import dev.errnolink.tsuzuki.designsystem.NoticeTone
 import dev.errnolink.tsuzuki.designsystem.PillButton
@@ -105,7 +106,7 @@ fun FeedAddDialog(sources: ImmutableList<Source>, onDismiss: () -> Unit, onClick
     var query by remember { mutableStateOf("") }
     var selected by remember { mutableStateOf<Long?>(null) }
     val matches = remember(sources, query) { sources.filter { it.name.contains(query, true) || it.id.toString() == query } }
-    DetentSheet(true, stringResource(SYMR.strings.feed), onDismiss) {
+    DetentSheet(true, stringResource(SYMR.strings.feed), onDismiss, kind = SheetKind.BrowseList) {
         SearchField(query, { query = it }, {}, placeholder = "Search sources")
         GroupedRow("All sources", value = if (selected == null) "Selected" else null, onClick = { selected = null })
         matches.forEach { source ->
@@ -123,7 +124,7 @@ fun FeedAddSearchDialog(
     onClickAdd: (Source, SavedSearch?) -> Unit,
 ) {
     var selected by remember(savedSearches) { mutableStateOf<Int?>(null) }
-    DetentSheet(true, source.name, onDismiss) {
+    DetentSheet(true, source.name, onDismiss, kind = SheetKind.Picker) {
         savedSearches.forEachIndexed { index, search ->
             GroupedRow(
                 title = search?.name ?: stringResource(if (source.supportsLatest) MR.strings.latest else MR.strings.popular),

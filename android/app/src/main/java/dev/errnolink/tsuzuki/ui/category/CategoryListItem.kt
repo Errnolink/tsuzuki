@@ -53,6 +53,7 @@ import dev.errnolink.tsuzuki.designsystem.TsuzukiSpacing
 import dev.errnolink.tsuzuki.designsystem.TsuzukiText
 import dev.errnolink.tsuzuki.designsystem.TsuzukiTheme
 import dev.errnolink.tsuzuki.designsystem.insetDivider
+import dev.errnolink.tsuzuki.designsystem.TsuzukiSize
 import dev.errnolink.tsuzuki.ui.shell.ShellAction
 import sh.calvin.reorderable.ReorderableCollectionItemScope
 import tachiyomi.domain.category.model.Category
@@ -84,7 +85,7 @@ fun ReorderableCollectionItemScope.CategoryListItem(
             .padding(horizontal = 8.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Box(Modifier.size(48.dp), contentAlignment = Alignment.Center) {
+        Box(Modifier.size(TsuzukiSize.touch), contentAlignment = Alignment.Center) {
             Icon(
                 TsuzukiIcons.GripVertical,
                 stringResource(MR.strings.tsuzuki_reorder_category),

@@ -55,10 +55,30 @@ class BackupDecoder(
     /**
      * Decode the entries of a potentially-gzipped backup one at a time.
      */
-    fun decodeEntries(uri: Uri): Flow<BackupManga> = flow {
+    fun decodeEntries(
+        uri: Uri,
+        onDamagedEntry: ((Throwable) -> Unit)? = null,
+    ): Flow<BackupManga> = flow {
         read(uri) { reader ->
             while (orInvalid { reader.nextEntry() }) {
-                emit(orInvalid { reader.readEntry() })
+                val entry = try {
+                    reader.readEntry()
+                } catch (e: SerializationException) {
+                    if (onDamagedEntry != null) {
+                        onDamagedEntry(e)
+                        null
+                    } else {
+                        throw e
+                    }
+                } catch (e: IOException) {
+                    if (onDamagedEntry != null && e.cause is SerializationException) {
+                        onDamagedEntry(e.cause ?: e)
+                        null
+                    } else {
+                        throw e
+                    }
+                }
+                if (entry != null) emit(entry)
             }
         }
     }

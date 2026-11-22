@@ -23,6 +23,7 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.Icon
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -34,13 +35,21 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import dev.errnolink.tsuzuki.designsystem.CapsuleRestRadius
 import dev.errnolink.tsuzuki.designsystem.GlassContext
 import dev.errnolink.tsuzuki.designsystem.GlassMaterial
 import dev.errnolink.tsuzuki.designsystem.GlassSurface
+import dev.errnolink.tsuzuki.designsystem.LocalGlassContext
+import dev.errnolink.tsuzuki.designsystem.LocalMenuMorphSource
 import dev.errnolink.tsuzuki.designsystem.M3Motion
 import dev.errnolink.tsuzuki.designsystem.TsuzukiText
 import dev.errnolink.tsuzuki.designsystem.TsuzukiTheme
+import dev.errnolink.tsuzuki.designsystem.menuMorphSource
+import dev.errnolink.tsuzuki.designsystem.menuScrubLauncher
 import dev.errnolink.tsuzuki.designsystem.pressScale
+import dev.errnolink.tsuzuki.designsystem.pressShapeScale
+import dev.errnolink.tsuzuki.designsystem.rememberMenuMorphSource
+import dev.errnolink.tsuzuki.designsystem.rememberPressShapeState
 
 private val PillHeight = 48.dp
 
@@ -59,13 +68,32 @@ fun NextTitlePill(
     val colors = TsuzukiTheme.colors
     val reduced = TsuzukiTheme.motion.reduced
     val interaction = remember { MutableInteractionSource() }
-    Box(modifier) {
-        GlassSurface(
-            context = glass,
-            shape = CircleShape,
-            material = GlassMaterial.Thick,
-            modifier = Modifier.height(PillHeight).widthIn(max = maxWidth).pressScale(interaction),
-        ) {
+    val pressState = rememberPressShapeState(interaction, restRadius = CapsuleRestRadius)
+    // The whole pill is the menu's liquid source, and a press-and-hold opens the menu so the same
+    // finger can drag-select its rows.
+    val morphSource = rememberMenuMorphSource()
+    CompositionLocalProvider(
+        LocalMenuMorphSource provides morphSource,
+        LocalGlassContext provides (glass ?: LocalGlassContext.current),
+    ) {
+        Box(modifier) {
+            GlassSurface(
+                context = glass,
+                shape = if (pressState.enabled) pressState.shape else CircleShape,
+                material = GlassMaterial.Thick,
+                modifier = Modifier
+                    .height(PillHeight)
+                    .widthIn(max = maxWidth)
+                    .menuMorphSource(morphSource)
+                    .menuScrubLauncher(morphSource, onOpen = onClick)
+                    .then(
+                        if (pressState.enabled) {
+                            Modifier.pressShapeScale(pressState)
+                        } else {
+                            Modifier.pressScale(interaction)
+                        },
+                    ),
+            ) {
             Row(
                 Modifier
                     .fillMaxHeight()
@@ -84,7 +112,8 @@ fun NextTitlePill(
                         if (reduced) {
                             fadeIn(snap()) togetherWith fadeOut(snap())
                         } else {
-                            fadeIn(tween(M3Motion.Short4, delayMillis = M3Motion.Short2)) togetherWith fadeOut(tween(M3Motion.Short2))
+                            (fadeIn(tween(M3Motion.Short3)) togetherWith fadeOut(tween(M3Motion.Short3)))
+                                .using(androidx.compose.animation.SizeTransform(clip = false))
                         }
                     },
                     label = "Next title pill",
@@ -110,5 +139,6 @@ fun NextTitlePill(
             }
         }
         menu()
+        }
     }
 }

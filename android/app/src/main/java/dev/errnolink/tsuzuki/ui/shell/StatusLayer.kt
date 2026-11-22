@@ -36,9 +36,14 @@ import cafe.adriel.voyager.navigator.LocalNavigator
 import cafe.adriel.voyager.navigator.currentOrThrow
 import dev.errnolink.tsuzuki.designsystem.GlassMaterial
 import dev.errnolink.tsuzuki.designsystem.GlassSurface
+import dev.errnolink.tsuzuki.designsystem.LocalWindowWidthClass
 import dev.errnolink.tsuzuki.designsystem.M3Motion
 import dev.errnolink.tsuzuki.designsystem.ProgressRing
 import dev.errnolink.tsuzuki.designsystem.TsuzukiText
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.asPaddingValues
+import androidx.compose.foundation.layout.navigationBars
+import dev.errnolink.tsuzuki.designsystem.WindowWidthClass
 import dev.errnolink.tsuzuki.designsystem.TsuzukiTheme
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.coroutineScope
@@ -100,7 +105,12 @@ fun Flow<Boolean>.statusPillVisibility(
 
 @Composable
 fun statusBottomInset(): Dp {
-    val shell = LocalShellBottomPadding.current
+    val rail = LocalWindowWidthClass.current != WindowWidthClass.Compact
+    val shell = if (rail) {
+        WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding() + 16.dp
+    } else {
+        LocalShellBottomPadding.current
+    }
     val state = LocalStatusLayer.current ?: return shell
     if (state.heightPx <= 0) return shell
     val pill = with(LocalDensity.current) { state.heightPx.toDp() }
@@ -108,7 +118,7 @@ fun statusBottomInset(): Dp {
 }
 
 @Composable
-fun Modifier.statusSnackbarPadding(): Modifier {
+fun Modifier.statusToastPadding(): Modifier {
     val inset = statusBottomInset() + 8.dp
     val motion = TsuzukiTheme.motion
     val animated by animateDpAsState(
@@ -179,7 +189,13 @@ fun StatusPill(modifier: Modifier = Modifier) {
     AnimatedVisibility(
         visible = visible,
         modifier = modifier
-            .padding(bottom = LocalShellBottomPadding.current + 8.dp)
+            .padding(
+                bottom = if (LocalWindowWidthClass.current != WindowWidthClass.Compact) {
+                    WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding() + 16.dp
+                } else {
+                    LocalShellBottomPadding.current + 8.dp
+                },
+            )
             .widthIn(max = 280.dp),
         enter = if (motion.reduced) {
             fadeIn(M3Motion.reducedFade())

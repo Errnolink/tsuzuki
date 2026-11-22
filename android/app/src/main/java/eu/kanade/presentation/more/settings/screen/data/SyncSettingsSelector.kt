@@ -6,6 +6,7 @@ import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import cafe.adriel.voyager.core.model.StateScreenModel
+import cafe.adriel.voyager.core.model.screenModelScope
 import cafe.adriel.voyager.core.model.rememberScreenModel
 import cafe.adriel.voyager.navigator.LocalNavigator
 import cafe.adriel.voyager.navigator.currentOrThrow
@@ -14,6 +15,7 @@ import eu.kanade.domain.sync.models.SyncSettings
 import eu.kanade.presentation.components.AppBar
 import eu.kanade.presentation.util.Screen
 import eu.kanade.tachiyomi.data.backup.create.BackupOptions
+import tachiyomi.core.common.util.lang.launchIO
 import eu.kanade.tachiyomi.data.sync.SyncDataJob
 import kotlinx.collections.immutable.ImmutableList
 import kotlinx.coroutines.flow.update
@@ -67,7 +69,7 @@ private class SyncSettingsSelectorModel(
     }
 
     fun syncNow(context: Context) {
-        SyncDataJob.startNow(context)
+        screenModelScope.launchIO { SyncDataJob.startNow(context) }
     }
 
     @Immutable

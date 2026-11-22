@@ -112,7 +112,7 @@ class SyncDataJob(private val context: Context, workerParams: WorkerParameters) 
         // KMK <--
         private val syncLock = Mutex()
 
-        fun isRunning(context: Context): Boolean {
+        suspend fun isRunning(context: Context): Boolean {
             return context.workManager.isRunning(TAG_JOB)
         }
 
@@ -140,7 +140,7 @@ class SyncDataJob(private val context: Context, workerParams: WorkerParameters) 
             }
         }
 
-        fun startNow(context: Context, manual: Boolean = false, delaySeconds: Long = if (manual) 0 else PUSH_DELAY_SECONDS) {
+        suspend fun startNow(context: Context, manual: Boolean = false, delaySeconds: Long = if (manual) 0 else PUSH_DELAY_SECONDS) {
             val wm = context.workManager
             if (wm.isRunning(TAG_JOB)) {
                 // KMK -->

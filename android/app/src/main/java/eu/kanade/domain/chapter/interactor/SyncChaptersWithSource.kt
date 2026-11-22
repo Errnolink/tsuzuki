@@ -85,25 +85,29 @@ class SyncChaptersWithSource(
         // to a higher value than newer chapters
         var maxSeenUploadDate = 0L
 
-        for (sourceChapter in sourceChapters) {
-            var chapter = sourceChapter
+        val preparedSourceChapters = dev.errnolink.tsuzuki.domain.VolumeAwareChapterRecognition.resolveWithNeighbours(
+            sourceChapters.map { sourceChapter ->
+                var chapter = sourceChapter
 
-            // Update metadata from source if necessary.
-            if (source is HttpSource) {
-                val sChapter = chapter.toSChapter()
-                @Suppress("DEPRECATION")
-                source.prepareNewChapter(sChapter, manga.toSManga())
-                chapter = chapter.copyFromSChapter(sChapter)
-            }
+                // Update metadata from source if necessary.
+                if (source is HttpSource) {
+                    val sChapter = chapter.toSChapter()
+                    @Suppress("DEPRECATION")
+                    source.prepareNewChapter(sChapter, manga.toSManga())
+                    chapter = chapter.copyFromSChapter(sChapter)
+                }
 
-            // Recognize chapter number for the chapter.
-            val chapterNumber = ChapterRecognition.parseChapterNumber(
-                manga.title,
-                chapter.name,
-                chapter.chapterNumber,
-            )
-            chapter = chapter.copy(chapterNumber = chapterNumber)
+                // Recognize chapter number for the chapter.
+                val chapterNumber = ChapterRecognition.parseChapterNumber(
+                    manga.title,
+                    chapter.name,
+                    chapter.chapterNumber,
+                )
+                chapter.copy(chapterNumber = chapterNumber)
+            },
+        )
 
+        for (chapter in preparedSourceChapters) {
             val dbChapter = dbChapters.find { it.url == chapter.url }
 
             if (dbChapter == null) {
@@ -111,7 +115,7 @@ class SyncChaptersWithSource(
                     val altDateUpload = if (maxSeenUploadDate == 0L) nowMillis else maxSeenUploadDate
                     chapter.copy(dateUpload = altDateUpload)
                 } else {
-                    maxSeenUploadDate = max(maxSeenUploadDate, sourceChapter.dateUpload)
+                    maxSeenUploadDate = max(maxSeenUploadDate, chapter.dateUpload)
                     chapter
                 }
                 newChapters.add(toAddChapter)
@@ -228,12 +232,8 @@ class SyncChaptersWithSource(
             val chapterUpdates = updatedChapters.map { it.toChapterUpdate() }
             updateChapter.awaitAll(chapterUpdates)
         }
-        updateManga.awaitUpdateFetchInterval(manga, now, fetchWindow)
+        updateManga.awaitUpdateFetchIntervalAndLastUpdate(manga, now, fetchWindow)
         mangaDexStatus.pull(manga)
-
-        // Set this manga as updated since chapters were changed
-        // Note that last_update actually represents last time the chapter list changed at all
-        updateManga.awaitUpdateLastUpdate(manga.id)
 
         val excludedScanlators = getExcludedScanlators.awaitFilteredCombinations(manga.id)
 

@@ -4,6 +4,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -13,11 +14,14 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import dev.errnolink.tsuzuki.designsystem.TsuzukiIcons
 import dev.errnolink.tsuzuki.designsystem.TsuzukiText
 import dev.errnolink.tsuzuki.designsystem.TsuzukiTheme
 import dev.errnolink.tsuzuki.ui.details.DetailIcon
+import tachiyomi.i18n.MR
+import tachiyomi.presentation.core.i18n.stringResource
 
 @Composable
 fun ChapterNavigator(
@@ -34,23 +38,28 @@ fun ChapterNavigator(
     val haptics = TsuzukiTheme.haptics
     var preview by remember { mutableStateOf<Int?>(null) }
     var showJump by remember { mutableStateOf(false) }
-    val readout = if (totalPages > 0) "${preview?.toString() ?: currentPageText} of $totalPages" else "No pages"
+    val readout = if (totalPages > 0) "${preview ?: currentPageText} / $totalPages" else stringResource(MR.strings.tsuzuki_no_pages)
     val pageReadout: @Composable () -> Unit = {
         TsuzukiText(
             readout,
             Modifier.clickable(enabled = enabled && totalPages > 0, role = Role.Button, onClick = { showJump = true })
-                .padding(horizontal = 12.dp, vertical = 12.dp),
-            TsuzukiTheme.typography.subhead,
+                .padding(horizontal = 4.dp, vertical = 6.dp),
+            TsuzukiTheme.typography.caption1.copy(
+                fontWeight = FontWeight.SemiBold,
+                fontFeatureSettings = "tnum",
+            ),
+            maxLines = 1,
         )
     }
-    Column(Modifier.fillMaxHeight().padding(vertical = 4.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-        DetailIcon("Previous chapter", TsuzukiIcons.Back, { haptics.chapterArm(); onPreviousChapter() }, Modifier.rotate(90f), enabled && enabledPrevious)
+    Column(Modifier.width(66.dp).fillMaxHeight().padding(vertical = 6.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+        DetailIcon(stringResource(MR.strings.action_previous_chapter), TsuzukiIcons.Back, { haptics.chapterArm(); onPreviousChapter() }, Modifier.rotate(90f), enabled && enabledPrevious)
         pageReadout()
         ReaderSlider(
             currentPage, 1..totalPages.coerceAtLeast(1), { onPageIndexChange(it - 1) },
             Modifier.weight(1f), vertical = true, enabled = enabled && totalPages > 1, onPreview = { preview = it },
+            label = stringResource(MR.strings.tsuzuki_page),
         )
-        DetailIcon("Next chapter", TsuzukiIcons.Forward, { haptics.chapterArm(); onNextChapter() }, Modifier.rotate(90f), enabled && enabledNext)
+        DetailIcon(stringResource(MR.strings.action_next_chapter), TsuzukiIcons.Forward, { haptics.chapterArm(); onNextChapter() }, Modifier.rotate(90f), enabled && enabledNext)
     }
     GoToPageSheet(showJump, currentPage, totalPages, onPageIndexChange) { showJump = false }
 }

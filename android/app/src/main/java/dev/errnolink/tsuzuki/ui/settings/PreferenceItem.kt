@@ -28,22 +28,23 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.structuralEqualityPolicy
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import dev.icerock.moko.resources.StringResource
 import eu.kanade.presentation.more.settings.Preference
 import eu.kanade.presentation.more.settings.screen.SearchableSettings
-import eu.kanade.presentation.more.settings.screen.SettingsDataScreen
-import eu.kanade.presentation.more.settings.screen.SettingsTrackingScreen
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.outlined.HelpOutline
+import eu.kanade.tachiyomi.data.track.RefreshResult
+import eu.kanade.tachiyomi.util.system.toast
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import tachiyomi.core.common.i18n.stringResource
+import tachiyomi.i18n.MR
 import tachiyomi.presentation.core.i18n.stringResource
 import tachiyomi.presentation.core.util.collectAsState
 import kotlin.time.Duration.Companion.seconds
 
 val LocalPreferenceHighlighted = compositionLocalOf(structuralEqualityPolicy()) { false }
-val LocalPreferenceMinHeight = compositionLocalOf(structuralEqualityPolicy()) { 56.dp }
 
 @Composable
 fun PreferenceScaffold(
@@ -57,13 +58,15 @@ fun PreferenceScaffold(
     val sections = remember(preferences) { preferenceSections(preferences) }
     val state = rememberLazyListState()
     val highlightKey = SearchableSettings.highlightKey
+    // The scaffold list starts after the large-title header item when large titles are shown.
+    val listStart = if (dev.errnolink.tsuzuki.designsystem.largeTitlesEnabled()) 1 else 0
     LaunchedEffect(sections, highlightKey) {
         if (highlightKey != null) {
             for ((sectionIndex, section) in sections.withIndex()) {
-                val row = section.items.indexOfFirst { it.title == highlightKey }
+                val row = section.items.indexOfFirst { it.highlightIdentity() == highlightKey }
                 if (section.title == highlightKey || row >= 0) {
                     delay(0.5.seconds)
-                    state.scrollToItem(sectionIndex + 1)
+                    state.scrollToItem(sectionIndex + listStart)
                     break
                 }
             }
@@ -101,38 +104,12 @@ fun PreferenceScreen(
 @Composable
 fun SearchableSettings.TsuzukiPreferenceContent() {
     val handleBack = eu.kanade.presentation.util.LocalBackPress.current
-    val actions = rememberSearchableTopActions(this)
     PreferenceScaffold(
         titleRes = getTitleRes(),
-        titleOverride = displayName,
+        titleOverride = settingsDisplayTitleRes(this)?.let { stringResource(it) } ?: displayName,
         onBackPressed = if (handleBack != null) handleBack::invoke else null,
-        actions = actions,
         itemsProvider = { getPreferences() },
     )
-}
-
-@Composable
-private fun rememberSearchableTopActions(screen: SearchableSettings): List<dev.errnolink.tsuzuki.ui.shell.ShellTopAction> {
-    val uriHandler = androidx.compose.ui.platform.LocalUriHandler.current
-    return remember(screen) {
-        when (screen) {
-            is SettingsDataScreen -> listOf(
-                dev.errnolink.tsuzuki.ui.shell.ShellTopAction(
-                    label = "Help",
-                    icon = androidx.compose.material.icons.Icons.AutoMirrored.Outlined.HelpOutline,
-                    onClick = { uriHandler.openUri(SettingsDataScreen.HELP_URL) },
-                ),
-            )
-            is SettingsTrackingScreen -> listOf(
-                dev.errnolink.tsuzuki.ui.shell.ShellTopAction(
-                    label = "Tracking guide",
-                    icon = androidx.compose.material.icons.Icons.AutoMirrored.Outlined.HelpOutline,
-                    onClick = { uriHandler.openUri("https://mihon.app/docs/guides/tracking") },
-                ),
-            )
-            else -> emptyList()
-        }
-    }
 }
 
 @Composable
@@ -194,7 +171,7 @@ private fun LazyListScope.renderPreferenceSections(sections: List<PreferenceSect
                         .background(TsuzukiTheme.colors.grouped),
                 ) {
                     section.items.forEachIndexed { row, item ->
-                        if (row > 0) GroupDivider()
+                        if (row > 0) GroupDivider(section.items[row - 1].leadingWidthForDivider())
                         PreferenceItem(item = item, highlightKey = highlightKey)
                     }
                 }
@@ -218,7 +195,7 @@ internal fun PreferenceItem(
 ) {
     val scope = rememberCoroutineScope()
     val enabled = item.enabled
-    val highlighted = item.title == highlightKey
+    val highlighted = item.highlightIdentity() == highlightKey
     val motion = TsuzukiTheme.motion
     val enter = if (motion.reduced) {
         androidx.compose.animation.fadeIn(androidx.compose.animation.core.snap())
@@ -337,12 +314,30 @@ internal fun PreferenceItem(
                         )
                     }
                     is Preference.PreferenceItem.TrackerPreference -> {
+                        val context = LocalContext.current
+                        val scope = rememberCoroutineScope { Dispatchers.IO }
+                        LaunchedEffect(item.tracker) {
+                            item.tracker.refreshResultFlow.collect {
+                                when (it) {
+                                    RefreshResult.Success -> context.toast(
+                                        context.stringResource(MR.strings.tsuzuki_refresh_tracker_success, item.tracker.name),
+                                    )
+
+                                    is RefreshResult.Error -> context.toast(
+                                        context.stringResource(MR.strings.tsuzuki_refresh_tracker_error, item.tracker.name, it.msg),
+                                    )
+                                }
+                            }
+                        }
                         val isLoggedIn by item.tracker.let { tracker ->
                             tracker.isLoggedInFlow.collectAsState(tracker.isLoggedIn)
                         }
+                        val isRefreshing by item.tracker.isRefreshingFlow.collectAsState()
                         TrackingPreferenceWidget(
                             tracker = item.tracker,
                             checked = isLoggedIn,
+                            isRefreshing = isRefreshing,
+                            onRefresh = { scope.launch { item.tracker.refreshUser() } },
                             onClick = { if (isLoggedIn) item.logout() else item.login() },
                         )
                     }

@@ -56,4 +56,11 @@ interface DatabaseHandler {
     ): PagingSource<Long, T>
 
     suspend fun <T> holdingSubscriptions(block: suspend () -> T): T
+
+    /**
+     * While [block] runs, every open subscription re-queries at most once per pace window, always
+     * with the latest data: bulk writers (the library update) stop re-running every screen's
+     * queries per row, and the screens still move along.
+     */
+    suspend fun <T> pacingSubscriptions(block: suspend () -> T): T
 }

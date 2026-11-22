@@ -28,6 +28,7 @@ class TrackLoginActivity : BaseOAuthLoginActivity() {
                 val tracker = when (host) {
                     "anilist-auth" -> trackerManager.aniList
                     "bangumi-auth" -> trackerManager.bangumi
+                    "comick-auth" -> trackerManager.comick
                     "myanimelist-auth" -> trackerManager.myAnimeList
                     "shikimori-auth" -> trackerManager.shikimori
                     else -> error("Unrecognized tracker callback.")

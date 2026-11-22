@@ -1,25 +1,17 @@
 package dev.errnolink.tsuzuki.ui.settings
-import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.rememberLazyListState
-import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.runtime.Composable
-import androidx.compose.ui.Alignment
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.unit.dp
 import cafe.adriel.voyager.core.screen.Screen as VoyagerScreen
 import cafe.adriel.voyager.navigator.LocalNavigator
-import cafe.adriel.voyager.navigator.Navigator
 import cafe.adriel.voyager.navigator.currentOrThrow
 import dev.errnolink.tsuzuki.designsystem.GroupedRow
 import dev.errnolink.tsuzuki.designsystem.InsetGroupedList
 import dev.errnolink.tsuzuki.designsystem.TsuzukiIcons
 import dev.errnolink.tsuzuki.ui.shell.ShellTopAction
-import dev.errnolink.tsuzuki.designsystem.TsuzukiSpacing
-import dev.errnolink.tsuzuki.designsystem.TsuzukiTheme
-import androidx.compose.foundation.layout.padding
 import dev.icerock.moko.resources.StringResource
 import dev.errnolink.tsuzuki.designsystem.ArrowLeftRight
 import dev.errnolink.tsuzuki.designsystem.BookOpen
@@ -27,11 +19,10 @@ import dev.errnolink.tsuzuki.designsystem.Compass
 import dev.errnolink.tsuzuki.designsystem.Download
 import dev.errnolink.tsuzuki.designsystem.EyeOff
 import dev.errnolink.tsuzuki.designsystem.Info
-import dev.errnolink.tsuzuki.designsystem.LucideLibrary
 import dev.errnolink.tsuzuki.designsystem.Palette
-import dev.errnolink.tsuzuki.designsystem.RefreshCw
+import dev.errnolink.tsuzuki.designsystem.TrendingUp
 import dev.errnolink.tsuzuki.designsystem.Search
-import dev.errnolink.tsuzuki.designsystem.SettingsLucide
+import dev.errnolink.tsuzuki.designsystem.Gear
 import eu.kanade.presentation.more.settings.screen.SearchableSettings
 import eu.kanade.presentation.util.LocalBackPress
 import eu.kanade.presentation.util.Screen
@@ -48,11 +39,6 @@ object TsuzukiSettingsMainScreen : Screen() {
 
     @Composable
     override fun Content() {
-        Content(twoPane = false)
-    }
-
-    @Composable
-    fun Content(twoPane: Boolean) {
         val navigator = LocalNavigator.currentOrThrow
         val backPress = LocalBackPress.currentOrThrow
         val state = rememberLazyListState()
@@ -61,75 +47,47 @@ object TsuzukiSettingsMainScreen : Screen() {
             title = stringResource(MR.strings.label_settings),
             navigateUp = backPress::invoke,
             state = state,
-            onTitleClick = { navigator.navigate(TsuzukiSettingsSearchScreen(), twoPane) },
+            onTitleClick = { navigator.push(TsuzukiSettingsSearchScreen()) },
             actions = listOf(
                 ShellTopAction(stringResource(MR.strings.action_search), TsuzukiIcons.Search, {
-                    navigator.navigate(TsuzukiSettingsSearchScreen(), twoPane)
+                    navigator.push(TsuzukiSettingsSearchScreen())
                 }),
             ),
         ) {
-            iaGroups.forEach { group ->
-                val visible = group.filter { spec ->
-                    spec.screen !is SearchableSettings || spec.screen.isEnabled()
-                }
-                if (visible.isEmpty()) return@forEach
-                item(key = "settings-main-${visible.first().titleRes.resourceId}") {
-                    InsetGroupedList {
-                        visible.forEachIndexed { i, spec ->
-                            if (i > 0) GroupDivider()
-                            GroupedRow(
-                                title = spec.titleOverride ?: stringResource(spec.titleRes),
-                                subtitle = spec.subtitle(),
-                                chevron = true,
-                                enabled = true,
-                                divider = false,
-                                leading = { SettingsSectionBadge(spec.icon()) },
-                                onClick = { navigator.navigate(spec.screen, twoPane) },
-                            )
-                        }
-                    }
-                }
-            }
-            if (dev.errnolink.tsuzuki.lab.DesignLab.enabled) {
-                item(key = "settings-main-design-lab") {
-                    InsetGroupedList {
-                        GroupedRow(
-                            title = "Design lab",
-                            chevron = true,
-                            enabled = true,
-                            divider = false,
-                            onClick = { navigator.navigate(dev.errnolink.tsuzuki.lab.DesignLabScreen, twoPane) },
-                        )
-                    }
-                }
-            }
+            settingsCategoryItems(
+                selected = null,
+                onSelect = { navigator.push(it.screen) },
+            )
         }
-    }
-
-
-    private fun Navigator.navigate(screen: VoyagerScreen, twoPane: Boolean) {
-        if (twoPane) replaceAll(screen) else push(screen)
     }
 }
 
-@Composable
-internal fun SettingsSectionBadge(icon: ImageVector) {
-    Box(
-        Modifier
-            .size(29.dp)
-            .background(
-                TsuzukiTheme.colors.secondary.copy(alpha = 0.12f),
-                RoundedCornerShape(TsuzukiSpacing.small),
-            )
-            .padding(TsuzukiSpacing.tiny),
-        contentAlignment = Alignment.Center,
-    ) {
-        androidx.compose.material3.Icon(
-            icon,
-            null,
-            Modifier.size(17.dp),
-            tint = TsuzukiTheme.colors.secondary,
-        )
+internal fun LazyListScope.settingsCategoryItems(
+    selected: VoyagerScreen?,
+    onSelect: (SettingsSectionSpec) -> Unit,
+) {
+    iaGroups.forEach { group ->
+        val visible = group.filter { spec ->
+            spec.screen !is SearchableSettings || spec.screen.isEnabled()
+        }
+        if (visible.isEmpty()) return@forEach
+        item(key = "settings-main-${visible.first().titleRes.resourceId}") {
+            InsetGroupedList {
+                visible.forEachIndexed { i, spec ->
+                    if (i > 0) GroupDivider(SettingsSectionBadgeSize)
+                    GroupedRow(
+                        title = spec.titleOverrideRes?.let { stringResource(it) } ?: stringResource(spec.titleRes),
+                        subtitle = spec.subtitle(),
+                        chevron = true,
+                        enabled = true,
+                        divider = false,
+                        selected = spec.screen == selected,
+                        leading = { SettingsSectionBadgeCurrent(spec.icon()) },
+                        onClick = { onSelect(spec) },
+                    )
+                }
+            }
+        }
     }
 }
 
@@ -138,8 +96,17 @@ internal data class SettingsSectionSpec(
     val screen: VoyagerScreen,
     val icon: () -> ImageVector,
     val subtitle: @Composable () -> String,
-    val titleOverride: String? = null,
+    val titleOverrideRes: StringResource? = null,
 )
+
+internal fun settingsDisplayTitleRes(screen: VoyagerScreen): StringResource? = when (screen) {
+    TsuzukiSettingsDownloadScreen -> MR.strings.tsuzuki_settings_title_downloads
+    TsuzukiSettingsDataScreen -> MR.strings.tsuzuki_settings_title_data
+    TsuzukiSettingsBrowseScreen -> MR.strings.tsuzuki_settings_title_browse
+    TsuzukiSettingsTrackingScreen -> MR.strings.tsuzuki_settings_title_tracking
+    TsuzukiSettingsSecurityScreen -> MR.strings.tsuzuki_settings_title_security
+    else -> null
+}
 
 internal val iaSections: List<SettingsSectionSpec> = listOf(
     SettingsSectionSpec(
@@ -151,7 +118,7 @@ internal val iaSections: List<SettingsSectionSpec> = listOf(
     SettingsSectionSpec(
         titleRes = MR.strings.pref_category_library,
         screen = TsuzukiSettingsLibraryScreen,
-        icon = { TsuzukiIcons.LucideLibrary },
+        icon = { TsuzukiIcons.Library },
         subtitle = { stringResource(MR.strings.tsuzuki_settings_sub_library) },
     ),
     SettingsSectionSpec(
@@ -171,40 +138,40 @@ internal val iaSections: List<SettingsSectionSpec> = listOf(
         screen = TsuzukiSettingsDownloadScreen,
         icon = { TsuzukiIcons.Download },
         subtitle = { stringResource(MR.strings.tsuzuki_settings_sub_downloads) },
-        titleOverride = TsuzukiSettingsDownloadScreen.displayName,
+        titleOverrideRes = MR.strings.tsuzuki_settings_title_downloads,
     ),
     SettingsSectionSpec(
         titleRes = MR.strings.label_data_storage,
         screen = TsuzukiSettingsDataScreen,
         icon = { TsuzukiIcons.ArrowLeftRight },
         subtitle = { stringResource(MR.strings.tsuzuki_settings_sub_data) },
-        titleOverride = TsuzukiSettingsDataScreen.displayName,
+        titleOverrideRes = MR.strings.tsuzuki_settings_title_data,
     ),
     SettingsSectionSpec(
         titleRes = MR.strings.browse,
         screen = TsuzukiSettingsBrowseScreen,
         icon = { TsuzukiIcons.Compass },
         subtitle = { stringResource(MR.strings.tsuzuki_settings_sub_browse) },
-        titleOverride = TsuzukiSettingsBrowseScreen.displayName,
+        titleOverrideRes = MR.strings.tsuzuki_settings_title_browse,
     ),
     SettingsSectionSpec(
         titleRes = MR.strings.pref_category_tracking,
         screen = TsuzukiSettingsTrackingScreen,
-        icon = { TsuzukiIcons.RefreshCw },
+        icon = { TsuzukiIcons.TrendingUp },
         subtitle = { stringResource(MR.strings.tsuzuki_settings_sub_tracking) },
-        titleOverride = TsuzukiSettingsTrackingScreen.displayName,
+        titleOverrideRes = MR.strings.tsuzuki_settings_title_tracking,
     ),
     SettingsSectionSpec(
         titleRes = MR.strings.pref_category_security,
         screen = TsuzukiSettingsSecurityScreen,
         icon = { TsuzukiIcons.EyeOff },
         subtitle = { stringResource(MR.strings.tsuzuki_settings_sub_security) },
-        titleOverride = TsuzukiSettingsSecurityScreen.displayName,
+        titleOverrideRes = MR.strings.tsuzuki_settings_title_security,
     ),
     SettingsSectionSpec(
         titleRes = MR.strings.pref_category_advanced,
         screen = TsuzukiSettingsAdvancedScreen,
-        icon = { TsuzukiIcons.SettingsLucide },
+        icon = { TsuzukiIcons.Gear },
         subtitle = { stringResource(MR.strings.tsuzuki_settings_sub_advanced) },
     ),
     SettingsSectionSpec(

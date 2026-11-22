@@ -40,7 +40,7 @@ class DetailsHeroFormattingTest {
                 "Demographic" to listOf(DisplayTag("Demographic", "Seinen", "Demographic: Seinen", null)),
             ),
         )
-        val sections = aboutTagSections(genre, grouped)
+        val sections = aboutTagSections(genre, grouped, "Tags")
         assertEquals(listOf("Theme", "Demographic"), sections.map { it.title })
         assertEquals(listOf("Time Loop", "Seinen"), sections.flatMap { it.chips }.map { it.label })
         assertEquals(listOf("Theme: Time Loop", "Demographic: Seinen"), sections.flatMap { it.chips }.map { it.query })
@@ -48,7 +48,7 @@ class DetailsHeroFormattingTest {
 
     @Test
     fun `flat tags deduplicate when no grouping exists`() {
-        val sections = aboutTagSections(listOf("Action", "Action", "Comedy"), null)
+        val sections = aboutTagSections(listOf("Action", "Action", "Comedy"), null, "Tags")
         assertEquals(1, sections.size)
         assertEquals("Tags", sections.single().title)
         assertEquals(listOf("Action", "Comedy"), sections.single().chips.map { it.label })
@@ -57,6 +57,6 @@ class DetailsHeroFormattingTest {
 
     @Test
     fun `no tags yields no sections`() {
-        assertEquals(0, aboutTagSections(emptyList(), null).size)
+        assertEquals(0, aboutTagSections(emptyList(), null, "Tags").size)
     }
 }

@@ -289,8 +289,7 @@ fun AppBarActions(
             expanded = showMenu,
             onDismissRequest = { showMenu = false },
         ) {
-            overflowActions.forEachIndexed { index, it ->
-                if (index > 0) dev.errnolink.tsuzuki.designsystem.PullDownDivider()
+            overflowActions.forEach {
                 dev.errnolink.tsuzuki.designsystem.PullDownMenuItem(
                     text = it.title,
                     onClick = {

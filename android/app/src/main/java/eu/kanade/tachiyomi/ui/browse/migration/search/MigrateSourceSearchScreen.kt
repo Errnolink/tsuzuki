@@ -7,6 +7,7 @@ import androidx.compose.material.icons.outlined.FilterList
 import androidx.compose.material.icons.outlined.FlipToBack
 import androidx.compose.material.icons.outlined.SelectAll
 import androidx.compose.material3.SnackbarHostState
+import dev.errnolink.tsuzuki.designsystem.ToastHostState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -80,7 +81,7 @@ data class MigrateSourceSearchScreen(
         val screenModel = rememberScreenModel { BrowseSourceScreenModel(sourceId, query) }
         val state by screenModel.state.collectAsState()
 
-        val snackbarHostState = remember { SnackbarHostState() }
+        val toasts = remember { ToastHostState() }
 
         // KMK -->
         val context = LocalContext.current
@@ -102,7 +103,8 @@ data class MigrateSourceSearchScreen(
                 screenModel.source.name
             },
             navigateUp = navigator::pop,
-            snackbar = snackbarHostState,
+            capContent = false,
+            toasts = toasts,
             actions = if (bulkFavoriteState.selectionMode) {
                 listOf(
                     ShellTopAction(
@@ -161,7 +163,7 @@ data class MigrateSourceSearchScreen(
                 columns = screenModel.getColumnsPreference(LocalConfiguration.current.orientation),
 
                 displayMode = screenModel.displayMode,
-                snackbarHostState = snackbarHostState,
+                toasts = toasts,
                 contentPadding = paddingValues,
                 onWebViewClick = {
                     val source = screenModel.source as? HttpSource ?: return@BrowseSourceContent

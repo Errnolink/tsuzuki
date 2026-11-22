@@ -19,6 +19,7 @@ import cafe.adriel.voyager.core.model.screenModelScope
 import cafe.adriel.voyager.navigator.LocalNavigator
 import cafe.adriel.voyager.navigator.currentOrThrow
 import dev.errnolink.tsuzuki.designsystem.DetentSheet
+import dev.errnolink.tsuzuki.designsystem.SheetKind
 import dev.errnolink.tsuzuki.designsystem.PillButton
 import eu.kanade.domain.track.model.toDbTrack
 import eu.kanade.presentation.util.Screen
@@ -50,7 +51,7 @@ data class TrackChapterSelectorScreen(
         }
         val state by screenModel.state.collectAsState()
         val range = remember { screenModel.getRange() }
-        DetentSheet(true, stringResource(MR.strings.chapters), navigator::pop) {
+        DetentSheet(true, stringResource(MR.strings.chapters), navigator::pop, kind = SheetKind.Picker) {
             Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
                 WheelNumberPicker(
                     items = range.map { it as Number }.toImmutableList(),

@@ -10,7 +10,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.dp
-import dev.errnolink.tsuzuki.ui.shell.MangaHero
+import dev.errnolink.tsuzuki.ui.motion.MangaHero
 import tachiyomi.domain.manga.model.MangaCover
 
 internal const val DefaultCoverRatio = 2f / 3f

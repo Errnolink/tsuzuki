@@ -3,10 +3,14 @@ import eu.kanade.presentation.more.settings.screen.SearchableSettings
 
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.ReadOnlyComposable
+import androidx.compose.runtime.remember
 import eu.kanade.presentation.more.settings.Preference
 import eu.kanade.presentation.more.settings.screen.SettingsReaderScreen
+import eu.kanade.tachiyomi.ui.reader.setting.ReaderPreferences
 import tachiyomi.i18n.MR
 import tachiyomi.presentation.core.i18n.stringResource
+import uy.kohesive.injekt.Injekt
+import uy.kohesive.injekt.api.get
 
 object TsuzukiSettingsReaderScreen : SearchableSettings {
     @Suppress("unused")
@@ -38,6 +42,8 @@ object TsuzukiSettingsReaderScreen : SearchableSettings {
         "pref_reader_flash_duration",
         "pref_reader_flash_interval",
         "pref_reader_flash_mode",
+        "pref_reader_eink_mode",
+        "pref_reader_split_tall_pages",
         "skip_read",
         "skip_filtered",
         "skip_dupe",
@@ -94,6 +100,7 @@ object TsuzukiSettingsReaderScreen : SearchableSettings {
 
     @Composable
     override fun getPreferences(): List<Preference> {
+        val readerPreferences = remember { Injekt.get<ReaderPreferences>() }
         val base = SettingsReaderScreen.getPreferences()
         val groups = base.preferenceGroups()
         val loose = base.looseItems()
@@ -113,7 +120,15 @@ object TsuzukiSettingsReaderScreen : SearchableSettings {
                 .subtitledWhere("reader_navigation_smaller_tap_zone", "Shrinks the tap zones that turn pages"),
         )
         val display = groupAt(0)?.withTitle("Display")
-        val eink = groupAt(1)?.withTitle("E-Ink flash")
+        val eink = newGroup(
+            title = "E-Ink",
+            items = groupAt(1)?.preferenceItems.orEmpty() + listOf(
+                Preference.PreferenceItem.SwitchPreference(
+                    preference = readerPreferences.eInkMode(),
+                    title = stringResource(MR.strings.tsuzuki_eink_16bit),
+                ),
+            ),
+        )
         val skipping = newGroup(
             title = "Skipping",
             items = groupAt(2)?.preferenceItems.orEmpty()
@@ -169,6 +184,12 @@ object TsuzukiSettingsReaderScreen : SearchableSettings {
             items = listOf<Preference>()
                 .plus(webtoonBase.filter { it.storeKey() !in webtoonMoved })
                 .plusNotNull(forkItem("eh_use_auto_webtoon"))
+                .plus(
+                    Preference.PreferenceItem.SwitchPreference(
+                        preference = readerPreferences.splitTallPages(),
+                        title = stringResource(MR.strings.tsuzuki_split_tall_pages),
+                    ),
+                )
                 .retitledWhere("pref_webtoon_scale_type_key", "Image scaling")
                 .retitledWhere("pref_webtoon_smart_scale_long_strip_gap", "Smart scale images with gaps")
                 .retitledWhere("webtoon_side_padding", "Webtoon side margins")
@@ -231,7 +252,13 @@ object TsuzukiSettingsReaderScreen : SearchableSettings {
                 .retitledWhere("archive_reader_mode", "Open archives as")
                 .subtitledWhere("eh_preserve_reading_position", "Reopens finished chapters at the page you left off"),
         )
-        val beta = groupAt(10)?.withTitle("Beta")
+        val beta = groupAt(10)
+            ?.let { group ->
+                newGroup(
+                    title = "Reader bar",
+                    items = group.preferenceItems.retitledWhere("pref_beta_reader_bar_style", "Bar style"),
+                )
+            }
 
         return listOfNotNull(
                 readingMode,

@@ -29,6 +29,8 @@ CREATE INDEX idx_chapters_url ON chapters(url);
 CREATE INDEX idx_chapters_last_modified_at ON chapters(last_modified_at);
 CREATE INDEX IF NOT EXISTS idx_chapters_is_syncing ON chapters(is_syncing) WHERE is_syncing = 1;
 -- KMK <--
+CREATE INDEX chapters_date_fetch_index ON chapters(date_fetch);
+CREATE INDEX chapters_manga_date_fetch_index ON chapters(manga_id, date_fetch);
 
 CREATE TRIGGER update_last_modified_at_chapters
 AFTER UPDATE ON chapters

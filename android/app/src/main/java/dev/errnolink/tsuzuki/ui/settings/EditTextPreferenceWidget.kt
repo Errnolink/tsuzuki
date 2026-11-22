@@ -21,6 +21,7 @@ fun EditTextPreferenceWidget(
     value: String,
     widget: @Composable (() -> Unit)? = null,
     divider: Boolean = true,
+    allowBlank: Boolean = false,
     onConfirm: suspend (String) -> Boolean,
 ) {
     var isDialogShown by remember { mutableStateOf(false) }
@@ -36,7 +37,7 @@ fun EditTextPreferenceWidget(
         divider = divider,
         leading = icon?.let {
             {
-                Icon(it, null, Modifier.size(24.dp), tint = TsuzukiTheme.colors.secondary)
+                Icon(it, null, Modifier.size(PreferenceLeadingIconWidth), tint = TsuzukiTheme.colors.secondary)
             }
         },
         trailing = widget,
@@ -50,7 +51,7 @@ fun EditTextPreferenceWidget(
             initialValue = value,
             confirmLabel = tachiyomi.presentation.core.i18n.stringResource(tachiyomi.i18n.MR.strings.action_ok),
             errorText = null,
-            supportsConfirm = { it.isNotBlank() },
+            supportsConfirm = { allowBlank || it.isNotBlank() },
             onConfirm = { onConfirm(it) },
             onDismissRequest = { isDialogShown = false },
         )

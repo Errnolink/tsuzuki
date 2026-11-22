@@ -8,9 +8,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.selection.triStateToggleable
-import androidx.compose.material3.Icon
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -21,10 +19,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.state.ToggleableState
 import androidx.compose.ui.unit.dp
 import dev.errnolink.tsuzuki.designsystem.DetentSheet
+import dev.errnolink.tsuzuki.designsystem.SheetKind
 import dev.errnolink.tsuzuki.designsystem.PillButton
-import dev.errnolink.tsuzuki.designsystem.TsuzukiIcons
-import dev.errnolink.tsuzuki.designsystem.Check
-import dev.errnolink.tsuzuki.designsystem.Minus
+import dev.errnolink.tsuzuki.designsystem.TsuzukiCheckbox
 import dev.errnolink.tsuzuki.designsystem.TsuzukiSpacing
 import dev.errnolink.tsuzuki.designsystem.TsuzukiText
 import dev.errnolink.tsuzuki.designsystem.TsuzukiTheme
@@ -80,7 +77,7 @@ fun ChangeCategoryDialog(
     val nothingIncluded = selection.isNotEmpty() && selection.none {
         it is CheckboxState.State.Checked || it is CheckboxState.TriState.Include
     }
-    DetentSheet(true, stringResource(MR.strings.action_move_category), onDismissRequest) {
+    DetentSheet(true, stringResource(MR.strings.action_move_category), onDismissRequest, kind = SheetKind.Picker) {
         if (selection.isEmpty()) {
             TsuzukiText(stringResource(MR.strings.information_empty_category_dialog))
         } else {
@@ -105,11 +102,11 @@ fun ChangeCategoryDialog(
                     horizontalArrangement = Arrangement.spacedBy(TsuzukiSpacing.medium),
                 ) {
                     TsuzukiText(checkbox.value.visualName, Modifier.weight(1f))
-                    when (state) {
-                        ToggleableState.On -> Icon(TsuzukiIcons.Check, null, Modifier.size(20.dp), tint = colors.accent)
-                        ToggleableState.Indeterminate -> Icon(TsuzukiIcons.Minus, null, Modifier.size(20.dp), tint = colors.accent)
-                        ToggleableState.Off -> {}
-                    }
+                    TsuzukiCheckbox(
+                        checked = state == ToggleableState.On,
+                        onCheckedChange = null,
+                        indeterminate = state == ToggleableState.Indeterminate,
+                    )
                 }
                 if (index < selection.lastIndex) {
                     Spacer(

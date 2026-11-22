@@ -179,6 +179,8 @@ class BackupRestoreEhCompatTest {
 
         override suspend fun <T> holdingSubscriptions(block: suspend () -> T): T = block()
 
+        override suspend fun <T> pacingSubscriptions(block: suspend () -> T): T = block()
+
         override fun <T : Any> subscribeToList(
             debounceMillis: Long,
             block: Database.() -> Query<T>,

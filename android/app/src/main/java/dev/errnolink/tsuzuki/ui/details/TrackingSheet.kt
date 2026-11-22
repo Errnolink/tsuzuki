@@ -13,9 +13,17 @@ import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.togetherWith
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.SideEffect
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateMapOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import dev.errnolink.tsuzuki.designsystem.LocalDetentSheetPage
+import dev.errnolink.tsuzuki.designsystem.LocalDetentSheetPageTitle
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalLayoutDirection
@@ -25,11 +33,13 @@ import cafe.adriel.voyager.core.screen.Screen
 import cafe.adriel.voyager.navigator.Navigator
 import dev.errnolink.tsuzuki.designsystem.DetentSheet
 import dev.errnolink.tsuzuki.designsystem.M3Motion
-import dev.errnolink.tsuzuki.designsystem.SheetDetent
+import dev.errnolink.tsuzuki.designsystem.SheetKind
 import dev.errnolink.tsuzuki.designsystem.TsuzukiTheme
 import eu.kanade.tachiyomi.ui.manga.track.TrackInfoDialogHomeScreen
 import kotlinx.coroutines.CancellationException
 import kotlin.math.roundToInt
+import tachiyomi.i18n.MR
+import tachiyomi.presentation.core.i18n.stringResource
 
 /**
  * Today's tracking hub ([TrackInfoDialogHomeScreen] plus its selector/search/login sub-screens)
@@ -45,12 +55,24 @@ fun TrackingSheet(
     visible: Boolean,
     onDismissRequest: () -> Unit,
 ) {
+    // One header for the whole hub: the sheet's close button and title stay put while pushed
+    // pages slide beneath them and the title morphs to the front page's own (no second back
+    // button riding in with the content).
+    val pageTitles = remember { mutableStateMapOf<Screen, String>() }
+    val trackingTitle = stringResource(MR.strings.manga_tracking_tab)
+    var frontTitle by remember { mutableStateOf(trackingTitle) }
+    // The sheet's own chrome (X, scrim tap) pops a pushed page first, then dismisses the hub —
+    // the one bar button does what back does at every level.
+    val sheetNavigatorRef = remember { mutableStateOf<Navigator?>(null) }
     DetentSheet(
         visible = visible,
-        title = "Tracking",
-        onDismissRequest = onDismissRequest,
-        initialDetent = SheetDetent.Large,
+        title = frontTitle,
+        onDismissRequest = {
+            val nav = sheetNavigatorRef.value
+            if (nav != null && nav.size > 1) nav.pop() else onDismissRequest()
+        },
         scrollContent = false,
+        kind = SheetKind.Picker,
     ) {
         Navigator(
             TrackInfoDialogHomeScreen(
@@ -60,11 +82,16 @@ fun TrackingSheet(
                 embedded = true,
             ),
         ) { sheetNavigator ->
+            SideEffect { sheetNavigatorRef.value = sheetNavigator }
             val motion = TsuzukiTheme.motion
             val rtl = LocalLayoutDirection.current == LayoutDirection.Rtl
             val slidePx = with(LocalDensity.current) { M3Motion.SharedAxisSlide.roundToPx() }
             val seekable = remember { SeekableTransitionState(sheetNavigator.lastItem) }
             val pageTransition = rememberTransition(seekable, label = "Tracking sheet pages")
+            val pageTitle = pageTitles[sheetNavigator.lastItem]
+            LaunchedEffect(pageTitle) {
+                frontTitle = pageTitle ?: trackingTitle
+            }
             LaunchedEffect(sheetNavigator.lastItem) {
                 seekable.animateTo(sheetNavigator.lastItem)
             }
@@ -91,7 +118,12 @@ fun TrackingSheet(
                         trackingPageTransform(sheetNavigator.items, rtl, motion.reduced, slidePx)
                     },
                 ) { screen ->
-                    screen.Content()
+                    CompositionLocalProvider(
+                        LocalDetentSheetPage provides true,
+                        LocalDetentSheetPageTitle provides { title -> pageTitles[screen] = title },
+                    ) {
+                        screen.Content()
+                    }
                 }
             }
             DisposableEffect(sheetNavigator) {

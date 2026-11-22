@@ -5,23 +5,7 @@
     <FrameLayout
         android:id="@+id/reader_container"
         android:layout_width="match_parent"
-        android:layout_height="match_parent">
-
-        <FrameLayout
-            android:id="@+id/viewer_container"
-            android:layout_width="match_parent"
-            android:layout_height="match_parent"
-            android:descendantFocusability="blocksDescendants" />
-
-    </FrameLayout>
-
-    <eu.kanade.tachiyomi.ui.reader.ReaderNavigationOverlayView
-        android:id="@+id/navigation_overlay"
-        android:layout_width="match_parent"
-        android:layout_height="match_parent"
-        android:clickable="false"
-        android:focusable="false"
-        android:visibility="gone" />
+        android:layout_height="match_parent" />
 
     <androidx.compose.ui.platform.ComposeView
         android:id="@+id/compose_overlay"

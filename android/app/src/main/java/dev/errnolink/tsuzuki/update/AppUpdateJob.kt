@@ -5,6 +5,7 @@ import androidx.work.Constraints
 import androidx.work.CoroutineWorker
 import androidx.work.ExistingPeriodicWorkPolicy
 import androidx.work.ExistingWorkPolicy
+import androidx.work.NetworkType
 import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkerParameters
@@ -49,6 +50,7 @@ object AppUpdateJob {
 
     fun setupDailyTask(context: Context) {
         val constraints = Constraints.Builder()
+            .setRequiredNetworkType(NetworkType.CONNECTED)
             .setRequiresBatteryNotLow(true)
             .build()
 
@@ -62,7 +64,7 @@ object AppUpdateJob {
 
         context.workManager.enqueueUniquePeriodicWork(
             TAG_DAILY,
-            ExistingPeriodicWorkPolicy.KEEP,
+            ExistingPeriodicWorkPolicy.UPDATE,
             request,
         )
     }
@@ -76,6 +78,7 @@ object AppUpdateJob {
         if (now - lastCheck < DEBOUNCE_INTERVAL_MS) return
 
         val request = OneTimeWorkRequestBuilder<AppUpdateCheckWorker>()
+            .setConstraints(Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).build())
             .addTag(TAG_APP_START)
             .build()
 

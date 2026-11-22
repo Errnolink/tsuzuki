@@ -2,7 +2,6 @@ package dev.errnolink.tsuzuki.ui.manga.track
 
 import android.content.ClipData
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -28,7 +27,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalClipboard
 import androidx.compose.ui.platform.LocalContext
@@ -47,11 +45,13 @@ import dev.errnolink.tsuzuki.designsystem.ContextMenuAction
 import dev.errnolink.tsuzuki.designsystem.DetentSheet
 import dev.errnolink.tsuzuki.designsystem.PillButton
 import dev.errnolink.tsuzuki.designsystem.SearchField
-import dev.errnolink.tsuzuki.designsystem.SheetDetent
+import dev.errnolink.tsuzuki.designsystem.SelectionMark
+import dev.errnolink.tsuzuki.designsystem.SheetKind
 import dev.errnolink.tsuzuki.designsystem.TsuzukiCorners
 import dev.errnolink.tsuzuki.designsystem.TsuzukiText
 import dev.errnolink.tsuzuki.designsystem.TsuzukiTheme
 import dev.errnolink.tsuzuki.designsystem.rememberCoverArrivalState
+import dev.errnolink.tsuzuki.designsystem.selectionFill
 import dev.errnolink.tsuzuki.ui.shell.ShellEmpty
 import dev.errnolink.tsuzuki.ui.shell.ShellLoading
 import eu.kanade.presentation.track.components.TrackLogoIcon
@@ -105,8 +105,8 @@ data class TrackerSearchScreen(
             true,
             tracker.name,
             navigator::pop,
-            initialDetent = SheetDetent.Large,
             scrollContent = false,
+            kind = SheetKind.BrowseList,
         ) {
             SearchField(
                 value = query,
@@ -260,7 +260,7 @@ private fun SearchResultRow(
             Modifier.fillMaxWidth()
                 .clip(RoundedCornerShape(TsuzukiCorners.group))
                 .background(colors.grouped)
-                .border(2.dp, if (selected) colors.selectedFill else Color.Transparent, RoundedCornerShape(TsuzukiCorners.group))
+                .selectionFill(selected)
                 .padding(12.dp),
             verticalArrangement = Arrangement.spacedBy(4.dp),
         ) {
@@ -310,6 +310,14 @@ private fun SearchResultRow(
                     overflow = TextOverflow.Ellipsis,
                 )
             }
+        }
+        if (selected) {
+            SelectionMark(
+                selected = true,
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .padding(8.dp),
+            )
         }
     }
 }

@@ -52,6 +52,7 @@ import exh.md.service.MangaDexService
 import exh.md.utils.FollowStatus
 import exh.md.utils.MdApi
 import exh.md.utils.MdLang
+import dev.errnolink.tsuzuki.mangadex.MangaDexUpdatePrefetch
 import exh.md.utils.MdUtil
 import exh.metadata.metadata.MangaDexSearchMetadata
 import exh.source.DelegatedHttpSource
@@ -225,10 +226,21 @@ class MangaDex(delegate: HttpSource, val context: Context) :
         fetchDetails: Boolean,
         fetchChapters: Boolean,
     ): SMangaUpdate = coroutineScope {
+        if (fetchDetails && fetchChapters) {
+            // The chapter feed's numbers replace the details' aggregate request.
+            val (chapterList, numbers) = mangaHandler.getChapterListWithNumbers(
+                manga, allBlockedGroups(), allBlockedUploaders(), chapterLanguages(), parityPreferences.includeUnavailable().get(),
+            )
+            return@coroutineScope SMangaUpdate(getMangaDetails(manga, numbers), chapterList)
+        }
         val asyncManga = if (fetchDetails) async { getMangaDetails(manga) } else null
         val asyncChapters = if (fetchChapters) async { getChapterList(manga) } else null
         SMangaUpdate(asyncManga?.await() ?: manga, asyncChapters?.await() ?: chapters)
     }
+
+    /** Batches details and statistics for a library update's titles; see [MangaDexUpdatePrefetch]. */
+    suspend fun <T> prefetchForUpdate(mangaUrls: List<String>, block: suspend () -> T): T =
+        MangaDexUpdatePrefetch.around(mangadexService, mangaUrls.map { MdUtil.getMangaId(it) }, block)
     // KMK <--
 
     @Deprecated("Use the combined suspend API instead", replaceWith = ReplaceWith("getMangaUpdate"))
@@ -243,7 +255,7 @@ class MangaDex(delegate: HttpSource, val context: Context) :
         )
     }
 
-    internal suspend fun getMangaDetails(manga: SManga): SManga {
+    internal suspend fun getMangaDetails(manga: SManga, simpleChapters: List<String>? = null): SManga {
         return mangaHandler.getMangaDetails(
             manga,
             id,
@@ -251,6 +263,7 @@ class MangaDex(delegate: HttpSource, val context: Context) :
             altTitlesInDesc(),
             finalChapterInDesc(),
             preferExtensionLangTitle(),
+            simpleChapters,
         )
     }
 
@@ -365,6 +378,10 @@ class MangaDex(delegate: HttpSource, val context: Context) :
 
     suspend fun fetchTrackingInfo(url: String): Track {
         return followsHandler.fetchTrackingInfo(url)
+    }
+
+    suspend fun fetchTrackingInfo(urls: List<String>): Map<String, Track> {
+        return followsHandler.fetchTrackingInfo(urls)
     }
 
     // Tracker methods

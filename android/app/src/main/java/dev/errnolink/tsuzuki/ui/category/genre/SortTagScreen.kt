@@ -37,6 +37,7 @@ import dev.errnolink.tsuzuki.designsystem.Trash2
 import dev.errnolink.tsuzuki.designsystem.TsuzukiSpacing
 import dev.errnolink.tsuzuki.designsystem.TsuzukiText
 import dev.errnolink.tsuzuki.designsystem.TsuzukiTheme
+import dev.errnolink.tsuzuki.designsystem.animateItemRespectingMotion
 import dev.errnolink.tsuzuki.designsystem.insetDivider
 import dev.errnolink.tsuzuki.ui.category.CategoryInlineAddRow
 import dev.errnolink.tsuzuki.ui.shell.ShellAction
@@ -57,6 +58,8 @@ fun TsuzukiSortTagScreen(
     navigateUp: () -> Unit,
 ) {
     val lazyListState = rememberLazyListState()
+
+    val reduced = TsuzukiTheme.motion.reduced
     ShellList(
         title = stringResource(SYMR.strings.action_edit_tags),
         state = lazyListState,
@@ -76,7 +79,7 @@ fun TsuzukiSortTagScreen(
                 key = { _, tag -> "sort-tag-$tag" },
             ) { index, tag ->
                 SortTagListItem(
-                    modifier = Modifier.animateItem().padding(horizontal = TsuzukiSpacing.gutter),
+                    modifier = animateItemRespectingMotion(reduced).padding(horizontal = TsuzukiSpacing.gutter),
                     tag = tag,
                     shape = RoundedCornerShape(
                         topStart = if (index == 0) TsuzukiCorners.group else 0.dp,

@@ -5,6 +5,7 @@ import androidx.compose.animation.graphics.res.animatedVectorResource
 import androidx.compose.animation.graphics.res.rememberAnimatedVectorPainter
 import androidx.compose.animation.graphics.vector.AnimatedImageVector
 import androidx.compose.material3.SnackbarHostState
+import dev.errnolink.tsuzuki.designsystem.ToastHostState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -48,7 +49,7 @@ data object HistoryTab : Tab {
     @Suppress("unused")
     private fun readResolve(): Any = HistoryTab
 
-    private val snackbarHostState = SnackbarHostState()
+    private val toasts = ToastHostState()
 
     private val resumeLastChapterReadEvent = Channel<Unit>()
 
@@ -91,7 +92,7 @@ data object HistoryTab : Tab {
 
         HistoryScreen(
             state = state,
-            snackbarHostState = snackbarHostState,
+            toasts = toasts,
             onSearchQueryChange = screenModel::updateSearchQuery,
             onClickCover = { navigator.push(MangaScreen(it)) },
             onClickResume = screenModel::getNextChapterForManga,
@@ -176,9 +177,9 @@ data object HistoryTab : Tab {
             screenModel.events.collectLatest { e ->
                 when (e) {
                     HistoryScreenModel.Event.InternalError ->
-                        snackbarHostState.showSnackbar(context.stringResource(MR.strings.internal_error))
+                        toasts.show(context.stringResource(MR.strings.internal_error))
                     HistoryScreenModel.Event.HistoryCleared ->
-                        snackbarHostState.showSnackbar(context.stringResource(MR.strings.clear_history_completed))
+                        toasts.show(context.stringResource(MR.strings.clear_history_completed))
                     is HistoryScreenModel.Event.OpenChapter -> openChapter(context, e.chapter)
                 }
             }
@@ -196,7 +197,7 @@ data object HistoryTab : Tab {
             val intent = ReaderActivity.newIntent(context, chapter.mangaId, chapter.id)
             dev.errnolink.tsuzuki.reader.ReaderTransition.open(context, intent)
         } else {
-            snackbarHostState.showSnackbar(context.stringResource(MR.strings.no_next_chapter))
+            toasts.show(context.stringResource(MR.strings.no_next_chapter))
         }
     }
 }

@@ -17,6 +17,7 @@ class ContextMenuAction(
     val subtitle: String? = null,
     val group: Int = 0,
     val destructive: Boolean = false,
+    val selected: Boolean? = null,
     val onClick: () -> Unit,
 )
 
@@ -27,23 +28,18 @@ fun GlassMenu(
     actions: List<ContextMenuAction>,
     onDismissRequest: () -> Unit,
 ) {
-    PullDownMenu(
+    PullDownMenuSeeded(
         expanded = expanded,
         onDismissRequest = onDismissRequest,
         paneTitle = label,
     ) {
         actions.forEachIndexed { index, action ->
-            if (index > 0) {
-                if (actions[index - 1].group != action.group) {
-                    PullDownSectionDivider()
-                } else {
-                    PullDownDivider()
-                }
-            }
+            if (index > 0 && actions[index - 1].group != action.group) PullDownSectionDivider()
             PullDownMenuItem(
                 text = action.label,
                 subtitle = action.subtitle,
                 iconContent = action.icon,
+                selected = action.selected,
                 destructive = action.destructive,
                 enabled = action.enabled,
                 onClick = {
@@ -69,7 +65,7 @@ fun ContextMenu(
     Box(
         modifier.combinedClickable(
             onClick = onClick, onLongClickLabel = labels.showActionsFor(label),
-            onLongClick = { haptics.select(); expanded = true },
+            onLongClick = { haptics.select(); haptics.lift(); expanded = true },
         ),
     ) {
         content()

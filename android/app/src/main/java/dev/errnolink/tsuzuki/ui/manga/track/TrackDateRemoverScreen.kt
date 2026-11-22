@@ -13,6 +13,7 @@ import cafe.adriel.voyager.core.model.screenModelScope
 import cafe.adriel.voyager.navigator.LocalNavigator
 import cafe.adriel.voyager.navigator.currentOrThrow
 import dev.errnolink.tsuzuki.designsystem.DetentSheet
+import dev.errnolink.tsuzuki.designsystem.SheetKind
 import dev.errnolink.tsuzuki.designsystem.PillButton
 import dev.errnolink.tsuzuki.designsystem.TsuzukiText
 import dev.errnolink.tsuzuki.designsystem.TsuzukiTheme
@@ -50,7 +51,7 @@ data class TrackDateRemoverScreen(
         } else {
             stringResource(MR.strings.track_remove_finish_date_conf_text, serviceName)
         }
-        DetentSheet(true, stringResource(MR.strings.track_remove_date_conf_title), navigator::pop) {
+        DetentSheet(true, stringResource(MR.strings.track_remove_date_conf_title), navigator::pop, kind = SheetKind.Confirm) {
             TsuzukiText(
                 message,
                 Modifier.padding(horizontal = 16.dp),

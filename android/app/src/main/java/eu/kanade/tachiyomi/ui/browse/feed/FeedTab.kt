@@ -113,7 +113,7 @@ fun Screen.feedTab(
                 // KMK <--
             )
         },
-        content = { contentPadding, snackbarHostState ->
+        content = { contentPadding, toasts ->
             // KMK -->
             BackHandler(enabled = bulkFavoriteState.selectionMode || showingFeedOrderScreen.value) {
                 when {
@@ -250,10 +250,10 @@ fun Screen.feedTab(
                 screenModel.events.collectLatest { event ->
                     when (event) {
                         FeedScreenModel.Event.FailedFetchingSources -> {
-                            launch { snackbarHostState.showSnackbar(internalErrString) }
+                            launch { toasts.show(internalErrString) }
                         }
                         FeedScreenModel.Event.TooManyFeeds -> {
-                            launch { snackbarHostState.showSnackbar(tooManyFeedsString) }
+                            launch { toasts.show(tooManyFeedsString) }
                         }
                     }
                 }

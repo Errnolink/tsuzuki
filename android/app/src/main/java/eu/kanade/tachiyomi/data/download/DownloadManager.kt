@@ -74,11 +74,7 @@ class DownloadManager(
     fun startDownloads() {
         if (downloader.isRunning) return
 
-        if (DownloadJob.isRunning(context)) {
-            downloader.start()
-        } else {
-            DownloadJob.start(context)
-        }
+        DownloadJob.start(context)
     }
 
     /**
@@ -107,25 +103,27 @@ class DownloadManager(
         return queueState.value.find { it.chapter.id == chapterId }
     }
 
+    fun getQueuedDownloadsByChapterId(): Map<Long, Download> {
+        return queueState.value.associateBy { it.chapter.id }
+    }
+
+    fun getDownloadedChapterIds(chapters: List<Chapter>, manga: Manga): Set<Long> {
+        return cache.getDownloadedChapterIds(chapters, /* SY --> */ manga.ogTitle /* SY <-- */, manga.source)
+    }
+
     fun startDownloadNow(chapterId: Long) {
-        val existingDownload = getQueuedDownloadOrNull(chapterId)
         // If not in queue try to start a new download
-        val toAdd = existingDownload ?: runBlocking { Download.fromChapterId(chapterId) } ?: return
-        queueState.value.toMutableList().apply {
-            existingDownload?.let { remove(it) }
-            add(0, toAdd)
-            reorderQueue(this)
-        }
+        val toAdd =
+            getQueuedDownloadOrNull(chapterId) ?: runBlocking { Download.fromChapterId(chapterId) } ?: return
+        reorderQueue { queue -> queue.withDownloadsFirst(listOf(toAdd)) }
         startDownloads()
     }
 
     /**
      * Reorders the download queue.
-     *
-     * @param downloads value to set the download queue to
      */
-    fun reorderQueue(downloads: List<Download>) {
-        downloader.updateQueue(downloads)
+    fun reorderQueue(reorder: (List<Download>) -> List<Download>?) {
+        downloader.updateQueue(reorder)
     }
 
     /**
@@ -135,7 +133,7 @@ class DownloadManager(
      * @param chapters the list of chapters to enqueue.
      * @param autoStart whether to start the downloader after enqueing the chapters.
      */
-    fun downloadChapters(manga: Manga, chapters: List<Chapter>, autoStart: Boolean = true) {
+    suspend fun downloadChapters(manga: Manga, chapters: List<Chapter>, autoStart: Boolean = true) {
         downloader.queueChapters(manga, chapters, autoStart)
     }
 
@@ -146,10 +144,7 @@ class DownloadManager(
      */
     fun addDownloadsToStartOfQueue(downloads: List<Download>) {
         if (downloads.isEmpty()) return
-        queueState.value.toMutableList().apply {
-            addAll(0, downloads)
-            reorderQueue(this)
-        }
+        reorderQueue { queue -> queue.withDownloadsFirst(downloads) }
         if (!DownloadJob.isRunning(context)) startDownloads()
     }
 
@@ -275,7 +270,7 @@ class DownloadManager(
     fun deleteManga(manga: Manga, source: Source, removeQueued: Boolean = true) {
         launchIO {
             if (removeQueued) {
-                downloader.removeFromQueue(manga)
+                downloader.removeFromQueueAndRestart(manga)
             }
             provider.findMangaDir(/* SY --> */ manga.ogTitle /* SY <-- */, source)?.delete()
             cache.removeManga(manga)
@@ -294,20 +289,7 @@ class DownloadManager(
     }
 
     private fun removeFromDownloadQueue(chapters: List<Chapter>) {
-        val wasRunning = downloader.isRunning
-        if (wasRunning) {
-            downloader.pause()
-        }
-
-        downloader.removeFromQueue(chapters)
-
-        if (wasRunning) {
-            if (queueState.value.isEmpty()) {
-                downloader.stop()
-            } else if (queueState.value.isNotEmpty()) {
-                downloader.start()
-            }
-        }
+        downloader.removeFromQueueAndRestart(chapters)
     }
 
     // SY -->
@@ -334,7 +316,7 @@ class DownloadManager(
     ): Int {
         var cleaned = 0
 
-        if (removeNonFavorite && !manga.favorite) {
+        if (removeNonFavorite && !manga.favorite && queuedChapterIds(manga).isEmpty()) {
             val mangaFolder = provider.getMangaDir(/* SY --> */ manga.ogTitle /* SY <-- */, source).getOrElse { e ->
                 logcat(LogPriority.ERROR, e) { "Manga download folder doesn't exist." }
                 return 0
@@ -345,7 +327,13 @@ class DownloadManager(
             return cleaned
         }
 
-        val filesWithNoChapter = provider.findUnmatchedChapterDirs(allChapters, manga, source)
+        val filesWithNoChapter = provider.findUnmatchedChapterDirs(allChapters, manga, source) {
+            val queued = queueState.value
+                .filter { it.manga.id == manga.id }
+                .map { it.chapter }
+            val queuedIds = queued.map { it.id }.toSet()
+            queued + allChapters.filter { it.id in queuedIds }
+        }
         cleaned += filesWithNoChapter.size
         cache.removeFolders(filesWithNoChapter.mapNotNull { it.name }, manga)
         filesWithNoChapter.forEach { it.delete() }
@@ -358,12 +346,12 @@ class DownloadManager(
             cache.removeChapters(readChapters, manga)
         }
 
-        if (cache.getDownloadCount(manga) == 0) {
+        if (cache.getDownloadCount(manga) == 0 && queuedChapterIds(manga).isEmpty()) {
             val mangaFolder = provider.getMangaDir(/* SY --> */ manga.ogTitle /* SY <-- */, source).getOrElse { e ->
                 logcat(LogPriority.ERROR, e) { "Manga download folder doesn't exist." }
                 return cleaned
             }
-            if (!mangaFolder.listFiles().isNullOrEmpty()) {
+            if (mangaFolder.listFiles().isNullOrEmpty()) {
                 mangaFolder.delete()
                 cache.removeManga(manga)
             } else {
@@ -373,6 +361,9 @@ class DownloadManager(
         return cleaned
     }
     // SY <--
+
+    private fun queuedChapterIds(manga: Manga): Set<Long> =
+        queueState.value.filter { it.manga.id == manga.id }.map { it.chapter.id }.toSet()
 
     /**
      * Adds a list of chapters to be deleted later.
@@ -554,4 +545,11 @@ class DownloadManager(
                     .asFlow(),
             )
         }
+}
+
+internal fun List<Download>.withDownloadsFirst(downloads: List<Download>): List<Download> {
+    val queued = associateBy { it.chapter.id }
+    val first = downloads.map { queued[it.chapter.id] ?: it }.distinctBy { it.chapter.id }
+    val firstIds = first.mapTo(HashSet()) { it.chapter.id }
+    return first + filterNot { it.chapter.id in firstIds }
 }

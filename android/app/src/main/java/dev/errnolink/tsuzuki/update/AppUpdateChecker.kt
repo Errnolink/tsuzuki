@@ -5,6 +5,7 @@ import eu.kanade.tachiyomi.BuildConfig
 import eu.kanade.tachiyomi.network.GET
 import eu.kanade.tachiyomi.network.NetworkHelper
 import eu.kanade.tachiyomi.network.awaitSuccess
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.Headers
@@ -49,6 +50,8 @@ class AppUpdateChecker(
             } else {
                 CheckResult.NoNewUpdate
             }
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             CheckResult.Error(e)
         }

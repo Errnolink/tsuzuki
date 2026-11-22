@@ -1,5 +1,6 @@
 package exh.md.service
 
+import dev.errnolink.tsuzuki.mangadex.MangaDexBackground
 import eu.kanade.tachiyomi.network.GET
 import eu.kanade.tachiyomi.network.POST
 import eu.kanade.tachiyomi.network.awaitSuccess
@@ -53,23 +54,54 @@ class MangaDexService(
         }
     }
 
+    /**
+     * Details for up to 100 titles in one request, with the same includes as [viewManga] and every
+     * content rating (the API filters erotica and pornographic out by default).
+     */
+    suspend fun viewMangasDetailed(ids: List<String>): MangaListDto {
+        require(ids.size <= 100)
+        return with(MdUtil.jsonParser) {
+            client.newCall(
+                MangaDexBackground.tagIfBackground(
+                    GET(
+                        MdApi.manga.toHttpUrl()
+                            .newBuilder()
+                            .apply {
+                                addQueryParameter("limit", ids.size.toString())
+                                ids.forEach { addQueryParameter("ids[]", it) }
+                                addQueryParameter("includes[]", MdConstants.Types.coverArt)
+                                addQueryParameter("includes[]", MdConstants.Types.author)
+                                addQueryParameter("includes[]", MdConstants.Types.artist)
+                                listOf("safe", "suggestive", "erotica", "pornographic").forEach { addQueryParameter("contentRating[]", it) }
+                            }
+                            .build(),
+                        headers,
+                        cache = CacheControl.FORCE_NETWORK,
+                    ),
+                ),
+            ).awaitSuccess().parseAs()
+        }
+    }
+
     suspend fun viewManga(
         id: String,
     ): MangaDto {
         return with(MdUtil.jsonParser) {
             client.newCall(
-                GET(
-                    MdApi.manga.toHttpUrl()
-                        .newBuilder()
-                        .apply {
-                            addPathSegment(id)
-                            addQueryParameter("includes[]", MdConstants.Types.coverArt)
-                            addQueryParameter("includes[]", MdConstants.Types.author)
-                            addQueryParameter("includes[]", MdConstants.Types.artist)
-                        }
-                        .build(),
-                    headers,
-                    cache = CacheControl.FORCE_NETWORK,
+                MangaDexBackground.tagIfBackground(
+                    GET(
+                        MdApi.manga.toHttpUrl()
+                            .newBuilder()
+                            .apply {
+                                addPathSegment(id)
+                                addQueryParameter("includes[]", MdConstants.Types.coverArt)
+                                addQueryParameter("includes[]", MdConstants.Types.author)
+                                addQueryParameter("includes[]", MdConstants.Types.artist)
+                            }
+                            .build(),
+                        headers,
+                        cache = CacheControl.FORCE_NETWORK,
+                    ),
                 ),
             ).awaitSuccess().parseAs()
         }
@@ -127,11 +159,13 @@ class MangaDexService(
         includeUnavailable: Boolean,
     ): ChapterListDto = with(MdUtil.jsonParser) {
         client.newCall(
-            MangaDexFeatureRequests.chapters(
-                id, offset, translatedLanguages,
-                blockedGroups.split(',').map(String::trim).filter(String::isNotEmpty),
-                blockedUploaders.split(',').map(String::trim).filter(String::isNotEmpty),
-                includeUnavailable,
+            MangaDexBackground.tagIfBackground(
+                MangaDexFeatureRequests.chapters(
+                    id, offset, translatedLanguages,
+                    blockedGroups.split(',').map(String::trim).filter(String::isNotEmpty),
+                    blockedUploaders.split(',').map(String::trim).filter(String::isNotEmpty),
+                    includeUnavailable,
+                ),
             ),
         ).awaitSuccess().parseAs()
     }

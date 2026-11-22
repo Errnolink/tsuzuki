@@ -148,8 +148,8 @@ object TsuzukiSettingsLibraryScreen : SearchableSettings {
         val behaviorSection = newGroup(
             title = "Behavior",
             items = behaviorGroup?.preferenceItems.orEmpty()
-                .retitledWhere("pref_chapter_swipe_start_action", "Swipe left on a chapter")
-                .retitledWhere("pref_chapter_swipe_end_action", "Swipe right on a chapter")
+                .retitledWhere("pref_chapter_swipe_start_action", "Swipe right on a chapter")
+                .retitledWhere("pref_chapter_swipe_end_action", "Swipe left on a chapter")
                 .retitledWhere("mark_duplicate_read_chapter_read", "Mark duplicate chapters as read"),
         )
 

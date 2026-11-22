@@ -1,15 +1,22 @@
 package dev.errnolink.tsuzuki.ui.details
 
 import android.graphics.Bitmap
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.tween
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.graphics.Color
 import androidx.palette.graphics.Palette
+import dev.errnolink.tsuzuki.designsystem.M3Motion
 import dev.errnolink.tsuzuki.designsystem.LocalTsuzukiColors
 import dev.errnolink.tsuzuki.designsystem.LocalTsuzukiContentColor
-import dev.errnolink.tsuzuki.designsystem.tsuzukiCardColors
-import dev.errnolink.tsuzuki.ui.shell.MangaHero
+import dev.errnolink.tsuzuki.designsystem.expressiveCoverColors
+import dev.errnolink.tsuzuki.designsystem.lerpColors
+import dev.errnolink.tsuzuki.ui.motion.LocalNavigationProgress
+import dev.errnolink.tsuzuki.ui.motion.MangaHero
 
 object DetailsCardColor {
 
@@ -32,18 +39,41 @@ object DetailsCardColor {
     }
 }
 
+/**
+ * Colours for a cover-tinted scope (title page, reader chrome): the seed swatch becomes a full
+ * scheme via expressiveScheme (light and dark both covered), and the switch from the app scheme
+ * is visible — 400 ms on M3 standard easing, riding the page transition (LocalNavigationProgress
+ * drops below 1f while the page closes or is dragged away, and returns on a cancelled gesture).
+ */
 @Composable
-fun DetailsCardTheme(mangaId: Long, content: @Composable () -> Unit) {
-    val card = MangaHero.cardColor(mangaId)
-    if (card == null) {
+fun CoverTheme(seed: Color?, content: @Composable () -> Unit) {
+    val appColors = LocalTsuzukiColors.current
+    if (seed == null) {
         content()
         return
     }
-    val colors = remember(card) { tsuzukiCardColors(card) }
+    val dark = appColors.isDark
+    val target = remember(seed, dark) { expressiveCoverColors(seed, dark) }
+    // DET-04: a page that already knows its seed opens at the cover scheme — the lerp only runs
+    // when the seed arrives later (palette computed on the fly).
+    val fraction = remember(seed) { Animatable(if (seed != null) 1f else 0f) }
+    val navigationProgress = LocalNavigationProgress.current
+    LaunchedEffect(seed, navigationProgress) {
+        fraction.animateTo(1f, tween(M3Motion.Medium4, easing = M3Motion.Standard))
+        snapshotFlow { navigationProgress() < 1f }.collect { leaving ->
+            fraction.animateTo(if (leaving) 0f else 1f, tween(M3Motion.Medium4, easing = M3Motion.Standard))
+        }
+    }
+    val colors = lerpColors(appColors, target, fraction.value)
     CompositionLocalProvider(
         LocalTsuzukiColors provides colors,
         LocalTsuzukiContentColor provides colors.text,
         androidx.compose.material3.LocalContentColor provides colors.text,
         content = content,
     )
+}
+
+@Composable
+fun DetailsCardTheme(mangaId: Long, content: @Composable () -> Unit) {
+    CoverTheme(seed = MangaHero.cardColor(mangaId), content = content)
 }

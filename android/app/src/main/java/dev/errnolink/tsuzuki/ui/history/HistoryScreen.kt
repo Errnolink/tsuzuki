@@ -10,7 +10,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.SnackbarHostState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -39,8 +38,10 @@ import dev.errnolink.tsuzuki.designsystem.PillButton
 import dev.errnolink.tsuzuki.designsystem.InsetGroupedList
 import dev.errnolink.tsuzuki.designsystem.rememberTopBarSearch
 import dev.errnolink.tsuzuki.designsystem.TsuzukiTheme
+import dev.errnolink.tsuzuki.designsystem.KasaneSprings
+import dev.errnolink.tsuzuki.designsystem.ToastHostState
 import dev.errnolink.tsuzuki.ui.shell.ShellAction
-import dev.errnolink.tsuzuki.ui.shell.ShellEmpty
+import dev.errnolink.tsuzuki.ui.states.HistoryEmptyState
 import dev.errnolink.tsuzuki.ui.shell.ShellList
 import dev.errnolink.tsuzuki.ui.shell.ShellTopAction
 import dev.errnolink.tsuzuki.ui.shell.rememberPageTotals
@@ -83,7 +84,7 @@ suspend fun prepareHistoryUiModels(state: HistoryScreenModel.State): List<Histor
 @Composable
 fun HistoryScreen(
     state: HistoryScreenModel.State,
-    snackbarHostState: SnackbarHostState,
+    toasts: ToastHostState,
     onSearchQueryChange: (String?) -> Unit,
     onClickCover: (Long) -> Unit,
     onClickResume: (Long, Long) -> Unit,
@@ -109,12 +110,17 @@ fun HistoryScreen(
         value = prepareHistoryUiModels(state)
     }
     val pageTotals = rememberPageTotals()
+    LaunchedEffect(Unit) {
+        dev.errnolink.tsuzuki.ui.shell.TabToolRequests.historySearch.collect {
+            if (!state.selectionMode) search.state.expand()
+        }
+    }
     @Composable
     fun HistoryShellList(content: LazyListScope.() -> Unit) {
         ShellList(
             if (state.selectionMode) "${state.selection.size} selected" else "History",
             reselectKey = "eu.kanade.tachiyomi.ui.history.HistoryTab",
-            snackbar = snackbarHostState,
+            toasts = toasts,
             navigateUp = if (navigator?.canPop == true) { { navigator.pop() } } else null,
             itemSpacing = 0.dp,
             search = if (state.selectionMode) null else search,
@@ -132,9 +138,8 @@ fun HistoryScreen(
                 )
             } else {
                 listOf(
-                    ShellTopAction(stringResource(MR.strings.action_search), TsuzukiIcons.Search, search.state::expand),
                     ShellTopAction(stringResource(MR.strings.action_filter), TsuzukiIcons.ListFilter, onFilterClicked, active = hasActiveFilters),
-                    ShellTopAction(stringResource(MR.strings.action_select_all), TsuzukiIcons.ListChecks, toggleSelectionMode),
+                    ShellTopAction("Select", TsuzukiIcons.ListChecks, toggleSelectionMode),
                     ShellTopAction(stringResource(MR.strings.pref_clear_history), TsuzukiIcons.Trash2, { onDialogChange(HistoryScreenModel.Dialog.DeleteAll) }),
                 )
             },
@@ -148,68 +153,21 @@ fun HistoryScreen(
                 when (historyContentState(state.isLoading, state.list.isNotEmpty(), models.isNotEmpty())) {
                     HistoryContentState.Loading -> historyLoadingSkeleton()
             HistoryContentState.Empty -> item(key = "history-empty") {
-                ShellEmpty(
-                    "Nothing here yet",
-                    if (state.searchQuery.isNullOrEmpty()) {
-                        "The stories you read will appear here."
-                    } else {
-                        "No history matches your search."
-                    },
-                )
+                HistoryEmptyState(historyEmptySearching(state.searchQuery))
             }
-            else -> itemsIndexed(
-                models,
-                key = { _, it ->
-                    when (it) {
-                        is HistoryUiModel.Header -> "history-date-${it.date}"
-                        is HistoryUiModel.Item -> "history-chapter-${it.item.chapterId}"
-                    }
-                },
-                contentType = { _, it -> if (it is HistoryUiModel.Header) "header" else "entry" },
-            ) { index, model ->
-                val motion = TsuzukiTheme.motion
-                val place: FiniteAnimationSpec<IntOffset>? = if (motion.reduced) null else motion.tabSpring()
-                val fade: FiniteAnimationSpec<Float>? = if (motion.reduced) null else motion.tabSpring()
-                val animated = Modifier.animateItem(fade, place, fade)
-                when (model) {
-                    is HistoryUiModel.Header -> TsuzukiText(
-                        relativeDateText(model.date),
-                        animated.padding(start = 32.dp, top = 20.dp, bottom = 8.dp),
-                        TsuzukiTheme.typography.footnote,
-                        TsuzukiTheme.colors.secondary,
-                    )
-                    is HistoryUiModel.Item -> {
-                        val entry = model.item
-                        val selected = entry.chapterId in state.selection
-                            HistoryItem(
-                                history = entry,
-                                modifier = animated.padding(horizontal = 20.dp),
-                                shape = RoundedCornerShape(
-                                    topStart = if (models.getOrNull(index - 1) !is HistoryUiModel.Item) TsuzukiCorners.group else 0.dp,
-                                    topEnd = if (models.getOrNull(index - 1) !is HistoryUiModel.Item) TsuzukiCorners.group else 0.dp,
-                                    bottomStart = if (models.getOrNull(index + 1) !is HistoryUiModel.Item) TsuzukiCorners.group else 0.dp,
-                                    bottomEnd = if (models.getOrNull(index + 1) !is HistoryUiModel.Item) TsuzukiCorners.group else 0.dp,
-                                ),
-                                divider = models.getOrNull(index + 1) is HistoryUiModel.Item,
-                                onClickCover = { onClickCover(entry.mangaId) },
-                                onClick = {
-                                    if (state.selectionMode) {
-                                        onHistorySelected(entry, HistorySelectionOptions(!selected, false))
-                                    } else {
-                                        onClickResume(entry.mangaId, entry.chapterId)
-                                    }
-                                },
-                                onLongClick = { onHistorySelected(entry, HistorySelectionOptions(!selected, true)) },
-                                onClickDelete = { onDialogChange(HistoryScreenModel.Dialog.Delete(entry)) },
-                                onClickFavorite = { onClickFavorite(entry.mangaId) },
-                                selected = selected,
-                                readProgress = if (!entry.read) "Page ${entry.lastPageRead + 1}" else null,
-                                usePanoramaCover = usePanoramaCover,
-                                pageTotal = pageTotals[entry.chapterId],
-                            )
-                    }
-                }
-            }
+            else -> historyItems(
+                models = models,
+                selection = state.selection,
+                selectionMode = state.selectionMode,
+                pageTotals = pageTotals,
+                usePanoramaCover = usePanoramaCover,
+                keyPrefix = "history",
+                onClickCover = onClickCover,
+                onClickResume = onClickResume,
+                onDialogChange = onDialogChange,
+                onClickFavorite = onClickFavorite,
+                onHistorySelected = onHistorySelected,
+            )
             }
             }
         },
@@ -232,5 +190,79 @@ internal fun LazyListScope.historyLoadingSkeleton(rows: Int = 6) {
             ),
             divider = index < rows - 1,
         )
+    }
+}
+
+/**
+ * The history list body both hosts share: date headers plus grouped rows with the corner/divider
+ * maths. The full screen ([HistoryScreen]) and the feed host differ only in their chrome, keys
+ * ([keyPrefix]) and callbacks.
+ */
+internal fun LazyListScope.historyItems(
+    models: List<HistoryUiModel>,
+    selection: Set<Long>,
+    selectionMode: Boolean,
+    pageTotals: Map<Long, Int>,
+    usePanoramaCover: Boolean,
+    keyPrefix: String,
+    onClickCover: (Long) -> Unit,
+    onClickResume: (Long, Long) -> Unit,
+    onDialogChange: (HistoryScreenModel.Dialog?) -> Unit,
+    onClickFavorite: (Long) -> Unit,
+    onHistorySelected: (HistoryWithRelations, HistorySelectionOptions) -> Unit,
+) {
+    itemsIndexed(
+        models,
+        key = { _, it ->
+            when (it) {
+                is HistoryUiModel.Header -> "$keyPrefix-date-${it.date}"
+                is HistoryUiModel.Item -> "$keyPrefix-chapter-${it.item.chapterId}"
+            }
+        },
+        contentType = { _, it -> if (it is HistoryUiModel.Header) "header" else "entry" },
+    ) { index, model ->
+        val motion = TsuzukiTheme.motion
+        val place: FiniteAnimationSpec<IntOffset>? = if (motion.reduced) null else KasaneSprings.tab()
+        val fade: FiniteAnimationSpec<Float>? = if (motion.reduced) null else KasaneSprings.tab()
+        val animated = Modifier.animateItem(fade, place, fade)
+        when (model) {
+            is HistoryUiModel.Header -> TsuzukiText(
+                relativeDateText(model.date),
+                animated.padding(start = 32.dp, top = 20.dp, bottom = 8.dp),
+                TsuzukiTheme.typography.footnote,
+                TsuzukiTheme.colors.secondary,
+            )
+            is HistoryUiModel.Item -> {
+                val entry = model.item
+                val selected = entry.chapterId in selection
+                HistoryItem(
+                    history = entry,
+                    modifier = animated.padding(horizontal = 20.dp),
+                    shape = RoundedCornerShape(
+                        topStart = if (models.getOrNull(index - 1) !is HistoryUiModel.Item) TsuzukiCorners.group else 0.dp,
+                        topEnd = if (models.getOrNull(index - 1) !is HistoryUiModel.Item) TsuzukiCorners.group else 0.dp,
+                        bottomStart = if (models.getOrNull(index + 1) !is HistoryUiModel.Item) TsuzukiCorners.group else 0.dp,
+                        bottomEnd = if (models.getOrNull(index + 1) !is HistoryUiModel.Item) TsuzukiCorners.group else 0.dp,
+                    ),
+                    divider = models.getOrNull(index + 1) is HistoryUiModel.Item,
+                    onClickCover = { onClickCover(entry.mangaId) },
+                    onClick = {
+                        if (selectionMode) {
+                            onHistorySelected(entry, HistorySelectionOptions(!selected, false))
+                        } else {
+                            onClickResume(entry.mangaId, entry.chapterId)
+                        }
+                    },
+                    onLongClick = { onHistorySelected(entry, HistorySelectionOptions(!selected, true)) },
+                    onClickDelete = { onDialogChange(HistoryScreenModel.Dialog.Delete(entry)) },
+                    onClickFavorite = { onClickFavorite(entry.mangaId) },
+                    selected = selected,
+                    selectionMode = selectionMode,
+                    readProgress = if (!entry.read) "Page ${entry.lastPageRead + 1}" else null,
+                    usePanoramaCover = usePanoramaCover,
+                    pageTotal = pageTotals[entry.chapterId],
+                )
+            }
+        }
     }
 }

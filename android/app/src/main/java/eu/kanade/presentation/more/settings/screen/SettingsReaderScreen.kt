@@ -425,16 +425,6 @@ object SettingsReaderScreen : SearchableSettings {
                     valueString = numberFormat.format(webtoonSidePadding / 100f),
                     onValueChanged = { webtoonSidePaddingPref.set(it) },
                 ),
-                Preference.PreferenceItem.ListPreference(
-                    preference = readerPreferences.readerHideThreshold(),
-                    entries = persistentMapOf(
-                        ReaderPreferences.ReaderHideThreshold.HIGHEST to stringResource(MR.strings.pref_highest),
-                        ReaderPreferences.ReaderHideThreshold.HIGH to stringResource(MR.strings.pref_high),
-                        ReaderPreferences.ReaderHideThreshold.LOW to stringResource(MR.strings.pref_low),
-                        ReaderPreferences.ReaderHideThreshold.LOWEST to stringResource(MR.strings.pref_lowest),
-                    ),
-                    title = stringResource(MR.strings.pref_hide_threshold),
-                ),
                 Preference.PreferenceItem.SwitchPreference(
                     preference = readerPreferences.cropBordersWebtoon(),
                     title = stringResource(MR.strings.pref_crop_borders),

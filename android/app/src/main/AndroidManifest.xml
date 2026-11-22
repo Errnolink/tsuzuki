@@ -261,9 +261,11 @@
 
                 <data android:scheme="komikku" />
                 <data android:scheme="mihon" />
+                <data android:scheme="app.mihon" />
 
                 <data android:host="anilist-auth" />
                 <data android:host="bangumi-auth" />
+                <data android:host="comick-auth" />
                 <data android:host="myanimelist-auth" />
                 <data android:host="shikimori-auth" />
             </intent-filter>
@@ -382,6 +384,18 @@
         <activity
             android:name="com.journeyapps.barcodescanner.CaptureActivity"
             tools:remove="screenOrientation" />
+
+        <provider
+            android:name="androidx.startup.InitializationProvider"
+            android:authorities="${applicationId}.androidx-startup"
+            android:exported="false"
+            tools:node="merge">
+            <meta-data
+                android:name="androidx.work.WorkManagerInitializer"
+                android:value="androidx.startup"
+                tools:node="remove" />
+        </provider>
+
     </application>
 
 </manifest>

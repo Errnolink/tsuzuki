@@ -1,6 +1,7 @@
 // Adapted from Neko (https://github.com/nekomangaorg/Neko), Apache License 2.0. Modified for Tsuzuki.
 package exh.md.network
 
+import dev.errnolink.tsuzuki.mangadex.MangaDexBackground
 import exh.md.utils.MdApi
 import java.io.IOException
 import java.util.PriorityQueue
@@ -42,7 +43,7 @@ class PriorityRateLimitInterceptor(
     override fun intercept(chain: Interceptor.Chain): Response {
         val url = chain.request().url
         if (!limits(url)) return chain.proceed(chain.request())
-        val priority = prioritySelector(url)
+        val priority = if (MangaDexBackground.isBackground(chain.request())) MangaDexBackground.PRIORITY else prioritySelector(url)
 
         val ticket: Ticket
 
@@ -98,7 +99,7 @@ class PriorityRateLimitInterceptor(
 }
 
 object MangaDexRateLimit {
-    const val API_PERMITS_PER_SECOND = 5
+    const val API_PERMITS_PER_SECOND = 4
 
     val interceptor = PriorityRateLimitInterceptor(
         permits = API_PERMITS_PER_SECOND,

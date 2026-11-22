@@ -1,7 +1,7 @@
 package dev.errnolink.tsuzuki.ui.details
 
 import androidx.compose.ui.graphics.Color
-import dev.errnolink.tsuzuki.designsystem.tsuzukiCardColors
+import dev.errnolink.tsuzuki.designsystem.expressiveCoverColors
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import kotlin.math.abs
@@ -41,17 +41,17 @@ class DetailsCardColorTest {
     }
 
     @Test
-    fun `secondary lines and links stay readable on the card`() {
+    fun `text, secondary lines and links stay readable on the cover scheme`() {
         covers.forEach { cover ->
-            val colors = tsuzukiCardColors(DetailsCardColor.forDominant(cover))
-            val text = ContinueActionColor.contrast(colors.text, colors.background)
-            val secondary = ContinueActionColor.contrast(colors.secondary, colors.background)
-            val accent = ContinueActionColor.contrast(colors.accent, colors.background)
-            assertTrue(text >= 4.5f, "text $text for $cover")
-            assertTrue(secondary >= 4.5f, "secondary $secondary for $cover")
-            assertTrue(accent >= 4.5f, "accent $accent for $cover")
-            val selected = ContinueActionColor.contrast(colors.text, colors.selectedFill)
-            assertTrue(selected >= 4.5f, "selected segment label $selected for $cover")
+            listOf(true, false).forEach { dark ->
+                val colors = expressiveCoverColors(DetailsCardColor.forDominant(cover), dark)
+                val text = ContinueActionColor.contrast(colors.text, colors.background)
+                val secondary = ContinueActionColor.contrast(colors.secondary, colors.background)
+                val accent = ContinueActionColor.contrast(colors.accent, colors.background)
+                assertTrue(text >= 4.5f, "text $text for $cover dark=$dark")
+                assertTrue(secondary >= 4.5f, "secondary $secondary for $cover dark=$dark")
+                assertTrue(accent >= 4.5f, "accent $accent for $cover dark=$dark")
+            }
         }
     }
 

@@ -58,6 +58,7 @@ class LibraryTopRowLogicTest {
         assertTrue(libraryOptionsAtDefaults(defaults))
         assertTrue(libraryOptionsAtDefaults(LibraryMenuOptionsState(quickFilterStates = List(QuickFilterItem.entries.size) { TriState.DISABLED })))
         assertTrue(libraryOptionsAtDefaults(LibraryMenuOptionsState(trackedStates = emptyList())))
+        assertTrue(libraryOptionsAtDefaults(LibraryMenuOptionsState(trackedStates = listOf(TriState.DISABLED, TriState.DISABLED))))
 
         assertFalse(libraryOptionsAtDefaults(defaults.copy(quickFilterStates = defaults.quickFilterStates.toMutableList().also { it[0] = TriState.ENABLED_IS })))
         assertFalse(libraryOptionsAtDefaults(defaults.copy(trackedStates = listOf(TriState.ENABLED_NOT))))
@@ -80,9 +81,7 @@ class LibraryTopRowLogicTest {
         assertFalse(libraryOptionsAtDefaults(defaults.copy(useLangIcon = false)))
         assertFalse(libraryOptionsAtDefaults(defaults.copy(sourceBadge = false)))
         assertFalse(libraryOptionsAtDefaults(defaults.copy(continueReadingButton = true)))
-        assertFalse(libraryOptionsAtDefaults(defaults.copy(categoryTabs = false)))
         assertFalse(libraryOptionsAtDefaults(defaults.copy(showHiddenCategories = true)))
-        assertFalse(libraryOptionsAtDefaults(defaults.copy(categoryNumberOfItems = true)))
     }
 
     @Test
@@ -191,6 +190,36 @@ class LibraryTopRowLogicTest {
     }
 
     @Test
+    fun `badge count covers every filter kind, categories only once`() {
+        // Quick tri-states only.
+        assertEquals(
+            2,
+            activeFilterCount(
+                LibraryMenuOptionsState(
+                    quickFilterStates = listOf(TriState.ENABLED_IS, TriState.DISABLED, TriState.ENABLED_NOT),
+                ),
+            ),
+        )
+
+        // Tracker filters, lewd, interval, categories and scanlator match-all each add one;
+        // the category include/exclude set sizes do not multiply the count.
+        val full = LibraryMenuOptionsState(
+            quickFilterStates = listOf(TriState.ENABLED_IS),
+            trackedStates = listOf(TriState.DISABLED, TriState.ENABLED_IS),
+            lewd = TriState.ENABLED_NOT,
+            intervalCustom = TriState.ENABLED_IS,
+            categoriesFiltered = true,
+            categoryIncludeIds = setOf("a", "b"),
+            categoryExcludeIds = setOf("c"),
+            scanlatorMatchAll = true,
+        )
+        assertEquals(6, activeFilterCount(full))
+
+        // The category toggle alone counts once, include or exclude side empty.
+        assertEquals(1, activeFilterCount(LibraryMenuOptionsState(categoryExcludeIds = setOf("x"))))
+    }
+
+    @Test
     fun `filter count formats single digits and overflows at 9+`() {
         assertEquals("1", formatFilterCount(1))
         assertEquals("5", formatFilterCount(5))
@@ -220,35 +249,54 @@ class LibraryTopRowLogicTest {
     }
 
     @Test
-    fun `menu pull down and filter sheet are mutually exclusive state holders`() {
-        LibraryFilterSheetState.close()
+    fun `menu pull down is a standalone state holder`() {
         LibraryMenuPullDownState.close()
-        assertFalse(LibraryFilterSheetState.isOpen.value)
         assertFalse(LibraryMenuPullDownState.isOpen.value)
 
-        // Opening filter sheet opens filter sheet while menu stays closed
-        LibraryFilterSheetState.open()
-        assertTrue(LibraryFilterSheetState.isOpen.value)
-        assertFalse(LibraryMenuPullDownState.isOpen.value)
-
-        // Opening menu from circle opens menu and closes filter sheet
         LibraryMenuPullDownState.open()
         assertTrue(LibraryMenuPullDownState.isOpen.value)
-        assertFalse(LibraryFilterSheetState.isOpen.value)
 
-        // Opening filter sheet closes pull-down menu
-        LibraryFilterSheetState.open()
-        assertTrue(LibraryFilterSheetState.isOpen.value)
-        assertFalse(LibraryMenuPullDownState.isOpen.value)
-
-        // Toggling menu opens it and closes filter sheet
+        // Toggling flips it
         LibraryMenuPullDownState.toggle()
-        assertTrue(LibraryMenuPullDownState.isOpen.value)
-        assertFalse(LibraryFilterSheetState.isOpen.value)
+        assertFalse(LibraryMenuPullDownState.isOpen.value)
 
         // Closing menu closes it
+        LibraryMenuPullDownState.open()
         LibraryMenuPullDownState.close()
         assertFalse(LibraryMenuPullDownState.isOpen.value)
-        assertFalse(LibraryFilterSheetState.isOpen.value)
+    }
+
+    @Test
+    fun `primary and secondary quick filters partition every quick filter item without overlap`() {
+        val combined = PrimaryQuickFilters + SecondaryQuickFilters
+        assertEquals(QuickFilterItem.entries.size, combined.size)
+        assertEquals(QuickFilterItem.entries.toSet(), combined.toSet())
+    }
+
+    @Test
+    fun `more filters summary surfaces active secondary quick filters alongside extra filters`() {
+        val empty = moreFiltersSummary(
+            secondaryActive = emptyList(),
+            trackedActive = false,
+            lewd = TriState.DISABLED,
+            categories = false,
+            intervalCustom = TriState.DISABLED,
+            intervalVisible = true,
+            scanlatorMatchAll = false,
+        )
+        assertTrue(empty.isEmpty())
+
+        val active = moreFiltersSummary(
+            secondaryActive = listOf(QuickFilterItem.Completed.label, QuickFilterItem.Missing.label),
+            trackedActive = true,
+            lewd = TriState.ENABLED_IS,
+            categories = true,
+            intervalCustom = TriState.ENABLED_NOT,
+            intervalVisible = true,
+            scanlatorMatchAll = true,
+        )
+        assertEquals(7, active.size)
+        assertEquals(QuickFilterItem.Completed.label, active[0])
+        assertEquals(QuickFilterItem.Missing.label, active[1])
     }
 }

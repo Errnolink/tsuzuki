@@ -1,14 +1,15 @@
 package dev.errnolink.tsuzuki.ui.browse
 
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
 import dev.errnolink.tsuzuki.designsystem.GroupedRow
 import dev.errnolink.tsuzuki.designsystem.InsetGroupedList
 import dev.errnolink.tsuzuki.designsystem.TsuzukiCheckMark
-import dev.errnolink.tsuzuki.designsystem.TsuzukiMinusMark
 import dev.errnolink.tsuzuki.ui.settings.SettingsScaffold
 import dev.errnolink.tsuzuki.ui.shell.ShellEmpty
 import eu.kanade.domain.source.model.installedExtension
@@ -75,9 +76,13 @@ fun SourcesFilterContent(
                                 leading = {
                                     SourceIcon(source = source, modifier = Modifier.size(32.dp))
                                 },
-                                onClick = { onClickSource(source) },
+                                modifier = Modifier.toggleable(
+                                    value = sourceEnabled,
+                                    role = Role.Checkbox,
+                                    onValueChange = { onClickSource(source) },
+                                ),
                                 trailing = {
-                                    if (sourceEnabled) TsuzukiCheckMark() else TsuzukiMinusMark()
+                                    if (sourceEnabled) TsuzukiCheckMark()
                                 },
                             )
                         }

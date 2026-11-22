@@ -17,6 +17,7 @@ import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -33,14 +34,17 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.progressBarRangeInfo
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.TextFieldValue
+import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.foundation.Canvas as SliderCanvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.material3.Icon
-import androidx.compose.material3.SnackbarHostState
+import dev.errnolink.tsuzuki.designsystem.ToastHostState
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.selection.selectable
@@ -50,16 +54,19 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.state.ToggleableState
 import androidx.compose.ui.semantics.stateDescription
 import dev.errnolink.tsuzuki.designsystem.DetentSheet
+import dev.errnolink.tsuzuki.designsystem.SheetKind
 import dev.errnolink.tsuzuki.designsystem.GroupedRow
 import dev.errnolink.tsuzuki.designsystem.InsetGroupedList
+import dev.errnolink.tsuzuki.designsystem.groupDividerStart
 import dev.errnolink.tsuzuki.designsystem.LargeTitleScaffold
 import dev.errnolink.tsuzuki.designsystem.PillButton
+import dev.errnolink.tsuzuki.designsystem.PullDownConfirmSheet
 import dev.errnolink.tsuzuki.designsystem.TsuzukiCheckMark
 import dev.errnolink.tsuzuki.designsystem.TsuzukiIcons
-import dev.errnolink.tsuzuki.designsystem.TsuzukiMinusMark
 import dev.errnolink.tsuzuki.designsystem.SliderRow
 import dev.errnolink.tsuzuki.designsystem.TsuzukiTheme
 import dev.errnolink.tsuzuki.designsystem.TsuzukiText
+import dev.errnolink.tsuzuki.designsystem.X
 import dev.errnolink.tsuzuki.designsystem.rememberGlassContext
 import dev.errnolink.tsuzuki.ui.shell.LocalShellGlass
 import kotlinx.coroutines.launch
@@ -71,7 +78,7 @@ fun SettingsScaffold(
     modifier: Modifier = Modifier,
     state: LazyListState = rememberLazyListState(),
     reselectKey: String? = null,
-    snackbar: SnackbarHostState? = null,
+    toasts: ToastHostState? = null,
     actions: List<dev.errnolink.tsuzuki.ui.shell.ShellTopAction> = emptyList(),
     search: dev.errnolink.tsuzuki.designsystem.TopBarSearch? = null,
     onTitleClick: (() -> Unit)? = null,
@@ -83,6 +90,11 @@ fun SettingsScaffold(
     val glassContext = shellGlass ?: rememberGlassContext()
     val largeTitles = dev.errnolink.tsuzuki.designsystem.largeTitlesEnabled()
     val collapse = dev.errnolink.tsuzuki.designsystem.rememberLargeTitleCollapse(state, largeTitles)
+    val scrolledUnderChrome = remember(state) {
+        derivedStateOf {
+            dev.errnolink.tsuzuki.ui.shell.scrolledUnder(state.firstVisibleItemIndex, state.firstVisibleItemScrollOffset, 0f)
+        }
+    }.value
     LaunchedEffect(reselectKey, state) {
         eu.kanade.tachiyomi.ui.home.HomeScreen.reselectEvents.collect { if (it == reselectKey) state.scrollToItem(0) }
     }
@@ -94,6 +106,7 @@ fun SettingsScaffold(
         search = search,
         onTitleClick = onTitleClick,
         inlineTitle = { if (largeTitles) collapse.value else 1f },
+        scrolledUnder = scrolledUnderChrome,
     )
     Box(modifier.fillMaxSize()) {
         LargeTitleScaffold(
@@ -108,8 +121,8 @@ fun SettingsScaffold(
             itemSpacing = itemSpacing,
             content = content,
         )
-        dev.errnolink.tsuzuki.ui.shell.ShellSnackbar(
-            snackbar,
+        dev.errnolink.tsuzuki.ui.shell.ShellToasts(
+            toasts,
             Modifier
                 .align(Alignment.BottomCenter)
                 .padding(bottom = dev.errnolink.tsuzuki.ui.shell.shellBottomPadding() + 12.dp),
@@ -135,10 +148,10 @@ fun SettingsIconButton(
 }
 
 @Composable
-fun GroupDivider() {
+fun GroupDivider(leadingWidth: androidx.compose.ui.unit.Dp = 0.dp) {
     Spacer(
         Modifier
-            .padding(start = 16.dp)
+            .padding(start = groupDividerStart(leadingWidth))
             .fillMaxWidth()
             .height(dev.errnolink.tsuzuki.designsystem.TsuzukiSpacing.hairline)
             .background(TsuzukiTheme.colors.separator),
@@ -154,7 +167,7 @@ fun <T> ChoiceSheet(
     onDismissRequest: () -> Unit,
     onSelect: (T) -> Unit,
 ) {
-    DetentSheet(visible = visible, title = title, onDismissRequest = onDismissRequest) {
+    DetentSheet(visible = visible, title = title, onDismissRequest = onDismissRequest, kind = SheetKind.Picker) {
         InsetGroupedList {
             entries.forEachIndexed { index, (key, label) ->
                 if (index > 0) GroupDivider()
@@ -162,7 +175,7 @@ fun <T> ChoiceSheet(
                 Row(
                     Modifier
                         .fillMaxWidth()
-                        .heightIn(min = 44.dp)
+                        .heightIn(min = dev.errnolink.tsuzuki.designsystem.TsuzukiSpacing.rowMin)
                         .selectable(
                             selected = selected,
                             role = Role.RadioButton,
@@ -194,14 +207,14 @@ fun MultiChoiceSheet(
     options: List<Triple<String, Boolean, (Boolean) -> Unit>>,
     onDismissRequest: () -> Unit,
 ) {
-    DetentSheet(visible = visible, title = title, onDismissRequest = onDismissRequest) {
+    DetentSheet(visible = visible, title = title, onDismissRequest = onDismissRequest, kind = SheetKind.Picker) {
         InsetGroupedList {
             options.forEachIndexed { index, (label, checked, onChange) ->
                 if (index > 0) GroupDivider()
                 Row(
                     Modifier
                         .fillMaxWidth()
-                        .heightIn(min = 44.dp)
+                        .heightIn(min = dev.errnolink.tsuzuki.designsystem.TsuzukiSpacing.rowMin)
                         .toggleable(
                             value = checked,
                             role = Role.Checkbox,
@@ -227,7 +240,7 @@ fun MultiChoiceSheet(
             )
         }
         if (doneLabel != null && onDone != null) {
-            PillButton(doneLabel, onDone, prominent = false, modifier = Modifier.align(Alignment.End))
+            PillButton(doneLabel, onDone, modifier = Modifier.fillMaxWidth(), large = true)
         }
     }
 }
@@ -242,7 +255,7 @@ fun TriStateChoiceSheet(
     onDismissRequest: () -> Unit,
     onDone: () -> Unit,
 ) {
-    DetentSheet(visible = visible, title = title, onDismissRequest = onDismissRequest) {
+    DetentSheet(visible = visible, title = title, onDismissRequest = onDismissRequest, kind = SheetKind.Picker) {
         message?.let {
             TsuzukiText(it, Modifier.padding(horizontal = 16.dp), TsuzukiTheme.typography.footnote, TsuzukiTheme.colors.secondary)
         }
@@ -252,13 +265,13 @@ fun TriStateChoiceSheet(
                 Row(
                     Modifier
                         .fillMaxWidth()
-                        .heightIn(min = 44.dp)
-                        .clickable(role = Role.Checkbox) { onCycle((state + 1) % 3) }
+                        .heightIn(min = dev.errnolink.tsuzuki.designsystem.TsuzukiSpacing.rowMin)
+                        .clickable(role = Role.Button) { onCycle((state + 1) % 3) }
                         .semantics {
                             stateDescription = when (state) {
-                                1 -> CheckStateOn
-                                2 -> CheckStatePartial
-                                else -> CheckStateOff
+                                1 -> "Only these"
+                                2 -> "Hidden"
+                                else -> "Any"
                             }
                         }
                         .padding(horizontal = 16.dp, vertical = 12.dp),
@@ -267,12 +280,12 @@ fun TriStateChoiceSheet(
                     TsuzukiText(label, Modifier.weight(1f))
                     when (state) {
                         1 -> TsuzukiCheckMark()
-                        2 -> TsuzukiMinusMark()
+                        2 -> Icon(TsuzukiIcons.X, null, Modifier.size(18.dp), tint = TsuzukiTheme.colors.destructive)
                     }
                 }
             }
         }
-        PillButton(doneLabel, onDone, prominent = false, modifier = Modifier.align(Alignment.End))
+        PillButton(doneLabel, onDone, modifier = Modifier.fillMaxWidth(), large = true)
     }
 }
 
@@ -290,6 +303,8 @@ fun TextEntrySheet(
     placeholder: String? = null,
     centered: Boolean = false,
     dismissLabel: String? = null,
+    visualTransformation: VisualTransformation = VisualTransformation.None,
+    keyboardType: KeyboardType = KeyboardType.Text,
 ) {
     if (!visible) return
     val scope = rememberCoroutineScope()
@@ -299,7 +314,7 @@ fun TextEntrySheet(
     var saving by remember { mutableStateOf(false) }
     val focusRequester = remember { FocusRequester() }
     LaunchedEffect(Unit) { focusRequester.requestFocus() }
-    DetentSheet(visible = true, title = title, onDismissRequest = onDismissRequest, centered = centered) {
+    DetentSheet(visible = true, title = title, onDismissRequest = onDismissRequest, centered = centered, kind = SheetKind.Picker) {
         message?.let {
             TsuzukiText(
                 it,
@@ -313,6 +328,8 @@ fun TextEntrySheet(
             onValueChange = { fieldValue = it },
             modifier = Modifier.focusRequester(focusRequester),
             placeholder = placeholder,
+            visualTransformation = visualTransformation,
+            keyboardType = keyboardType,
         )
         if (fieldValue.text.isNotEmpty() && errorText != null && !supportsConfirm(fieldValue.text)) {
             TsuzukiText(
@@ -354,16 +371,15 @@ fun ConfirmSheet(
     onConfirm: () -> Unit,
     onDismissRequest: () -> Unit,
 ) {
-    DetentSheet(visible = visible, title = title, onDismissRequest = onDismissRequest) {
-        message?.let {
-            TsuzukiText(it, Modifier.padding(horizontal = 16.dp), TsuzukiTheme.typography.body, TsuzukiTheme.colors.secondary)
-        }
-        PillButton(
-            label = confirmLabel,
-            onClick = { onDismissRequest(); onConfirm() },
-            destructive = destructive,
-        )
-    }
+    PullDownConfirmSheet(
+        visible = visible,
+        title = title,
+        message = message,
+        confirmLabel = confirmLabel,
+        onConfirm = onConfirm,
+        onDismissRequest = onDismissRequest,
+        destructive = destructive,
+    )
 }
 
 @Composable

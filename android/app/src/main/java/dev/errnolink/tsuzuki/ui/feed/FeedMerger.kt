@@ -90,23 +90,50 @@ object FeedMerger {
         return result
     }
 
-    fun filter(
-        items: List<FeedChapterItem>,
-        chip: FeedChip,
-        isLoggedIn: Boolean,
-        hideInLibrary: Boolean = false,
-    ): List<FeedChapterItem> {
-        val effectiveChip = if (!isLoggedIn && chip == FeedChip.MANGADEX) FeedChip.ALL else chip
-        return when (effectiveChip) {
-            FeedChip.ALL -> if (hideInLibrary) items.filterNot { it.isLibrary } else items
-            FeedChip.MANGADEX -> items.filter { it.mangaDexId != null }
-                .let { if (hideInLibrary) it.filterNot { item -> item.isLibrary } else it }
-            FeedChip.LIBRARY -> items.filter { it.isLibrary }
-            FeedChip.UNREAD -> items.filter { !it.isRead }
-        }
+     fun filter(
+         items: List<FeedChapterItem>,
+         chip: FeedChip,
+         isLoggedIn: Boolean,
+         hideInLibrary: Boolean = false,
+     ): List<FeedChapterItem> {
+         val effectiveChip = if (!isLoggedIn && chip == FeedChip.MANGADEX) FeedChip.ALL else chip
+         return when (effectiveChip) {
+             FeedChip.ALL -> if (hideInLibrary) items.filterNot { it.isLibrary } else items
+             FeedChip.MANGADEX -> items.filter { it.mangaDexId != null }
+                 .let { if (hideInLibrary) it.filterNot { item -> item.isLibrary } else it }
+             FeedChip.LIBRARY -> items.filter { it.isLibrary }
+             FeedChip.UNREAD -> items.filter { !it.isRead }
+         }
+     }
+
+    /** Round 12: the Feed's bottom search filters live by title; a blank query keeps everything. */
+    fun filterByQuery(items: List<FeedChapterItem>, query: String?): List<FeedChapterItem> {
+        val q = query?.trim().orEmpty()
+        if (q.isEmpty()) return items
+        return items.filter { it.mangaTitle.contains(q, ignoreCase = true) }
+     }
+ 
+    /**
+     * N19: the groups whose covers should be preloaded — the [ahead] after the last visible
+     * group (one screen ahead), matched by the list's item keys (`"$day-$groupKey"`).
+     */
+    fun preloadGroupsAfter(
+        dayGroups: Map<LocalDate, List<FeedTitleGroup>>,
+        visibleKeys: Set<Any?>,
+        ahead: Int,
+    ): List<FeedTitleGroup> {
+        if (ahead <= 0) return emptyList()
+        val flat = dayGroups.values.flatten()
+        if (flat.isEmpty()) return emptyList()
+        val lastVisible = visibleKeys
+            .filterIsInstance<String>()
+            .mapNotNull { key -> flat.indexOfFirst { group -> key.endsWith(group.groupKey) }.takeIf { it >= 0 } }
+            .maxOrNull()
+            ?: return emptyList()
+        return flat.drop(lastVisible + 1).take(ahead)
     }
 
-    fun groupByDayAndTitle(
+     fun groupByDayAndTitle(
         items: List<FeedChapterItem>,
         zone: ZoneId = ZoneOffset.UTC,
     ): Map<LocalDate, List<FeedTitleGroup>> {

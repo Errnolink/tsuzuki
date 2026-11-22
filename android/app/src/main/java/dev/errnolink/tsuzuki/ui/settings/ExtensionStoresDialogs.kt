@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.text.input.TextFieldLineLimits
 import androidx.compose.foundation.text.input.rememberTextFieldState
+import dev.errnolink.tsuzuki.designsystem.PillButton
 import dev.errnolink.tsuzuki.designsystem.TsuzukiText
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -65,19 +66,24 @@ fun ExtensionStoreCreateDialog(
         lineLimits = TextFieldLineLimits.SingleLine,)
     },
     confirmButton = {
-        SettingsActionButton(onClick = { onCreate(state.text.toString()) },
-        enabled = !processing && state.text.isNotEmpty() && !storeAlreadyExists,) { TsuzukiText(
-            text = stringResource(
+        PillButton(
+            label = stringResource(
                 resource = if (processing) {
                     MR.strings.extensionStoresScreen_addStore_processing
                 } else {
                     MR.strings.action_add
                 },
             ),
-        ) }
+            onClick = { onCreate(state.text.toString()) },
+            enabled = !processing && state.text.isNotEmpty() && !storeAlreadyExists,
+        )
     },
     dismissButton = {
-        SettingsActionButton(onClick = onDismissRequest) { TsuzukiText(text = stringResource(MR.strings.action_cancel)) }
+        PillButton(
+            label = stringResource(MR.strings.action_cancel),
+            onClick = onDismissRequest,
+            prominent = false,
+        )
     },)
 
     LaunchedEffect(focusRequester) {
@@ -94,22 +100,15 @@ fun ExtensionStoreDeleteDialog(
     storeName: String,
     storeIndexUrl: String,
 ) {
-    SettingsAlert(onDismissRequest = onDismissRequest,
-    title = {
-        TsuzukiText(text = stringResource(MR.strings.extensionStoresScreen_deleteStore_title))
-    },
-    text = {
-        TsuzukiText(text = stringResource(MR.strings.extensionStoresScreen_deleteStore_body, storeName, storeIndexUrl))
-    },
-    confirmButton = {
-        SettingsActionButton(onClick = {
-            onDelete()
-            onDismissRequest()
-        }, destructive = true) { TsuzukiText(text = stringResource(MR.strings.action_delete)) }
-    },
-    dismissButton = {
-        SettingsActionButton(onClick = onDismissRequest) { TsuzukiText(text = stringResource(MR.strings.action_cancel)) }
-    },)
+    ConfirmSheet(
+        visible = true,
+        title = stringResource(MR.strings.extensionStoresScreen_deleteStore_title),
+        message = stringResource(MR.strings.extensionStoresScreen_deleteStore_body, storeName, storeIndexUrl),
+        confirmLabel = stringResource(MR.strings.action_delete),
+        destructive = true,
+        onConfirm = onDelete,
+        onDismissRequest = onDismissRequest,
+    )
 }
 
 @Composable
@@ -149,17 +148,23 @@ fun ExtensionStoreConfirmDialog(
         }
     },
     confirmButton = {
-        SettingsActionButton(onClick = onCreate, enabled = !storeAlreadyExists && !processing) { TsuzukiText(
-            text = stringResource(
+        PillButton(
+            label = stringResource(
                 resource = if (processing) {
                     MR.strings.extensionStoresScreen_addStore_processing
                 } else {
                     MR.strings.action_add
                 },
             ),
-        ) }
+            onClick = onCreate,
+            enabled = !storeAlreadyExists && !processing,
+        )
     },
     dismissButton = {
-        SettingsActionButton(onClick = onDismissRequest) { TsuzukiText(text = stringResource(MR.strings.action_cancel)) }
+        PillButton(
+            label = stringResource(MR.strings.action_cancel),
+            onClick = onDismissRequest,
+            prominent = false,
+        )
     },)
 }

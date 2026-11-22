@@ -3,7 +3,10 @@ package dev.errnolink.tsuzuki.designsystem
 import kotlin.math.abs
 import kotlin.math.sign
 
-class VelocityCarryTracker(private val freshWindowMs: Float = 60f) {
+class VelocityCarryTracker(
+    private val freshWindowMs: Float = 60f,
+    private val nanoTime: () -> Long = System::nanoTime,
+) {
     private var gestureActive = false
     private var startPosition = 0f
     private var lastPosition = 0f
@@ -16,14 +19,14 @@ class VelocityCarryTracker(private val freshWindowMs: Float = 60f) {
         gestureActive = true
         startPosition = position
         lastPosition = position
-        lastTimestamp = System.nanoTime()
+        lastTimestamp = nanoTime()
         gestureStartTimestamp = lastTimestamp
         smoothedVelocity = 0f
         hasSample = false
     }
 
     fun onMove(position: Float) {
-        val now = System.nanoTime()
+        val now = nanoTime()
         if (!gestureActive) {
             gestureActive = true
             startPosition = position
@@ -42,13 +45,13 @@ class VelocityCarryTracker(private val freshWindowMs: Float = 60f) {
     }
 
     fun recentSampledVelocity(): Float {
-        val idleMs = (System.nanoTime() - lastTimestamp) / 1_000_000.0
+        val idleMs = (nanoTime() - lastTimestamp) / 1_000_000.0
         if (idleMs > freshWindowMs) return 0f
         return smoothedVelocity
     }
 
     fun resolveReleaseVelocity(trackedFingerVelocity: Float, currentPosition: Float): Float {
-        val durationMs = (System.nanoTime() - gestureStartTimestamp) / 1_000_000.0
+        val durationMs = (nanoTime() - gestureStartTimestamp) / 1_000_000.0
         val average = if (durationMs > 0.0 && gestureActive) {
             ((currentPosition - startPosition) / (durationMs / 1_000.0)).toFloat()
         } else {

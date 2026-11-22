@@ -104,16 +104,6 @@ object TsuzukiSettingsBrowseScreen : SearchableSettings {
                     preference = uiPreferences.expandFilters(),
                     title = "Expand filter panels",
                 ),
-                Preference.PreferenceItem.SwitchPreference(
-                    preference = uiPreferences.recommendsInOverflow(),
-                    title = stringResource(SYMR.strings.put_recommends_in_overflow),
-                    subtitle = stringResource(SYMR.strings.put_recommends_in_overflow_summary),
-                ),
-                Preference.PreferenceItem.SwitchPreference(
-                    preference = uiPreferences.mergeInOverflow(),
-                    title = stringResource(SYMR.strings.put_merge_in_overflow),
-                    subtitle = stringResource(SYMR.strings.put_merge_in_overflow_summary),
-                ),
             ),
         )
 

@@ -65,6 +65,12 @@ import kotlin.random.Random
             // KMK <--
             val httpLoggingInterceptor = HttpLoggingInterceptor().apply {
                 level = HttpLoggingInterceptor.Level.HEADERS
+                // KMK -->
+                if (preferences.redactSensitiveHeaders().get()) {
+                    redactHeader("Authorization")
+                    redactHeader("Auth")
+                }
+                // KMK <--
             }
             builder.addNetworkInterceptor(httpLoggingInterceptor)
         }

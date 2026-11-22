@@ -33,6 +33,7 @@ import dev.errnolink.tsuzuki.designsystem.Trash2
 import dev.errnolink.tsuzuki.designsystem.TsuzukiSpacing
 import dev.errnolink.tsuzuki.designsystem.TsuzukiText
 import dev.errnolink.tsuzuki.designsystem.TsuzukiTheme
+import dev.errnolink.tsuzuki.designsystem.animateItemRespectingMotion
 import dev.errnolink.tsuzuki.designsystem.insetDivider
 import dev.errnolink.tsuzuki.ui.category.CategoryInlineAddRow
 import dev.errnolink.tsuzuki.ui.shell.ShellAction
@@ -53,6 +54,8 @@ fun TsuzukiSourceCategoryScreen(
     navigateUp: () -> Unit,
 ) {
     val lazyListState = rememberLazyListState()
+
+    val reduced = TsuzukiTheme.motion.reduced
     ShellList(
         title = stringResource(MR.strings.action_edit_categories),
         state = lazyListState,
@@ -72,7 +75,7 @@ fun TsuzukiSourceCategoryScreen(
                 key = { _, category -> "source-category-$category" },
             ) { index, category ->
                 SourceCategoryListItem(
-                    modifier = Modifier.animateItem().padding(horizontal = TsuzukiSpacing.gutter),
+                    modifier = animateItemRespectingMotion(reduced).padding(horizontal = TsuzukiSpacing.gutter),
                     category = category,
                     shape = RoundedCornerShape(
                         topStart = if (index == 0) TsuzukiCorners.group else 0.dp,

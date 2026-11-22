@@ -3,27 +3,22 @@ package dev.errnolink.tsuzuki.ui.settings
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.rememberLazyListState
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.tooling.preview.PreviewLightDark
-import androidx.compose.material.icons.outlined.Add
 import androidx.compose.ui.unit.dp
 import dev.errnolink.tsuzuki.designsystem.PillButton
 import dev.errnolink.tsuzuki.designsystem.Plus
+import dev.errnolink.tsuzuki.designsystem.RefreshCw
 import dev.errnolink.tsuzuki.designsystem.TsuzukiIcons
 import dev.errnolink.tsuzuki.ui.shell.ShellTopAction
 import dev.errnolink.tsuzuki.ui.shell.ShellEmpty
 import eu.kanade.presentation.more.settings.screen.browse.ExtensionStoreScreenState
 import eu.kanade.presentation.theme.TachiyomiPreviewTheme
-import eu.kanade.tachiyomi.util.system.openInBrowser
 import kotlinx.collections.immutable.persistentListOf
 import mihon.domain.extension.model.ExtensionStore
 import mihon.domain.extension.model.KOMIKKU_SIGNATURE
-import mihon.domain.extension.model.REPO_HELP
 import mihon.domain.extension.model.REPO_SIGNATURE
 import tachiyomi.i18n.MR
 import tachiyomi.presentation.core.components.material.padding
@@ -46,12 +41,11 @@ fun ExtensionStoresScreen(
 ) {
     val lazyListState = rememberLazyListState()
     val emptyLabel = stringResource(MR.strings.extensionStoresScreen_emptyLabel)
-    val helpContext = LocalContext.current
     SettingsScaffold(
         title = stringResource(MR.strings.extensionStores),
         navigateUp = navigateUp,
         actions = listOf(
-            ShellTopAction("Refresh repositories", Icons.Outlined.Refresh, onClickRefresh),
+            ShellTopAction("Refresh repositories", TsuzukiIcons.RefreshCw, onClickRefresh),
             ShellTopAction("Add repository", TsuzukiIcons.Plus, onClickCreate),
         ),
     ) {
@@ -59,7 +53,6 @@ fun ExtensionStoresScreen(
             item(key = "extension-stores-empty") {
                 ShellEmpty("Add your catalogs", emptyLabel) {
                     PillButton("Add repository", onClickCreate)
-                    PillButton(stringResource(MR.strings.label_help), { helpContext.openInBrowser(REPO_HELP) }, prominent = false)
                 }
             }
             return@SettingsScaffold

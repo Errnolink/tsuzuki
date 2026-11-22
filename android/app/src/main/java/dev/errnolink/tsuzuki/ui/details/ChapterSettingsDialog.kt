@@ -26,7 +26,6 @@ import dev.errnolink.tsuzuki.designsystem.DetentSheet
 import dev.errnolink.tsuzuki.designsystem.GroupedRow
 import dev.errnolink.tsuzuki.designsystem.LocalSubmenuHolder
 import dev.errnolink.tsuzuki.designsystem.PillButton
-import dev.errnolink.tsuzuki.designsystem.PullDownDivider
 import dev.errnolink.tsuzuki.designsystem.PullDownMenu
 import dev.errnolink.tsuzuki.designsystem.PullDownMenuItem
 import dev.errnolink.tsuzuki.designsystem.PullDownSectionDivider
@@ -40,7 +39,6 @@ import dev.errnolink.tsuzuki.designsystem.TsuzukiText
 import dev.errnolink.tsuzuki.designsystem.TsuzukiTheme
 import dev.errnolink.tsuzuki.mangadex.rememberMangaDexChapterPresentation
 import dev.errnolink.tsuzuki.ui.library.toPullDownTriState
-import dev.errnolink.tsuzuki.ui.library.toTriState
 import eu.kanade.domain.base.BasePreferences
 import eu.kanade.domain.manga.model.downloadedFilter
 import exh.md.MangaDexPreferences
@@ -84,13 +82,15 @@ fun ChapterSettingsMenu(
     PullDownMenu(
         expanded = expanded,
         onDismissRequest = onDismissRequest,
-        paneTitle = "Chapter options",
-        glueToAnchor = true,
+        paneTitle = stringResource(MR.strings.tsuzuki_chapter_options),
         width = 280.dp,
     ) {
         val submenuHolder = LocalSubmenuHolder.current
+        val sortByTitle = stringResource(MR.strings.tsuzuki_sort_by)
+        val showTitle = stringResource(MR.strings.tsuzuki_show)
+        val languagesTitle = stringResource(MR.strings.tsuzuki_languages)
         PullDownSubmenuItem(
-            title = "Sort by",
+            title = stringResource(MR.strings.tsuzuki_sort_by),
             value = sortOptions.firstOrNull { it.second == manga?.sorting }?.first,
             trailing = onSortOrderChanged?.let { onOrder ->
                 {
@@ -103,7 +103,11 @@ fun ChapterSettingsMenu(
                                 interactionSource = remember { MutableInteractionSource() },
                                 indication = null,
                                 role = Role.Button,
-                                onClickLabel = if (descending) "Sort ascending" else "Sort descending",
+                                onClickLabel = if (descending) {
+                                    stringResource(MR.strings.tsuzuki_sort_ascending)
+                                } else {
+                                    stringResource(MR.strings.tsuzuki_sort_descending)
+                                },
                             ) { onOrder(!descending) },
                         contentAlignment = Alignment.Center,
                     ) {
@@ -123,9 +127,8 @@ fun ChapterSettingsMenu(
                 }
             },
             onClick = {
-                submenuHolder?.activeSubmenu = SubmenuData("Sort by") {
-                    sortOptions.forEachIndexed { i, (label, mode) ->
-                        if (i > 0) PullDownDivider()
+                submenuHolder?.activeSubmenu = SubmenuData(sortByTitle) {
+                    sortOptions.forEach { (label, mode) ->
                         PullDownSubmenuOption(label, manga?.sorting == mode, {
                             onSortModeChanged(mode)
                             submenuHolder?.activeSubmenu = null
@@ -135,16 +138,15 @@ fun ChapterSettingsMenu(
             },
         )
         PullDownSubmenuItem(
-            title = "Show",
-            value = if (showByNumber) "Chapter number" else "Title",
+            title = stringResource(MR.strings.tsuzuki_show),
+            value = if (showByNumber) stringResource(MR.strings.tsuzuki_chapter_number) else stringResource(MR.strings.title),
             onClick = {
-                submenuHolder?.activeSubmenu = SubmenuData("Show") {
-                    PullDownSubmenuOption("Title", !showByNumber, {
+                submenuHolder?.activeSubmenu = SubmenuData(showTitle) {
+                    PullDownSubmenuOption(stringResource(MR.strings.title), !showByNumber, {
                         onDisplayModeChanged(Manga.CHAPTER_DISPLAY_NAME)
                         submenuHolder?.activeSubmenu = null
                     })
-                    PullDownDivider()
-                    PullDownSubmenuOption("Chapter number", showByNumber, {
+                    PullDownSubmenuOption(stringResource(MR.strings.tsuzuki_chapter_number), showByNumber, {
                         onDisplayModeChanged(Manga.CHAPTER_DISPLAY_NUMBER)
                         submenuHolder?.activeSubmenu = null
                     })
@@ -154,29 +156,26 @@ fun ChapterSettingsMenu(
         PullDownSectionDivider()
         val downloaded = if (downloadedOnly) TriState.ENABLED_IS else manga?.downloadedFilter ?: TriState.DISABLED
         PullDownTriStateItem(
-            label = "Downloaded",
+            label = stringResource(MR.strings.label_downloaded),
             state = downloaded.toPullDownTriState(),
             enabled = !downloadedOnly,
-            onSet = { onDownloadFilterChanged(it.toTriState()) },
             onCycle = { if (!downloadedOnly) onDownloadFilterChanged(downloaded.next()) },
         )
         val unread = manga?.unreadFilter ?: TriState.DISABLED
         PullDownTriStateItem(
-            label = "Unread",
+            label = stringResource(MR.strings.unread),
             state = unread.toPullDownTriState(),
-            onSet = { onUnreadFilterChanged(it.toTriState()) },
             onCycle = { onUnreadFilterChanged(unread.next()) },
         )
         val bookmarked = manga?.bookmarkedFilter ?: TriState.DISABLED
         PullDownTriStateItem(
-            label = "Bookmarked",
+            label = stringResource(MR.strings.action_filter_bookmarked),
             state = bookmarked.toPullDownTriState(),
-            onSet = { onBookmarkedFilterChanged(it.toTriState()) },
             onCycle = { onBookmarkedFilterChanged(bookmarked.next()) },
         )
         PullDownMenuItem(
-            text = "Scanlators…",
-            subtitle = if (scanlatorFilterActive) "Filtered" else null,
+            text = stringResource(MR.strings.tsuzuki_scanlators),
+            subtitle = if (scanlatorFilterActive) stringResource(MR.strings.tsuzuki_filtered) else null,
             onClick = {
                 onDismissRequest()
                 onScanlatorFilterClicked()
@@ -186,10 +185,14 @@ fun ChapterSettingsMenu(
         if (languages != null && mangaUuid != null && languages.languages.size > 1) {
             val selected = languages.selected.ifEmpty { languages.languages }
             PullDownSubmenuItem(
-                title = "Languages",
-                value = if (selected.size == languages.languages.size) "All" else "${selected.size} of ${languages.languages.size}",
+                title = stringResource(MR.strings.tsuzuki_languages),
+                value = if (selected.size == languages.languages.size) {
+                    stringResource(MR.strings.all)
+                } else {
+                    stringResource(MR.strings.tsuzuki_count_of_count, selected.size, languages.languages.size)
+                },
                 onClick = {
-                    submenuHolder?.activeSubmenu = SubmenuData("Languages") {
+                    submenuHolder?.activeSubmenu = SubmenuData(languagesTitle) {
                         languages.languages.forEach { language ->
                             val label = MdLang.fromIsoCode(language)?.name?.lowercase()?.replace('_', ' ')
                                 ?.replaceFirstChar(Char::uppercase) ?: language.uppercase()
@@ -202,9 +205,9 @@ fun ChapterSettingsMenu(
                                 },
                             )
                         }
-                        PullDownDivider()
+                        PullDownSectionDivider()
                         PullDownMenuItem(
-                            text = "Show all languages",
+                            text = stringResource(MR.strings.tsuzuki_show_all_languages),
                             onClick = { MangaDexPreferences().mangaLanguages(mangaUuid).delete() },
                         )
                     }
@@ -213,14 +216,14 @@ fun ChapterSettingsMenu(
         }
         PullDownSectionDivider()
         PullDownMenuItem(
-            text = "Save as defaults…",
+            text = stringResource(MR.strings.tsuzuki_save_as_defaults),
             onClick = {
                 confirmDefaults = true
                 onDismissRequest()
             },
         )
         PullDownMenuItem(
-            text = "Reset to defaults",
+            text = stringResource(MR.strings.tsuzuki_reset_to_defaults),
             destructive = true,
             onClick = {
                 onResetToDefault()
@@ -231,18 +234,18 @@ fun ChapterSettingsMenu(
 
     if (confirmDefaults) {
         var applyExisting by rememberSaveable { mutableStateOf(false) }
-        DetentSheet(true, "Default chapter settings", { confirmDefaults = false }) {
+        DetentSheet(true, stringResource(MR.strings.tsuzuki_default_chapter_settings), { confirmDefaults = false }) {
             TsuzukiText(stringResource(MR.strings.confirm_set_chapter_settings))
             GroupedRow(
                 stringResource(MR.strings.also_set_chapter_settings_for_library),
                 checked = applyExisting,
                 onCheckedChange = { applyExisting = it },
             )
-            PillButton("Save defaults", {
+            PillButton(stringResource(MR.strings.tsuzuki_save_defaults), {
                 onSetAsDefault(applyExisting)
                 confirmDefaults = false
             })
-            PillButton("Cancel", { confirmDefaults = false }, prominent = false)
+            PillButton(stringResource(MR.strings.action_cancel), { confirmDefaults = false }, prominent = false)
         }
     }
 }

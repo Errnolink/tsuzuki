@@ -16,6 +16,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.platform.LocalContext
 import cafe.adriel.voyager.core.model.StateScreenModel
 import cafe.adriel.voyager.core.model.rememberScreenModel
@@ -31,6 +32,8 @@ import eu.kanade.tachiyomi.util.system.DeviceUtil
 import eu.kanade.tachiyomi.util.system.toast
 import kotlinx.collections.immutable.ImmutableList
 import kotlinx.coroutines.flow.update
+import tachiyomi.core.common.util.lang.launchNonCancellable
+import tachiyomi.core.common.util.lang.withUIContext
 import tachiyomi.i18n.MR
 import tachiyomi.presentation.core.components.material.Scaffold
 import tachiyomi.presentation.core.i18n.stringResource
@@ -40,6 +43,7 @@ class TsuzukiCreateBackupScreen : Screen() {
     @Composable
     override fun Content() {
         val context = LocalContext.current
+        val scope = rememberCoroutineScope()
         val navigator = LocalNavigator.currentOrThrow
         val model = rememberScreenModel { CreateBackupScreenModel() }
         val state by model.state.collectAsState()
@@ -65,14 +69,16 @@ class TsuzukiCreateBackupScreen : Screen() {
                 PillButton(
                     stringResource(MR.strings.action_create),
                     {
-                        if (!BackupCreateJob.isManualJobRunning(context)) {
-                            try {
-                                chooseBackupDir.launch(BackupCreator.getFilename())
-                            } catch (e: ActivityNotFoundException) {
-                                context.toast(MR.strings.file_picker_error)
+                        scope.launchNonCancellable {
+                            if (!BackupCreateJob.isManualJobRunning(context)) {
+                                try {
+                                    withUIContext { chooseBackupDir.launch(BackupCreator.getFilename()) }
+                                } catch (e: ActivityNotFoundException) {
+                                    context.toast(MR.strings.file_picker_error)
+                                }
+                            } else {
+                                context.toast(MR.strings.backup_in_progress)
                             }
-                        } else {
-                            context.toast(MR.strings.backup_in_progress)
                         }
                     },
                     Modifier.fillMaxWidth(), enabled = state.options.canCreate(), large = true,

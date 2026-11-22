@@ -41,6 +41,8 @@ import exh.md.utils.MdUtil
 import exh.source.LIBRARY_UPDATE_EXCLUDED_SOURCES
 import exh.source.MERGED_SOURCE_ID
 import exh.source.mangaDexSourceIds
+import exh.source.getMainSource
+import eu.kanade.tachiyomi.source.online.all.MangaDex
 import exh.util.WorkerUtil
 import exh.util.nullIfBlank
 import kotlinx.coroutines.CancellationException
@@ -49,9 +51,10 @@ import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
+import kotlinx.coroutines.withContext
+import dev.errnolink.tsuzuki.mangadex.MangaDexBackground
 import logcat.LogPriority
 import mihon.domain.chapter.interactor.FilterChaptersForDownload
 import mihon.domain.source.interactor.UpdateMangaFromRemote
@@ -93,6 +96,7 @@ import tachiyomi.domain.track.interactor.InsertTrack
 import tachiyomi.i18n.MR
 import uy.kohesive.injekt.Injekt
 import uy.kohesive.injekt.api.get
+import tachiyomi.data.DatabaseHandler
 import java.time.Instant
 import java.time.ZonedDateTime
 import java.util.concurrent.CopyOnWriteArrayList
@@ -118,6 +122,7 @@ class LibraryUpdateJob(private val context: Context, workerParams: WorkerParamet
     // SY -->
     private val updateManga: UpdateManga = Injekt.get()
     private val getFavorites: GetFavorites = Injekt.get()
+    private val databaseHandler: DatabaseHandler = Injekt.get()
     private val insertFlatMetadata: InsertFlatMetadata = Injekt.get()
     private val networkToLocalManga: NetworkToLocalManga = Injekt.get()
     private val getMergedMangaForDownloading: GetMergedMangaForDownloading = Injekt.get()
@@ -184,7 +189,9 @@ class LibraryUpdateJob(private val context: Context, workerParams: WorkerParamet
         return withIOContext {
             try {
                 when (target) {
-                    Target.CHAPTERS -> updateChapterList()
+                    // Open screens re-query at most every 2 s while titles are written, instead of
+                    // once per title (thread dumps: the update waited on screens for the database).
+                    Target.CHAPTERS -> databaseHandler.pacingSubscriptions { updateChapterList() }
                     // SY -->
                     Target.SYNC_FOLLOWS -> syncFollows()
                     Target.PUSH_FAVORITES -> pushFavorites()
@@ -396,7 +403,6 @@ class LibraryUpdateJob(private val context: Context, workerParams: WorkerParamet
      * @return an observable delivering the progress of each update.
      */
     private suspend fun updateChapterList() {
-        val semaphore = Semaphore(2)
         val progressCount = AtomicInt(0)
         val currentlyUpdatingManga = CopyOnWriteArrayList<Manga>()
         val newUpdates = CopyOnWriteArrayList<Pair<Manga, Array<Chapter>>>()
@@ -414,38 +420,47 @@ class LibraryUpdateJob(private val context: Context, workerParams: WorkerParamet
                 .filterNot { it.key in LIBRARY_UPDATE_EXCLUDED_SOURCES }
                 // SY <--
                 .values
+                // Every source updates at once: rate limits are per site, so sources never share a
+                // budget. Each site's politeness is its own title window below.
                 .map { mangaInSource ->
                     async {
-                        semaphore.withPermit {
-                            if (
-                                mdlistLogged &&
-                                mangaInSource.firstOrNull()
-                                    ?.let { it.manga.source in mangaDexSourceIds } == true
-                            ) {
+                        coroutineScope {
+                            val mangaDex = sourceManager.get(mangaInSource.first().manga.source)?.getMainSource<MangaDex>()
+                            if (mdlistLogged && mangaDex != null) {
+                                // MDList tracks for titles that have none: every followed title's status in
+                                // one request and personal ratings in batches (MangaDex API: GET /manga/status,
+                                // GET /rating), not two requests per title.
                                 launch {
-                                    mangaInSource.forEach { (manga) ->
-                                        try {
-                                            val tracks = getTracks.await(manga.id)
-                                            if (tracks.isEmpty() ||
-                                                tracks.none { it.trackerId == TrackerManager.MDLIST }
-                                            ) {
-                                                val track = mdList.createInitialTracker(manga)
-                                                insertTrack.await(mdList.refresh(track).toDomainTrack(false)!!)
-                                            }
-                                        } catch (e: Exception) {
-                                            if (e is CancellationException) throw e
-                                            xLogE("Error adding initial track for ${manga.title}", e)
+                                    try {
+                                        val untracked = mangaInSource.map { it.manga }.filter { manga ->
+                                            getTracks.await(manga.id).none { it.trackerId == TrackerManager.MDLIST }
                                         }
+                                        val initial = untracked.map { manga -> manga to mdList.createInitialTracker(manga) }
+                                        val remote = withContext(MangaDexBackground) {
+                                            mangaDex.fetchTrackingInfo(initial.map { it.second.tracking_url })
+                                        }
+                                        initial.forEach { (manga, track) ->
+                                            remote[track.tracking_url]?.let { track.copyPersonalFrom(it) }
+                                            try {
+                                                insertTrack.await(track.toDomainTrack(false)!!)
+                                            } catch (e: Exception) {
+                                                if (e is CancellationException) throw e
+                                                xLogE("Error adding initial track for ${manga.title}", e)
+                                            }
+                                        }
+                                    } catch (e: Exception) {
+                                        if (e is CancellationException) throw e
+                                        xLogE("Error adding initial MDList tracks", e)
                                     }
                                 }
                             }
-                            mangaInSource.forEach { libraryManga ->
+                            val updateOne: suspend (LibraryManga) -> Unit = updateOne@{ libraryManga ->
                                 val manga = libraryManga.manga
                                 ensureActive()
 
                                 // Don't continue to update if manga is not in library
                                 if (getManga.await(manga.id)?.favorite != true) {
-                                    return@forEach
+                                    return@updateOne
                                 }
 
                                 withUpdateNotification(
@@ -455,7 +470,7 @@ class LibraryUpdateJob(private val context: Context, workerParams: WorkerParamet
                                 ) {
                                     try {
                                         if (smartRun) smartUpdate.markChecked(manga.id)
-                                        val newChapters = updateManga(manga, fetchWindow)
+                                        val newChapters = withContext(MangaDexBackground) { updateManga(manga, fetchWindow) }
                                             .sortedByDescending { it.sourceOrder }
 
                                         if (newChapters.isNotEmpty()) {
@@ -489,6 +504,24 @@ class LibraryUpdateJob(private val context: Context, workerParams: WorkerParamet
                                     }
                                 }
                             }
+                            // Every source updates several titles at once. MangaDex rides our shared API
+                            // limiter; other sources keep a smaller window on top of their own client limits.
+                            val titleGate = Semaphore(if (mangaDex != null) MANGADEX_PARALLEL_TITLES else SOURCE_PARALLEL_TITLES)
+                            val updateAll: suspend () -> Unit = {
+                                coroutineScope {
+                                    mangaInSource
+                                        .map { libraryManga -> async { titleGate.withPermit { updateOne(libraryManga) } } }
+                                        .awaitAll()
+                                }
+                            }
+                            if (mangaDex != null && libraryPreferences.autoUpdateMetadata().get()) {
+                                // Details and statistics for 100 titles per request instead of per title.
+                                withContext(MangaDexBackground) {
+                                    mangaDex.prefetchForUpdate(mangaInSource.map { it.manga.url }) { updateAll() }
+                                }
+                            } else {
+                                updateAll()
+                            }
                         }
                     }
                 }
@@ -511,12 +544,12 @@ class LibraryUpdateJob(private val context: Context, workerParams: WorkerParamet
         }
     }
 
-    private fun downloadChapters(manga: Manga, chapters: List<Chapter>) {
+    private suspend fun downloadChapters(manga: Manga, chapters: List<Chapter>) {
         // We don't want to start downloading while the library is updating, because websites
         // may don't like it and they could ban the user.
         // SY -->
         if (manga.source == MERGED_SOURCE_ID) {
-            val downloadingManga = runBlocking { getMergedMangaForDownloading.await(manga.id) }
+            val downloadingManga = getMergedMangaForDownloading.await(manga.id)
                 .associateBy { it.id }
             chapters.groupBy { it.mangaId }
                 .forEach {
@@ -724,6 +757,8 @@ class LibraryUpdateJob(private val context: Context, workerParams: WorkerParamet
 
     companion object {
         private const val TAG = "LibraryUpdate"
+        private const val MANGADEX_PARALLEL_TITLES = 4
+        private const val SOURCE_PARALLEL_TITLES = 2
         private const val WORK_NAME_AUTO = "LibraryUpdate-auto"
         private const val WORK_NAME_MANUAL = "LibraryUpdate-manual"
 
@@ -807,7 +842,7 @@ class LibraryUpdateJob(private val context: Context, workerParams: WorkerParamet
             }
         }
 
-        fun startNow(
+        suspend fun startNow(
             context: Context,
             category: Category? = null,
             target: Target = Target.CHAPTERS,
@@ -876,25 +911,27 @@ class LibraryUpdateJob(private val context: Context, workerParams: WorkerParamet
             return true
         }
 
-        fun stop(context: Context) {
+        suspend fun stop(context: Context) {
             val wm = context.workManager
-            val workQuery = WorkQuery.Builder.fromTags(listOf(TAG))
-                .addStates(listOf(WorkInfo.State.RUNNING))
-                .build()
-            wm.getWorkInfos(workQuery).get()
-                // Should only return one work but just in case
-                .forEach {
-                    wm.cancelWorkById(it.id)
-                    // KMK -->
-                    val libraryUpdateStatus: LibraryUpdateStatus = Injekt.get()
-                    runBlocking { libraryUpdateStatus.stop() }
-                    // KMK <--
+            withIOContext {
+                val workQuery = WorkQuery.Builder.fromTags(listOf(TAG))
+                    .addStates(listOf(WorkInfo.State.RUNNING))
+                    .build()
+                wm.getWorkInfos(workQuery).get()
+                    // Should only return one work but just in case
+                    .forEach {
+                        wm.cancelWorkById(it.id)
+                        // KMK -->
+                        val libraryUpdateStatus: LibraryUpdateStatus = Injekt.get()
+                        libraryUpdateStatus.stop()
+                        // KMK <--
 
-                    // Re-enqueue cancelled scheduled work
-                    if (it.tags.contains(WORK_NAME_AUTO)) {
-                        setupTask(context)
+                        // Re-enqueue cancelled scheduled work
+                        if (it.tags.contains(WORK_NAME_AUTO)) {
+                            setupTask(context)
+                        }
                     }
-                }
+            }
         }
 
         // KMK -->

@@ -3,6 +3,7 @@ package eu.kanade.tachiyomi.data.download
 import android.app.PendingIntent
 import android.content.Context
 import android.graphics.BitmapFactory
+import android.os.SystemClock
 import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
 import eu.kanade.tachiyomi.R
@@ -78,12 +79,21 @@ internal class DownloadNotifier(private val context: Context) {
         // KMK <--
     }
 
+    private var lastProgressNotificationTime = 0L
+
     /**
      * Called when download progress changes.
      *
      * @param download download object containing download information.
      */
+    // Pages report their progress from several threads, and they share the builder
+    @Synchronized
     fun onProgressChange(download: Download) {
+        val now = SystemClock.elapsedRealtime()
+        val isComplete = download.downloadedImages == download.pages?.size
+        if (!isComplete && now - lastProgressNotificationTime < PROGRESS_NOTIFICATION_INTERVAL_MS) return
+        lastProgressNotificationTime = now
+
         with(progressNotificationBuilder) {
             if (!isDownloading) {
                 setSmallIcon(android.R.drawable.stat_sys_download)
@@ -169,6 +179,7 @@ internal class DownloadNotifier(private val context: Context) {
     /**
      * Resets the state once downloads are completed.
      */
+    @Synchronized
     fun onComplete() {
         dismissProgress()
 
@@ -244,3 +255,5 @@ internal class DownloadNotifier(private val context: Context) {
         isDownloading = false
     }
 }
+
+private const val PROGRESS_NOTIFICATION_INTERVAL_MS = 500L

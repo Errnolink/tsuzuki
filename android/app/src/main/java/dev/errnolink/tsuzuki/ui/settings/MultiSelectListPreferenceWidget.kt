@@ -32,7 +32,7 @@ fun MultiSelectListPreferenceWidget(
         divider = divider,
         leading = preference.icon?.let {
             {
-                Icon(it, null, Modifier.size(24.dp), tint = TsuzukiTheme.colors.secondary)
+                Icon(it, null, Modifier.size(PreferenceLeadingIconWidth), tint = TsuzukiTheme.colors.secondary)
             }
         },
         onClick = { isDialogShown = true },

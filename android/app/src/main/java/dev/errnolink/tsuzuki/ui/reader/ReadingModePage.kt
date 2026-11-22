@@ -13,7 +13,6 @@ import eu.kanade.tachiyomi.ui.reader.setting.ReaderOrientation
 import eu.kanade.tachiyomi.ui.reader.setting.ReaderPreferences
 import eu.kanade.tachiyomi.ui.reader.setting.ReaderSettingsScreenModel
 import eu.kanade.tachiyomi.ui.reader.setting.ReadingMode
-import eu.kanade.tachiyomi.ui.reader.viewer.webtoon.WebtoonViewer
 import tachiyomi.i18n.MR
 import tachiyomi.i18n.kmk.KMR
 import tachiyomi.i18n.sy.SYMR
@@ -28,7 +27,7 @@ internal fun ReadingModePage(screenModel: ReaderSettingsScreenModel) {
 
     val readingMode = remember(manga) { ReadingMode.fromPreference(manga?.readingMode?.toInt()) }
     ReaderChoice(
-        "Reading mode",
+        stringResource(MR.strings.viewer),
         ReadingMode.entries.map { stringResource(it.stringRes) },
         ReadingMode.entries.indexOf(readingMode),
         { screenModel.onChangeReadingMode(ReadingMode.entries[it]) },
@@ -42,8 +41,7 @@ internal fun ReadingModePage(screenModel: ReaderSettingsScreenModel) {
         { screenModel.onChangeOrientation(ReaderOrientation.entries[it]) },
     )
 
-    val viewer by screenModel.viewerFlow.collectAsState()
-    if (viewer is WebtoonViewer) {
+    if (ComposeReaderState.activeKind == ComposeReaderKind.Webtoon) {
         WebtoonViewerSettings(
             screenModel,
             // KMK -->
@@ -106,7 +104,17 @@ private fun PagerViewerSettings(screenModel: ReaderSettingsScreenModel) {
     // KMK -->
     if (imageScaleType in ReaderPreferences.zoomWideImagesAllowedList) {
         // KMK <--
+        val landscapeZoom by screenModel.preferences.landscapeZoom().collectAsState()
         ReaderToggle(label = stringResource(MR.strings.pref_landscape_zoom), pref = screenModel.preferences.landscapeZoom())
+        if (landscapeZoom) {
+            val landscapeZoomType by screenModel.preferences.landscapeZoomType().collectAsState()
+            ReaderChoice(
+                stringResource(KMR.strings.pref_landscape_zoom_type),
+                ReaderPreferences.LandscapeZoomScaleType.entries.map { stringResource(it.titleRes) },
+                ReaderPreferences.LandscapeZoomScaleType.entries.indexOf(landscapeZoomType),
+                { screenModel.preferences.landscapeZoomType().set(ReaderPreferences.LandscapeZoomScaleType.entries[it]) },
+            )
+        }
     }
 
     ReaderToggle(label = stringResource(MR.strings.pref_navigate_pan), pref = screenModel.preferences.navigateToPan())
@@ -171,7 +179,7 @@ private fun WebtoonViewerSettings(
     // KMK -->
     val webtoonScaleTypePref = screenModel.preferences.webtoonScaleType()
     val webtoonScaleType by webtoonScaleTypePref.collectAsState()
-    val webtoonSmartScaleLongStripGap = screenModel.preferences.longStripGapSmartScale().get()
+    val webtoonSmartScaleLongStripGap by screenModel.preferences.longStripGapSmartScale().collectAsState()
     if (readingMode != ReadingMode.CONTINUOUS_VERTICAL || webtoonSmartScaleLongStripGap) {
         ReaderChoice(
             stringResource(KMR.strings.pref_webtoon_scale_type),
@@ -222,6 +230,7 @@ private fun WebtoonViewerSettings(
     ReaderToggle(label = stringResource(KMR.strings.pref_pinch_to_zoom), pref = screenModel.preferences.webtoonPinchToZoomEnabled())
     // KMK <--
     ReaderToggle(label = stringResource(MR.strings.pref_webtoon_disable_zoom_out), pref = screenModel.preferences.webtoonDisableZoomOut())
+    ReaderToggle(label = stringResource(MR.strings.tsuzuki_split_tall_pages), pref = screenModel.preferences.splitTallPages())
 }
 
 // SY -->
@@ -230,6 +239,7 @@ private fun WebtoonWithGapsViewerSettings(screenModel: ReaderSettingsScreenModel
     TsuzukiText(stringResource(MR.strings.vertical_plus_viewer), style = TsuzukiTheme.typography.headline)
 
     ReaderToggle(label = stringResource(MR.strings.pref_crop_borders), pref = screenModel.preferences.cropBordersContinuousVertical())
+    ReaderToggle(label = stringResource(KMR.strings.pref_smart_scale_long_strip_gap), pref = screenModel.preferences.longStripGapSmartScale())
 }
 // SY <--
 

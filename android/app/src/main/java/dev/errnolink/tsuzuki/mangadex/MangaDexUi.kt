@@ -12,9 +12,8 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.outlined.ArrowBack
-import androidx.compose.material.icons.outlined.MenuBook
+import dev.errnolink.tsuzuki.designsystem.BookOpen
+import dev.errnolink.tsuzuki.designsystem.TsuzukiIcons
 import androidx.compose.foundation.Image
 import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.runtime.Composable
@@ -27,7 +26,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.graphics.asImageBitmap
 import coil3.toBitmap
-import dev.errnolink.tsuzuki.ui.shell.mangaHeroSource
+import dev.errnolink.tsuzuki.ui.motion.mangaHeroSource
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -51,8 +50,7 @@ import dev.errnolink.tsuzuki.designsystem.EmptyState
 import dev.errnolink.tsuzuki.designsystem.IconButton
 import dev.errnolink.tsuzuki.designsystem.NoticeTone
 import dev.errnolink.tsuzuki.designsystem.PillButton
-import dev.errnolink.tsuzuki.designsystem.ProgressRing
-import dev.errnolink.tsuzuki.designsystem.Toast
+import dev.errnolink.tsuzuki.designsystem.ProgressMark
 import dev.errnolink.tsuzuki.designsystem.TsuzukiText
 import dev.errnolink.tsuzuki.designsystem.TsuzukiTheme
 import eu.kanade.tachiyomi.util.system.openInBrowser
@@ -70,7 +68,7 @@ internal fun MangaDexChromeAction(label: String, icon: ImageVector, onClick: () 
 
 @Composable
 internal fun MangaDexBackAction(onBack: () -> Unit) {
-    MangaDexChromeAction("Back", Icons.AutoMirrored.Outlined.ArrowBack, onBack)
+    MangaDexChromeAction("Back", TsuzukiIcons.Back, onBack)
 }
 
 @Composable
@@ -80,7 +78,7 @@ internal fun MangaDexLoading(label: String = "Loading…") {
         horizontalArrangement = Arrangement.spacedBy(12.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        ProgressRing(0f, label)
+        ProgressMark(0f, label)
         TsuzukiText(label, color = TsuzukiTheme.colors.secondary)
     }
 }
@@ -97,7 +95,7 @@ internal fun MangaDexEmptyState(
         description,
         modifier,
         icon = {
-            Image(Icons.Outlined.MenuBook, null, Modifier.size(42.dp), colorFilter = ColorFilter.tint(TsuzukiTheme.colors.secondary))
+            Image(TsuzukiIcons.BookOpen, null, Modifier.size(42.dp), colorFilter = ColorFilter.tint(TsuzukiTheme.colors.secondary))
         },
         action = action,
     )
@@ -207,7 +205,7 @@ internal fun MangaDexRemoteCover(
             modifier.aspectRatio(fallbackRatio).let { if (onClick != null) it.clickable(onClick = onClick) else it },
         ) {
             Image(
-                Icons.Outlined.MenuBook,
+                TsuzukiIcons.BookOpen,
                 "Cover unavailable",
                 Modifier.align(Alignment.Center).size(28.dp),
                 colorFilter = ColorFilter.tint(TsuzukiTheme.colors.secondary),
@@ -240,6 +238,6 @@ internal fun MangaDexNoticeOverlay(state: MangaDexState, modifier: Modifier = Mo
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         state.error?.let { error -> Banner(error, tone = NoticeTone.Error) }
-        state.notice?.let { notice -> Toast(notice) }
+        state.notice?.let { notice -> Banner(notice) }
     }
 }

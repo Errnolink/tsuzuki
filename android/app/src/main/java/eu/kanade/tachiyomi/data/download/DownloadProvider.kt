@@ -1,10 +1,16 @@
 package eu.kanade.tachiyomi.data.download
 
+import android.content.ContentResolver
 import android.content.Context
 import com.hippo.unifile.UniFile
 import eu.kanade.tachiyomi.source.Source
 import eu.kanade.tachiyomi.util.lang.Hash.md5
 import eu.kanade.tachiyomi.util.storage.DiskUtil
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.withContext
 import logcat.LogPriority
 import tachiyomi.core.common.i18n.stringResource
 import tachiyomi.core.common.storage.displayablePath
@@ -152,6 +158,40 @@ class DownloadProvider(
         }
     }
 
+    suspend fun findDownloadedChapterIds(
+        chapters: List<Chapter>,
+        manga: Manga,
+        source: Source,
+    ): Set<Long> = withContext(Dispatchers.IO) {
+        val mangaDir = findMangaDir(manga.ogTitle, source) ?: return@withContext emptySet()
+        findChapterDirs(chapters, mangaDir).keys
+    }
+
+    private suspend fun findChapterDirs(chapters: List<Chapter>, mangaDir: UniFile): Map<Long, UniFile> {
+        val isDocumentTree = mangaDir.uri.scheme == ContentResolver.SCHEME_CONTENT
+        if (isDocumentTree && chapters.size >= LIST_CHAPTER_DIRS_MIN_CHAPTERS) {
+            val chapterDirs = mangaDir.listFiles().orEmpty()
+                .filter { it.name != null }
+                .associateByTo(sortedMapOf(String.CASE_INSENSITIVE_ORDER)) { it.name!! }
+            return chapters
+                .mapNotNull { chapter -> chapter.findDir { chapterDirs[it] }?.let { chapter.id to it } }
+                .toMap()
+        }
+        return coroutineScope {
+            chapters
+                .map { chapter ->
+                    async(chapterDirLookupDispatcher) { chapter.findDir(mangaDir::findFile)?.let { chapter.id to it } }
+                }
+                .awaitAll()
+                .filterNotNull()
+                .toMap()
+        }
+    }
+
+    private fun Chapter.findDir(find: (String) -> UniFile?): UniFile? {
+        return getValidChapterDirNames(name, scanlator, url).firstNotNullOfOrNull(find)
+    }
+
     // SY -->
     /**
      * Returns a list of all files in manga directory
@@ -164,15 +204,24 @@ class DownloadProvider(
         chapters: List<Chapter>,
         manga: Manga,
         source: Source,
+        queuedChapters: () -> List<Chapter>,
     ): List<UniFile> {
         val mangaDir = findMangaDir(/* SY --> */ manga.ogTitle /* SY <-- */, source) ?: return emptyList()
-        return mangaDir.listFiles().orEmpty().asList().filter {
+        val files = mangaDir.listFiles()?.asList() ?: return emptyList()
+        val queuedTempNames = queuedChapters()
+            .map { getChapterDirName(it.name, it.scanlator, it.url) }
+            .flatMap { listOf("$it${Downloader.TMP_DIR_SUFFIX}", "$it.cbz${Downloader.TMP_DIR_SUFFIX}") }
+            .toHashSet()
+
+        return files.filter { file ->
+            val fileName = file.name ?: return@filter false
+            if (fileName.endsWith(Downloader.TMP_DIR_SUFFIX)) {
+                return@filter fileName !in queuedTempNames
+            }
             chapters.find { chp ->
-                getValidChapterDirNames(chp.name, chp.scanlator, chp.url).any { dir ->
-                    mangaDir.findFile(dir) != null
-                }
-            } == null ||
-                it.name?.endsWith(Downloader.TMP_DIR_SUFFIX) == true
+                getValidChapterDirNames(chp.name, chp.scanlator, chp.url)
+                    .any { dir -> fileName.equals(dir, ignoreCase = true) }
+            } == null
         }
     }
     // SY <--
@@ -314,3 +363,9 @@ class DownloadProvider(
         }
     }
 }
+
+private const val LIST_CHAPTER_DIRS_MIN_CHAPTERS = 50
+
+private const val CHAPTER_DIR_LOOKUP_PARALLELISM = 8
+
+private val chapterDirLookupDispatcher = Dispatchers.IO.limitedParallelism(CHAPTER_DIR_LOOKUP_PARALLELISM)

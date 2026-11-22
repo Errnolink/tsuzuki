@@ -170,7 +170,7 @@ class MetadataUpdateJob(private val context: Context, workerParams: WorkerParame
         private const val TAG = "MetadataUpdate"
         private const val WORK_NAME_MANUAL = "MetadataUpdate"
 
-        fun startNow(context: Context): Boolean {
+        suspend fun startNow(context: Context): Boolean {
             val wm = context.workManager
             if (wm.isRunning(TAG)) {
                 // Already running either as a scheduled or manual job
@@ -185,12 +185,13 @@ class MetadataUpdateJob(private val context: Context, workerParams: WorkerParame
             return true
         }
 
-        fun stop(context: Context) {
+        suspend fun stop(context: Context) {
             val wm = context.workManager
-            val workQuery = WorkQuery.Builder.fromTags(listOf(TAG))
-                .addStates(listOf(WorkInfo.State.RUNNING))
-                .build()
-            wm.getWorkInfos(workQuery).get()
+            wm.getWorkInfos(
+                WorkQuery.Builder.fromTags(listOf(TAG))
+                    .addStates(listOf(WorkInfo.State.RUNNING))
+                    .build(),
+            ).get()
                 // Should only return one work but just in case
                 .forEach {
                     wm.cancelWorkById(it.id)

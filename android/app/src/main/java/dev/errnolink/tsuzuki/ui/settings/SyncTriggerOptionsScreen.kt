@@ -42,6 +42,7 @@ class TsuzukiSyncTriggerOptionsScreen : Screen() {
                 PillButton(
                     stringResource(MR.strings.action_save),
                     {
+                        model.save()
                         navigator.pop()
                     },
                     Modifier.fillMaxWidth(),
@@ -87,12 +88,14 @@ private class SyncOptionsScreenModel(
 
     fun toggle(setter: (SyncTriggerOptions, Boolean) -> SyncTriggerOptions, enabled: Boolean) {
         mutableState.update {
-            val updatedTriggerOptions = setter(it.options, enabled)
-            syncPreferences.setSyncTriggerOptions(updatedTriggerOptions)
             it.copy(
-                options = updatedTriggerOptions,
+                options = setter(it.options, enabled),
             )
         }
+    }
+
+    fun save() {
+        syncPreferences.setSyncTriggerOptions(state.value.options)
     }
 
     @Immutable

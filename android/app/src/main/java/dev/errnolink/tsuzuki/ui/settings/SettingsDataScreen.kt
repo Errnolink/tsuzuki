@@ -15,10 +15,10 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.outlined.HelpOutline
-import androidx.compose.material.icons.filled.QrCodeScanner
-import androidx.compose.material3.Icon
+import dev.errnolink.tsuzuki.designsystem.Info
+import dev.errnolink.tsuzuki.designsystem.ScanQrCode
+import dev.errnolink.tsuzuki.designsystem.TsuzukiIcon
+import dev.errnolink.tsuzuki.designsystem.TsuzukiIcons
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.ReadOnlyComposable
@@ -29,7 +29,6 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalUriHandler
 import cafe.adriel.voyager.navigator.LocalNavigator
 import cafe.adriel.voyager.navigator.currentOrThrow
 import com.google.zxing.client.android.Intents
@@ -54,6 +53,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import logcat.LogPriority
 import tachiyomi.core.common.i18n.stringResource
+import tachiyomi.core.common.util.lang.launchNonCancellable
+import tachiyomi.core.common.util.lang.withUIContext
 import tachiyomi.core.common.util.system.logcat
 import tachiyomi.domain.backup.service.BackupPreferences
 import tachiyomi.domain.manga.interactor.GetFavorites
@@ -73,7 +74,6 @@ object TsuzukiSettingsDataScreen : SearchableSettings {
     override val displayName = "Backup & sync"
 
     val restorePreferenceKeyString = MR.strings.label_backup
-    const val HELP_URL = "https://mihon.app/docs/faq/storage"
 
     @ReadOnlyComposable
     @Composable
@@ -101,18 +101,6 @@ val prefKeys: Set<String> = setOf(
     )
 
     @Composable
-    override fun RowScope.AppBarAction() {
-        val uriHandler = LocalUriHandler.current
-        SettingsIconControl(onClick = { uriHandler.openUri(HELP_URL) }) {
-            Icon(
-                imageVector = Icons.AutoMirrored.Outlined.HelpOutline,
-                contentDescription = stringResource(MR.strings.label_help),
-                tint = TsuzukiTheme.colors.text,
-            )
-        }
-    }
-
-    @Composable
     override fun getPreferences(): List<Preference> {
         val backupPreferences = Injekt.get<BackupPreferences>()
 
@@ -131,6 +119,7 @@ val prefKeys: Set<String> = setOf(
     @Composable
     private fun getBackupAndRestoreGroup(backupPreferences: BackupPreferences): Preference.PreferenceGroup {
         val context = LocalContext.current
+        val scope = rememberCoroutineScope()
         val navigator = LocalNavigator.currentOrThrow
 
         val lastAutoBackup by backupPreferences.lastAutoBackupTimestamp().collectAsState()
@@ -163,15 +152,17 @@ val prefKeys: Set<String> = setOf(
                 Preference.PreferenceItem.TextPreference(
                     title = stringResource(MR.strings.pref_restore_backup),
                     onClick = {
-                        if (!BackupRestoreJob.isRunning(context)) {
-                            if (DeviceUtil.isMiui && DeviceUtil.isMiuiOptimizationDisabled()) {
-                                context.toast(MR.strings.restore_miui_warning)
-                            }
+                        scope.launchNonCancellable {
+                            if (!BackupRestoreJob.isRunning(context)) {
+                                if (DeviceUtil.isMiui && DeviceUtil.isMiuiOptimizationDisabled()) {
+                                    context.toast(MR.strings.restore_miui_warning)
+                                }
 
-                            // no need to catch because it's wrapped with a chooser
-                            chooseBackup.launch("*/*")
-                        } else {
-                            context.toast(MR.strings.restore_in_progress)
+                                // no need to catch because it's wrapped with a chooser
+                                withUIContext { chooseBackup.launch("*/*") }
+                            } else {
+                                context.toast(MR.strings.restore_in_progress)
+                            }
                         }
                     },
                 ),
@@ -274,39 +265,34 @@ val prefKeys: Set<String> = setOf(
         onConfirm: (ExportOptions) -> Unit,
         onDismissRequest: () -> Unit,
     ) {
+        var selected by remember(options) { mutableStateOf(options) }
+        fun apply(action: CsvColumnAction) {
+            when (action) {
+                is CsvColumnAction.Update -> selected = action.options
+                is CsvColumnAction.Export -> {
+                    onConfirm(action.options)
+                    onDismissRequest()
+                }
+            }
+        }
         MultiChoiceSheet(
             visible = true,
             title = stringResource(MR.strings.migration_dialog_what_to_include),
             doneLabel = stringResource(MR.strings.action_save),
-            onDone = {
-                onConfirm(options)
-                onDismissRequest()
-            },
+            onDone = { apply(csvDone(selected)) },
             options = listOf(
                 Triple(
                     stringResource(MR.strings.title),
-                    options.includeTitle,
-                ) { checked ->
-                    onConfirm(
-                        if (checked) {
-                            options
-                        } else {
-                            options.copy(includeTitle = false, includeAuthor = false, includeArtist = false)
-                        },
-                    )
-                },
+                    selected.includeTitle,
+                ) { checked -> apply(csvColumnTap(selected, CsvExportColumn.Title, checked)) },
                 Triple(
                     stringResource(MR.strings.author),
-                    options.includeAuthor,
-                ) { checked ->
-                    if (options.includeTitle) onConfirm(options.copy(includeAuthor = checked))
-                },
+                    selected.includeAuthor,
+                ) { checked -> apply(csvColumnTap(selected, CsvExportColumn.Author, checked)) },
                 Triple(
                     stringResource(MR.strings.artist),
-                    options.includeArtist,
-                ) { checked ->
-                    if (options.includeTitle) onConfirm(options.copy(includeArtist = checked))
-                },
+                    selected.includeArtist,
+                ) { checked -> apply(csvColumnTap(selected, CsvExportColumn.Artist, checked)) },
             ),
             onDismissRequest = onDismissRequest,
         )
@@ -316,6 +302,7 @@ val prefKeys: Set<String> = setOf(
     @Composable
     private fun getSyncPreferences(syncPreferences: SyncPreferences, syncService: Int): List<Preference> {
         val context = LocalContext.current
+        val scope = rememberCoroutineScope()
         val navigator = LocalNavigator.currentOrThrow
         val googleDriveAvailable = eu.kanade.tachiyomi.data.sync.service.GoogleDriveService.isConfigured(context)
         if (!googleDriveAvailable && syncService == SyncManager.SyncService.GOOGLE_DRIVE.value) {
@@ -409,10 +396,12 @@ val prefKeys: Set<String> = setOf(
                     title = stringResource(SYMR.strings.pref_sync_now),
                     subtitle = stringResource(SYMR.strings.pref_sync_now_subtitle),
                     onClick = {
-                        if (!SyncDataJob.isRunning(context)) {
-                            SyncDataJob.startNow(context, manual = true)
-                        } else {
-                            context.toast(SYMR.strings.sync_in_progress)
+                        scope.launchNonCancellable {
+                            if (!SyncDataJob.isRunning(context)) {
+                                SyncDataJob.startNow(context, manual = true)
+                            } else {
+                                context.toast(SYMR.strings.sync_in_progress)
+                            }
                         }
                     },
                 ),
@@ -535,8 +524,6 @@ val prefKeys: Set<String> = setOf(
 
     @Composable
     private fun getSelfHostPreferences(syncPreferences: SyncPreferences): List<Preference> {
-        val scope = rememberCoroutineScope()
-
         val qrScanLauncher = rememberLauncherForActivityResult(ScanContract()) {
             if (it.contents != null && it.contents.isNotEmpty()) {
                 // KMK -->
@@ -567,25 +554,16 @@ val prefKeys: Set<String> = setOf(
         // KMK <--
 
         return listOf(
-            Preference.PreferenceItem.EditTextPreference(
-                preference = syncPreferences.clientHost(),
+            syncTextRow(
                 title = "Sync server address",
-                // KMK -->
                 subtitle = if (pairedName.isBlank()) {
                     stringResource(SYMR.strings.pref_sync_host_summ)
                 } else {
                     "Paired with $pairedName · $hubHost"
                 },
-                // KMK <--
-                onValueChanged = { newValue ->
-                    scope.launch {
-                        // Trim spaces at the beginning and end, then remove trailing slash if present
-                        val trimmedValue = newValue.trim()
-                        val modifiedValue = trimmedValue.trimEnd { it == '/' }
-                        syncPreferences.clientHost().set(modifiedValue)
-                    }
-                    true
-                },
+                value = hubHost,
+                sanitize = { it.trim().trimEnd { c -> c == '/' } },
+                onPersist = { syncPreferences.clientHost().set(it) },
             ),
             Preference.PreferenceItem.CustomPreference(
                 title = "Sync server key",
@@ -594,10 +572,9 @@ val prefKeys: Set<String> = setOf(
                 EditTextPreferenceWidget(
                     title = "Sync server key",
                     subtitle = stringResource(SYMR.strings.pref_sync_api_key_summ),
+                    allowBlank = true,
                     onConfirm = {
-                        scope.launch {
-                            syncPreferences.clientAPIKey().set(it)
-                        }
+                        syncPreferences.clientAPIKey().set(it)
                         true
                     },
                     icon = null,
@@ -607,8 +584,8 @@ val prefKeys: Set<String> = setOf(
                             onClick = { qrScanLauncher.launch(scanOptions) },
                             modifier = Modifier.padding(start = TrailingWidgetBuffer),
                         ) {
-                            Icon(
-                                Icons.Filled.QrCodeScanner,
+                            TsuzukiIcon(
+                                TsuzukiIcons.ScanQrCode,
                                 contentDescription = stringResource(SYMR.strings.scan_qr_code),
                             )
                         }
@@ -622,29 +599,24 @@ val prefKeys: Set<String> = setOf(
     @Composable
     private fun getWebDavPreferences(syncPreferences: SyncPreferences): List<Preference> {
         val scope = rememberCoroutineScope()
+        val webDavUrl by syncPreferences.webDavUrl().collectAsState()
+        val webDavUsername by syncPreferences.webDavUsername().collectAsState()
+        val webDavFolder by syncPreferences.webDavFolder().collectAsState()
 
         return listOf(
-            Preference.PreferenceItem.EditTextPreference(
-                preference = syncPreferences.webDavUrl(),
+            syncTextRow(
                 title = stringResource(KMR.strings.pref_webdav_url),
                 subtitle = stringResource(KMR.strings.pref_webdav_url_summ),
-                onValueChanged = { newValue ->
-                    scope.launch {
-                        syncPreferences.webDavUrl().set(newValue.trim())
-                    }
-                    true
-                },
+                value = webDavUrl,
+                sanitize = { it.trim() },
+                onPersist = { syncPreferences.webDavUrl().set(it) },
             ),
-            Preference.PreferenceItem.EditTextPreference(
-                preference = syncPreferences.webDavUsername(),
+            syncTextRow(
                 title = stringResource(KMR.strings.pref_webdav_username),
                 subtitle = stringResource(KMR.strings.pref_webdav_username_summ),
-                onValueChanged = { newValue ->
-                    scope.launch {
-                        syncPreferences.webDavUsername().set(newValue.trim())
-                    }
-                    true
-                },
+                value = webDavUsername,
+                sanitize = { it.trim() },
+                onPersist = { syncPreferences.webDavUsername().set(it) },
             ),
             run {
                 var dialogOpen by remember { mutableStateOf(false) }
@@ -668,20 +640,60 @@ val prefKeys: Set<String> = setOf(
                     },
                 )
             },
-            Preference.PreferenceItem.EditTextPreference(
-                preference = syncPreferences.webDavFolder(),
+            syncTextRow(
                 title = stringResource(KMR.strings.pref_webdav_folder),
                 subtitle = stringResource(KMR.strings.pref_webdav_folder_summ),
-                onValueChanged = { newValue ->
-                    scope.launch {
-                        syncPreferences.webDavFolder().set(newValue.trim())
-                    }
-                    true
-                },
+                value = webDavFolder,
+                sanitize = { it.trim() },
+                onPersist = { syncPreferences.webDavFolder().set(it) },
             ),
+        )
+    }
+
+    @Composable
+    private fun syncTextRow(
+        title: String,
+        subtitle: String?,
+        value: String,
+        sanitize: (String) -> String = { it },
+        onPersist: suspend (String) -> Unit,
+    ): Preference.PreferenceItem.CustomPreference = Preference.PreferenceItem.CustomPreference(title) {
+        EditTextPreferenceWidget(
+            title = title,
+            subtitle = subtitle,
+            icon = null,
+            value = value,
+            allowBlank = true,
+            onConfirm = { text ->
+                onPersist(sanitize(text))
+                true
+            },
         )
     }
     // KMK <--
 
     // SY <--
 }
+
+internal enum class CsvExportColumn { Title, Author, Artist }
+
+internal sealed interface CsvColumnAction {
+    data class Update(val options: ExportOptions) : CsvColumnAction
+    data class Export(val options: ExportOptions) : CsvColumnAction
+}
+
+internal fun csvColumnTap(options: ExportOptions, column: CsvExportColumn, checked: Boolean): CsvColumnAction = when (column) {
+    CsvExportColumn.Title -> CsvColumnAction.Update(
+        if (checked) {
+            options.copy(includeTitle = true)
+        } else {
+            options.copy(includeTitle = false, includeAuthor = false, includeArtist = false)
+        },
+    )
+    CsvExportColumn.Author ->
+        if (options.includeTitle) CsvColumnAction.Update(options.copy(includeAuthor = checked)) else CsvColumnAction.Update(options)
+    CsvExportColumn.Artist ->
+        if (options.includeTitle) CsvColumnAction.Update(options.copy(includeArtist = checked)) else CsvColumnAction.Update(options)
+}
+
+internal fun csvDone(options: ExportOptions): CsvColumnAction = CsvColumnAction.Export(options)

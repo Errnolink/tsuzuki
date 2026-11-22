@@ -6,7 +6,7 @@ import kotlin.math.pow
 /**
  * Pure colour math for the Continue action: takes the cover's dominant colour and produces a
  * capsule colour whose label (white) reads at >= 4.5:1 contrast. Low-saturation or missing
- * dominants fall back to the app accent.
+ * dominants fall back to the app accent, darkened until white reads at 4.5:1.
  */
 object ContinueActionColor {
 
@@ -14,11 +14,11 @@ object ContinueActionColor {
     private const val LowSaturation = 0.15f
 
     fun forCover(dominant: Color?, accent: Color): Color {
-        val base = dominant ?: return accent
-        if (base.alpha < 0.5f) return accent
-        val hsl = base.toHsl() ?: return accent
-        if (hsl.saturation < LowSaturation) return accent
-        if (hsl.lightness <= 0.04f || hsl.lightness >= 0.96f) return accent
+        val base = dominant ?: return darkenUntilReadable(accent)
+        if (base.alpha < 0.5f) return darkenUntilReadable(accent)
+        val hsl = base.toHsl() ?: return darkenUntilReadable(accent)
+        if (hsl.saturation < LowSaturation) return darkenUntilReadable(accent)
+        if (hsl.lightness <= 0.04f || hsl.lightness >= 0.96f) return darkenUntilReadable(accent)
         return darkenUntilReadable(base)
     }
 
@@ -31,6 +31,21 @@ object ContinueActionColor {
         val lighter = maxOf(la, lb)
         val darker = minOf(la, lb)
         return ((lighter + 0.05f) / (darker + 0.05f))
+    }
+
+    fun readableOn(color: Color, background: Color): Color {
+        val target = if (relativeLuminance(background) < 0.18f) Color.White else Color.Black
+        var candidate = color.copy(alpha = 1f)
+        repeat(24) {
+            if (contrast(candidate, background) >= MinContrast) return candidate
+            candidate = Color(
+                red = candidate.red + (target.red - candidate.red) * 0.15f,
+                green = candidate.green + (target.green - candidate.green) * 0.15f,
+                blue = candidate.blue + (target.blue - candidate.blue) * 0.15f,
+                alpha = 1f,
+            )
+        }
+        return candidate
     }
 
     private fun darkenUntilReadable(base: Color): Color {

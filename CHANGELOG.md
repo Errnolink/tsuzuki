@@ -1,6 +1,90 @@
 # Changelog
 
-From 0.2.0 on, one release covers both apps, tagged `v<version>`. 0.1.0 is tagged `v0.1.0`.
+From 0.2.0 on, one release covers both apps, tagged `v<version>`. 0.1.0 is tagged `v0.1.0`. 0.3.0 ships Android only; the next Windows update comes later.
+
+## 0.3.0 (Android)
+
+### Reader
+
+- **The Compose reader is now the only reader engine**, bringing a two-tier page preloader and a rebuilt image pipeline: tap-edge turn glow, smaller tap zones, double-tap and pinch zoom toggles, smart long-strip gap scaling, dual-page split and rotate for webtoons, landscape zoom and spine margins, a 16-bit E-Ink mode, automatic per-page backgrounds, and tall-page splitting.
+- **A rebuilt reader screen.** A floating top bar shows the chapter title and page count over a progressive blur, and a five-action glass dock opens Chapters, Page Overview, Quick Lighting, Capture and Settings as cards that pour out of their buttons.
+- **Filmstrip and storyboard.** Pull the handle above the scrubber for live page thumbnails in paged mode, or a Webtoon storyboard strip with a live viewport frame.
+- **Vertical reading gets one symmetric side bar** holding the scrubber, page counter and chapter arrows, which expands into a zoomed seven-page Webtoon minimap.
+- **Sliders morph into a frosted glass lens while you drag** them, then spring back on release.
+- **Return to p.N.** Jumping three or more pages pins where you were on the rail and floats a glass pill that takes you back.
+- **The chapter list is rebuilt:** card rows with a count badge, an accented Reading now card, dimmed read chapters, and auto-scroll to your chapter.
+- **Quick Lighting** is a floating card for brightness, dimming, warmth, grayscale and invert.
+- **Page Overview** is a thumbnail grid with All and Current tabs, 2×/3×/4× density, sharp tall-Webtoon thumbnails, a frosted backdrop, and equal-width previous and next chapter buttons.
+- **Capture frames the live screen** (Webtoon seams, spreads and zoom level preserved) with steady crop handles, plus a Full page mode; save or share as a PNG.
+
+### Look and motion
+
+- **Liquid Glass everywhere.** Bars, menus, docks and cards blur whatever sits behind them, and scrolling content melts into the top bar's progressive blur band. Edge refraction is on by default on Android 13 and newer.
+- **Menus pour out of the button that opened them** and drain back on close; submenus rise beside the menu.
+- **A magnifying lens follows your finger** when you hold a tab bar item or segmented control.
+- **The tab bar folds away as you scroll down** and springs back on the way up, on tab switch, and on search.
+- **Continue and Resume transitions expand from your tap point**, with coordinated background scaling and spring motion.
+- **Consistent tactile controls:** switch thumbs stretch under your finger, sliders become lenses, buttons squeeze on press, spinners morph, progress bars ripple, toasts stack as glass pills, and selection action bars scroll instead of clipping Done.
+- **Wallpaper colours, one icon set, clearer TalkBack:** an optional Material You palette (on by default on Android 12+), cover-derived tinting, filled active tab glyphs, and better state announcements.
+
+### Library and Continue reading
+
+- **Continue reading cards show reading recency and page-progress rings**, pass drags into the library grid, and open a dedicated See all screen.
+- **The filter menu is rebuilt** (active-filter count, layout picker, columns, sort with tap-to-flip, categories and quick filters), and search moved to the bottom of the screen and searches the whole library.
+- **Library updates run in parallel,** cadence prediction filters bad chapter drops, and volume-aware recognition understands Vol. N patterns and fills single gaps.
+- **Layout switching keeps covers in place** while tiles glide, and the download queue takes drag-to-top and swipe-to-cancel.
+
+### Title page
+
+- **The cover zooms out of the tile you tapped**, flies into place, and shrinks back into the tile on back or predictive back.
+- **Chapter rows are scannable:** unread dot, chapter number, scanlator, date, per-row download button, and source names directly on merged titles.
+
+### Feed, History and Upcoming
+
+- **One Feed | History capsule** switches between updates and history, with multi-selection actions.
+- **Same-day updates group under a shared cover** with per-day expand and collapse, preloaded covers, and pinned day headers.
+- **Feed polish:** the top blur is back, blank gaps and chip shake are gone, and pull-to-refresh runs real library updates.
+- **A Time format setting** (System, 12-hour, 24-hour) applies to History and the reader clock.
+
+### Browse, Search and Sources
+
+- **Browse folds the tab bar into a bottom search bar** that filters live and hands off cleanly to global search.
+- **Global search gains bulk selection,** in-library badges, and clearer empty and retry states.
+- **Add Sources shows live install progress,** and Browse Home gets pull-to-refresh and wider tablet shelves.
+- **MangaDex links open the title page directly** on the first tap, without auto-adding it to your library.
+
+### Tracking
+
+- **Comick tracker support.**
+- **Search trackers by numeric ID** with the `id:` prefix on AniList, Bangumi, Kitsu, MangaUpdates and Shikimori.
+- **Auto-tracking links new titles across every signed-in tracker** (staying off for upgraders), with background linking of your existing library, a live progress screen, and Run now / Stop controls.
+- **Tracker profiles get refresh buttons** inside Tracking settings.
+
+### Sync, backup and restore
+
+- **Kotatsu backups restore directly,** migrating titles, categories, reading progress, history and bookmarks, then reporting missing extensions with automatic install retries.
+- **Restores keep your furthest progress and earliest date added,** and skip damaged backup entries instead of failing the whole restore.
+- **One truthful sync pill** with live stages, docked above the tab bar.
+
+### Settings and localization
+
+- **Settings search has no result limit,** tablets get a side navigation rail and two-pane settings, and wide title pages show the cover beside the chapters.
+- **Glass strength is a continuous slider** (Clear, Tinted, Frosted, Opaque, auto-switching to Opaque under Battery Saver), with an edge-refraction toggle, renamed header styles, and Time format under Appearance.
+- **Polish:** aligned settings text, masked password inputs, clearable sync fields, CSV export on Save, and sensitive headers redacted in verbose logs.
+- **Localization restored** across Library, Feed, Details, top-level Settings and shared components.
+
+### Downloads, database and performance
+
+- **Pipelined downloads** start the next chapter while the current one finishes, and queues skip redundant disk probes.
+- **Faster database and startup:** WAL mode with a busy timeout, deferred job-manager init, chunked history resets, and faster sync, trust-check and notification hot paths.
+
+### Fixed
+
+- Crashes when opening menus, applying smart backgrounds or bitmap transforms in the reader, pulling to refresh in Feed, and pressing Back in two-pane Settings.
+- A startup retry loop from saved positions pointing at deleted chapters, and stale page-total lookups for missing chapters.
+- Titles briefly flashing "0 chapters", and MangaDex titles with chapters removed for licensing failing as "No chapters found".
+- Off-by-one scrubber labels, vertical capsule alignment, pixelated Webtoon thumbnails, comic text bleeding behind the Page Overview backdrop, and Capture grabbing a single raw page instead of the live view.
+- Button labels sitting off-centre, Done truncating, cramped settings values, reader chrome legibility on bright pages, RTL chapter arrows, failed loads showing blank screens, drag-to-reorder moving the wrong item, RTL sliders and switches, refresh spinners, toast heights, wide-sheet predictive back, and first-run storage setup across rotation.
 
 ## 0.2.2 (Android and Windows)
 

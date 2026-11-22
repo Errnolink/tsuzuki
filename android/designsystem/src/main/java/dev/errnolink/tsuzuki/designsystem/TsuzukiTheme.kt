@@ -5,7 +5,6 @@ import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.database.ContentObserver
-import android.os.Build
 import android.os.Handler
 import android.os.Looper
 import android.os.PowerManager
@@ -26,6 +25,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.staticCompositionLocalOf
+import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
@@ -33,14 +33,15 @@ import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.core.content.ContextCompat
 
-val LocalTsuzukiColors = staticCompositionLocalOf { tsuzukiColors(false) }
+val LocalTsuzukiColors = compositionLocalOf { tsuzukiColors(false) }
 val LocalTsuzukiTypography = staticCompositionLocalOf { TsuzukiTypography() }
 val LocalTsuzukiSpacing = staticCompositionLocalOf { TsuzukiSpacing }
 val LocalTsuzukiCorners = staticCompositionLocalOf { TsuzukiCorners }
 val LocalTsuzukiMotion = staticCompositionLocalOf { TsuzukiMotion(reduced = true) }
 val LocalOpaqueGlass = staticCompositionLocalOf { true }
 val LocalGlassTintStrength = staticCompositionLocalOf { GlassMaterial.DefaultTintStrength }
-val LocalTsuzukiContentColor = staticCompositionLocalOf { Color.Unspecified }
+val LocalLiquidGlass = compositionLocalOf { false }
+val LocalTsuzukiContentColor = compositionLocalOf { Color.Unspecified }
 val LocalTsuzukiComponentLabels = staticCompositionLocalOf { TsuzukiComponentLabels() }
 @Immutable
 data class TsuzukiComponentLabels(
@@ -56,6 +57,19 @@ data class TsuzukiComponentLabels(
     val menu: String = "Menu",
     val confirm: String = "Confirm",
     val cancel: String = "Cancel",
+    val loading: String = "Loading",
+    val removeItem: (String) -> String = { "Remove $it" },
+    val triStateOff: String = "Any",
+    val triStateInclude: String = "Only these",
+    val triStateExclude: String = "Hidden",
+    val dismiss: String = "Dismiss",
+    val dismissNotice: String = "Dismiss notice",
+    val dismissNotification: String = "Dismiss notification",
+    val search: String = "Search",
+    val done: String = "Done",
+    val decreaseItem: (String) -> String = { "Decrease $it" },
+    val increaseItem: (String) -> String = { "Increase $it" },
+    val percentRead: (String, Int) -> String = { label, percent -> "$label, $percent percent read" },
 )
 
 object TsuzukiTheme {
@@ -70,9 +84,10 @@ object TsuzukiTheme {
 @Composable
 fun TsuzukiTheme(
     dark: Boolean = isSystemInDarkTheme(),
-    systemAccent: Boolean = false,
+    wallpaperColors: Boolean = false,
     reducedTransparency: Boolean = false,
     reducedMotion: Boolean = false,
+    labels: TsuzukiComponentLabels = LocalTsuzukiComponentLabels.current,
     content: @Composable () -> Unit,
 ) {
     val context = LocalContext.current
@@ -81,21 +96,17 @@ fun TsuzukiTheme(
     var glassTintStrength by remember(glassPreferences) {
         mutableStateOf(glassPreferences.getFloat("tint_strength", GlassMaterial.DefaultTintStrength))
     }
+    var liquidGlass by remember(glassPreferences) { mutableStateOf(glassPreferences.getBoolean("liquid", true)) }
     DisposableEffect(glassPreferences) {
         val listener = android.content.SharedPreferences.OnSharedPreferenceChangeListener { preferences, key ->
             if (key == "tint_strength") glassTintStrength = preferences.getFloat(key, GlassMaterial.DefaultTintStrength)
+            if (key == "liquid") liquidGlass = preferences.getBoolean(key, true)
         }
         glassPreferences.registerOnSharedPreferenceChangeListener(listener)
         onDispose { glassPreferences.unregisterOnSharedPreferenceChangeListener(listener) }
     }
-    val accent = remember(context, dark, systemAccent) {
-        if (systemAccent && Build.VERSION.SDK_INT >= 31) {
-            Color(context.getColor(if (dark) android.R.color.system_accent1_200 else android.R.color.system_accent1_700))
-        } else {
-            null
-        }
-    }
-    val colors = remember(dark, accent) { tsuzukiColors(dark, accent) }
+    val colors = (if (wallpaperColors) rememberWallpaperColors(dark) else null)
+        ?: remember(dark) { tsuzukiColors(dark) }
     val typography = remember { TsuzukiTypography() }
     val motion = remember(reducedMotion, policy) { TsuzukiMotion(reducedMotion || policy.reducedMotion) }
     val indication = remember(motion) { PressScaleIndication(motion) }
@@ -112,11 +123,13 @@ fun TsuzukiTheme(
         LocalTextStyle provides typography.body,
         LocalOpaqueGlass provides (reducedTransparency || glassTintStrength >= 1f || policy.powerSave || policy.highContrast),
         LocalGlassTintStrength provides glassTintStrength.coerceIn(0f, 1f),
+        LocalLiquidGlass provides liquidGlass,
         LocalIndication provides indication,
         LocalTextSelectionColors provides selectionColors,
         LocalHaptics provides haptics,
         LocalIosFling provides remember { IosFlingBehavior() },
-        content = content,
+        LocalTsuzukiComponentLabels provides labels,
+        content = { MenuLayerHost(content) },
     )
 }
 
@@ -143,7 +156,7 @@ private fun rememberSystemPolicy(): SystemPolicy {
     fun readPolicy(): SystemPolicy {
         val resolver = context.contentResolver
         return SystemPolicy(
-            context.getSystemService(PowerManager::class.java).isPowerSaveMode,
+            context.getSystemService(PowerManager::class.java)?.isPowerSaveMode == true,
             systemReducedMotion(
                 Settings.Global.getFloat(resolver, Settings.Global.ANIMATOR_DURATION_SCALE, 1f),
                 Settings.Global.getFloat(resolver, Settings.Global.TRANSITION_ANIMATION_SCALE, 1f),

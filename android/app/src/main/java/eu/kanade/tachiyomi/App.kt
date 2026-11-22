@@ -10,6 +10,7 @@ import android.content.IntentFilter
 import android.graphics.BitmapFactory
 import android.os.Build
 import android.os.Looper
+import android.util.Log
 import android.webkit.WebView
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.DefaultLifecycleObserver
@@ -38,6 +39,11 @@ import dev.mihon.injekt.patchInjekt
 import dev.errnolink.tsuzuki.data.DbNullRepair
 import dev.errnolink.tsuzuki.data.library.PageTotals
 import dev.errnolink.tsuzuki.mangadex.TrackingSyncJob
+import dev.errnolink.tsuzuki.reader.engine.decode.MaxBitmapBytesDecoderFactory
+import dev.errnolink.tsuzuki.reader.engine.decode.ReaderPageFetcher
+import dev.errnolink.tsuzuki.reader.engine.decode.ReaderPageSplitFetcher
+import dev.errnolink.tsuzuki.reader.engine.model.ReaderPageKeyer
+import dev.errnolink.tsuzuki.reader.engine.model.ReaderPageSplitKeyer
 import dev.errnolink.tsuzuki.sync.ExtensionSync
 import dev.errnolink.tsuzuki.update.AppUpdateJob
 import eu.kanade.domain.DomainModule
@@ -104,7 +110,11 @@ import java.security.Security
 import java.text.SimpleDateFormat
 import java.util.Locale
 
-class App : Application(), DefaultLifecycleObserver, SingletonImageLoader.Factory {
+class App :
+    Application(),
+    DefaultLifecycleObserver,
+    SingletonImageLoader.Factory,
+    Configuration.Provider {
 
     private val basePreferences: BasePreferences by injectLazy()
 
@@ -230,9 +240,7 @@ class App : Application(), DefaultLifecycleObserver, SingletonImageLoader.Factor
         }
 
         dev.errnolink.tsuzuki.perf.PerfTimelineTracer.measureStage("WorkManager init") {
-            if (!WorkManager.isInitialized()) {
-                WorkManager.initialize(this, Configuration.Builder().build())
-            }
+            WorkManager.getInstance(this)
         }
         dev.errnolink.tsuzuki.perf.PerfTimelineTracer.measureStage("Migrator initialize") {
             initializeMigrator()
@@ -264,6 +272,7 @@ class App : Application(), DefaultLifecycleObserver, SingletonImageLoader.Factor
             dev.errnolink.tsuzuki.perf.PerfTimelineTracer.measureStage("ExtensionSync onAppStart") {
                 ExtensionSync.launchOnAppStart()
             }
+            dev.errnolink.tsuzuki.mangadex.AutoTrackStartup.observeTrackerSignIns(this@App, scope)
             dev.errnolink.tsuzuki.perf.PerfTimelineTracer.measureStage("AppUpdateJob onAppStart") {
                 AppUpdateJob.setupDailyTask(this@App)
                 AppUpdateJob.checkOnAppStart(this@App)
@@ -301,6 +310,12 @@ class App : Application(), DefaultLifecycleObserver, SingletonImageLoader.Factor
         )
     }
 
+    override val workManagerConfiguration: Configuration by lazy {
+        Configuration.Builder()
+            .setMinimumLoggingLevel(if (BuildConfig.DEBUG) Log.DEBUG else Log.INFO)
+            .build()
+    }
+
     override fun newImageLoader(context: Context): ImageLoader {
         return ImageLoader.Builder(this).apply {
             eventListenerFactory(dev.errnolink.tsuzuki.perf.PerfTimelineTracer.coilEventListenerFactory)
@@ -309,14 +324,19 @@ class App : Application(), DefaultLifecycleObserver, SingletonImageLoader.Factor
                 // NetworkFetcher.Factory
                 add(OkHttpNetworkFetcherFactory(callFactoryLazy::value))
                 // Decoder.Factory
+                add(MaxBitmapBytesDecoderFactory())
                 add(TachiyomiImageDecoder.Factory())
                 // Fetcher.Factory
+                add(ReaderPageFetcher.Factory())
+                add(ReaderPageSplitFetcher.Factory())
                 add(BufferedSourceFetcher.Factory())
                 add(MangaCoverFetcher.MangaCoverFactory(callFactoryLazy))
                 add(MangaCoverFetcher.MangaFactory(callFactoryLazy))
                 // Keyer
                 add(MangaCoverKeyer())
                 add(MangaKeyer())
+                add(ReaderPageKeyer())
+                add(ReaderPageSplitKeyer())
             }
 
             diskCache(

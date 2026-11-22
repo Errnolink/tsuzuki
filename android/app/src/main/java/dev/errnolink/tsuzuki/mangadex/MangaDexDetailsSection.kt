@@ -46,14 +46,13 @@ import cafe.adriel.voyager.navigator.currentOrThrow
 import dev.errnolink.tsuzuki.designsystem.ContextMenu
 import dev.errnolink.tsuzuki.designsystem.ContextMenuAction
 import dev.errnolink.tsuzuki.designsystem.DetentSheet
-import dev.errnolink.tsuzuki.designsystem.SheetDetent
 import dev.errnolink.tsuzuki.designsystem.GroupedRow
 import dev.errnolink.tsuzuki.designsystem.InsetGroupedList
 import dev.errnolink.tsuzuki.designsystem.TsuzukiCorners
 import dev.errnolink.tsuzuki.designsystem.TsuzukiText
 import dev.errnolink.tsuzuki.designsystem.TsuzukiTheme
 import dev.errnolink.tsuzuki.designsystem.rememberCoverArrivalState
-import dev.errnolink.tsuzuki.ui.details.ShimmerBox
+import dev.errnolink.tsuzuki.designsystem.Skeleton
 import dev.errnolink.tsuzuki.ui.shell.ShellBadge
 import eu.kanade.tachiyomi.ui.browse.source.browse.BrowseSourceScreen
 import eu.kanade.tachiyomi.ui.manga.MangaScreen
@@ -355,7 +354,6 @@ fun MangaDexRatingSheet(
         visible,
         "Rating distribution",
         onDismissRequest = onDismissRequest,
-        initialDetent = SheetDetent.FitContent,
     ) {
         RatingDistributionRows(stats)
     }
@@ -453,7 +451,7 @@ fun MangaDexSimilarGrid(mangaId: Long, modifier: Modifier = Modifier) {
     if (data.recommendations.isEmpty()) {
         Column(Modifier.fillMaxSize().padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             repeat(3) {
-                ShimmerBox(
+                Skeleton(
                     Modifier.fillMaxWidth().aspectRatio(2.4f).clip(RoundedCornerShape(TsuzukiCorners.cover)),
                 )
             }
@@ -466,7 +464,7 @@ fun MangaDexSimilarGrid(mangaId: Long, modifier: Modifier = Modifier) {
     modifier = modifier.fillMaxSize(),
     contentPadding = PaddingValues(start = 20.dp, end = 20.dp, top = 4.dp, bottom = 24.dp),
     horizontalArrangement = Arrangement.spacedBy(12.dp),
-    verticalArrangement = Arrangement.spacedBy(16.dp),) { gridItems(data.recommendations, key = { "${it.badge}-${it.title}" }) { item ->
+    ) { gridItems(data.recommendations, key = { it.dexId ?: it.openUrl ?: it.title }) { item ->
         RecommendationCard(item, source, arrivals)
     } }
 }
@@ -521,7 +519,7 @@ fun MangaDexDetailsSection(mangaId: Long) {
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 TsuzukiText("Recommendations", Modifier.padding(horizontal = 20.dp), TsuzukiTheme.typography.title3)
                 LazyRow(flingBehavior = dev.errnolink.tsuzuki.designsystem.tsuzukiFlingBehavior(), contentPadding = PaddingValues(horizontal = 20.dp),
-                horizontalArrangement = Arrangement.spacedBy(14.dp),) { items(state.recommendations, key = { "${it.badge}-${it.title}" }) { item ->
+                horizontalArrangement = Arrangement.spacedBy(14.dp),) { items(state.recommendations, key = { it.dexId ?: it.openUrl ?: it.title }) { item ->
                     RecommendationCard(item, source, arrivals, width = 138.dp)
                 } }
             }
@@ -532,7 +530,6 @@ fun MangaDexDetailsSection(mangaId: Long) {
             showDistribution,
             "Rating distribution",
             onDismissRequest = { showDistribution = false },
-            initialDetent = SheetDetent.FitContent,
         ) {
             RatingDistributionRows(stats)
         }

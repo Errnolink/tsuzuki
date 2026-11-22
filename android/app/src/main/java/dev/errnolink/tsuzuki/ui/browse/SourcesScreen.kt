@@ -21,9 +21,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.shape.CornerBasedShape
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.PushPin
-import androidx.compose.material.icons.filled.PushPin
 import androidx.compose.material3.Icon
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.mutableStateListOf
@@ -37,11 +34,18 @@ import androidx.compose.ui.unit.dp
 import cafe.adriel.voyager.navigator.LocalNavigator
 import cafe.adriel.voyager.navigator.currentOrThrow
 import dev.errnolink.tsuzuki.designsystem.DetentSheet
+import dev.errnolink.tsuzuki.designsystem.SheetKind
 import dev.errnolink.tsuzuki.designsystem.GroupedRow
 import dev.errnolink.tsuzuki.designsystem.InsetGroupedList
 import dev.errnolink.tsuzuki.designsystem.PillButton
+import dev.errnolink.tsuzuki.designsystem.Pin
+import dev.errnolink.tsuzuki.designsystem.PinFilled
+import dev.errnolink.tsuzuki.designsystem.TsuzukiIcons
 import dev.errnolink.tsuzuki.designsystem.TsuzukiText
 import dev.errnolink.tsuzuki.designsystem.TsuzukiTheme
+import dev.errnolink.tsuzuki.designsystem.TsuzukiCorners
+import dev.errnolink.tsuzuki.designsystem.SectionHeader
+import dev.errnolink.tsuzuki.designsystem.TsuzukiSize
 import eu.kanade.domain.source.model.installedExtension
 import eu.kanade.presentation.browse.components.SourceIcon
 import dev.errnolink.tsuzuki.ui.shell.ShellEmpty
@@ -98,10 +102,10 @@ fun SourcesScreen(
                         repeat(8) { index ->
                             SourceRowSkeleton(
                                 shape = RoundedCornerShape(
-                                    topStart = if (index == 0) 14.dp else 0.dp,
-                                    topEnd = if (index == 0) 14.dp else 0.dp,
-                                    bottomStart = if (index == 7) 14.dp else 0.dp,
-                                    bottomEnd = if (index == 7) 14.dp else 0.dp,
+                                    topStart = if (index == 0) TsuzukiCorners.field else 0.dp,
+                                    topEnd = if (index == 0) TsuzukiCorners.field else 0.dp,
+                                    bottomStart = if (index == 7) TsuzukiCorners.field else 0.dp,
+                                    bottomEnd = if (index == 7) TsuzukiCorners.field else 0.dp,
                                 ),
                                 divider = index < 7,
                                 index = index,
@@ -127,19 +131,17 @@ fun SourcesScreen(
                 contentType = { _, it -> if (it is SourceUiModel.Header) "header" else "source" },
                     ) { index, model ->
                         when (model) {
-                            is SourceUiModel.Header -> TsuzukiText(
+                            is SourceUiModel.Header -> SectionHeader(
                                 if (model.isCategory) model.language else LocaleHelper.getSourceDisplayName(model.language, LocalContext.current),
                                 Modifier.padding(start = 36.dp, top = 16.dp, bottom = 8.dp),
-                                TsuzukiTheme.typography.footnote,
-                                TsuzukiTheme.colors.secondary,
                             )
-                            is SourceUiModel.Item -> SourceRow(
+                            is SourceUiModel.Item -> SourceListRow(
                                 model.source, state.showLatest, state.showPin, onClickItem, onLongClickItem, onClickPin,
                                 shape = RoundedCornerShape(
-                                    topStart = if (state.items.getOrNull(index - 1) !is SourceUiModel.Item) 14.dp else 0.dp,
-                                    topEnd = if (state.items.getOrNull(index - 1) !is SourceUiModel.Item) 14.dp else 0.dp,
-                                    bottomStart = if (state.items.getOrNull(index + 1) !is SourceUiModel.Item) 14.dp else 0.dp,
-                                    bottomEnd = if (state.items.getOrNull(index + 1) !is SourceUiModel.Item) 14.dp else 0.dp,
+                                    topStart = if (state.items.getOrNull(index - 1) !is SourceUiModel.Item) TsuzukiCorners.field else 0.dp,
+                                    topEnd = if (state.items.getOrNull(index - 1) !is SourceUiModel.Item) TsuzukiCorners.field else 0.dp,
+                                    bottomStart = if (state.items.getOrNull(index + 1) !is SourceUiModel.Item) TsuzukiCorners.field else 0.dp,
+                                    bottomEnd = if (state.items.getOrNull(index + 1) !is SourceUiModel.Item) TsuzukiCorners.field else 0.dp,
                                 ),
                                 divider = state.items.getOrNull(index + 1) is SourceUiModel.Item,
                             )
@@ -151,7 +153,7 @@ fun SourcesScreen(
     )
 }
 @Composable
-private fun SourceRow(
+private fun SourceListRow(
     source: Source,
     showLatest: Boolean,
     showPin: Boolean,
@@ -162,48 +164,43 @@ private fun SourceRow(
     divider: Boolean,
 ) {
     val colors = TsuzukiTheme.colors
-    Row(
-        Modifier.fillMaxWidth().padding(horizontal = 20.dp)
+    dev.errnolink.tsuzuki.ui.browse.SourceRow(
+        title = source.visualName,
+        onClick = { onClickItem(source, Listing.Popular) },
+        onLongClick = { onLongClickItem(source) },
+        subtitle = LocaleHelper.getSourceDisplayName(source.lang, LocalContext.current),
+        subtitleMaxLines = 1,
+        subtitleSpacing = 2.dp,
+        leading = { SourceIcon(source = source, modifier = Modifier.size(32.dp)) },
+        dividerStart = if (divider) 56.dp else null,
+        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
+        modifier = Modifier
+            .fillMaxWidth().padding(horizontal = 20.dp)
             .clip(shape).background(colors.grouped)
-            .combinedClickable(onClick = { onClickItem(source, Listing.Popular) }, onLongClick = { onLongClickItem(source) })
-            .drawBehind {
-                if (divider) drawLine(colors.separator, Offset(56.dp.toPx(), size.height), Offset(size.width, size.height), 0.5.dp.toPx())
+            .heightIn(min = 64.dp),
+        trailing = {
+            if (showPin) {
+                val pinned = Pin.Pinned in source.pin
+                Box(
+                    Modifier
+                        .size(TsuzukiSize.touch)
+                        .clip(CircleShape)
+                        .clickable(onClickLabel = if (pinned) "Unpin source" else "Pin source") { onClickPin(source) },
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Icon(
+                        if (pinned) TsuzukiIcons.PinFilled else TsuzukiIcons.Pin,
+                        if (pinned) "Unpin source" else "Pin source",
+                        Modifier.size(20.dp),
+                        tint = if (pinned) colors.accent else colors.secondary,
+                    )
+                }
             }
-            .heightIn(min = 64.dp).padding(horizontal = 12.dp, vertical = 8.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(12.dp),
-    ) {
-        SourceIcon(source = source, modifier = Modifier.size(32.dp))
-        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-            TsuzukiText(source.visualName, style = TsuzukiTheme.typography.callout, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            TsuzukiText(
-                LocaleHelper.getSourceDisplayName(source.lang, LocalContext.current),
-                style = TsuzukiTheme.typography.footnote,
-                color = colors.secondary,
-                maxLines = 1,
-            )
-        }
-        if (showPin) {
-            val pinned = Pin.Pinned in source.pin
-            Box(
-                Modifier
-                    .size(48.dp)
-                    .clip(CircleShape)
-                    .clickable(onClickLabel = if (pinned) "Unpin source" else "Pin source") { onClickPin(source) },
-                contentAlignment = Alignment.Center,
-            ) {
-                Icon(
-                    if (pinned) Icons.Filled.PushPin else Icons.Outlined.PushPin,
-                    if (pinned) "Unpin source" else "Pin source",
-                    Modifier.size(20.dp),
-                    tint = if (pinned) colors.accent else colors.secondary,
-                )
+            if (showLatest && source.supportsLatest) {
+                PillButton(stringResource(MR.strings.latest), { onClickItem(source, Listing.Latest) }, prominent = false)
             }
-        }
-        if (showLatest && source.supportsLatest) {
-            PillButton(stringResource(MR.strings.latest), { onClickItem(source, Listing.Latest) }, prominent = false)
-        }
-    }
+        },
+    )
 }
 
 @Composable
@@ -216,7 +213,7 @@ fun SourceOptionsDialog(
     onDismiss: () -> Unit,
     onClickSettings: (() -> Unit)? = null,
 ) {
-    DetentSheet(true, source.visualName, onDismiss) {
+    DetentSheet(true, source.visualName, onDismiss, kind = SheetKind.Picker) {
         GroupedRow(stringResource(if (Pin.Pinned in source.pin) MR.strings.action_unpin else MR.strings.action_pin), onClick = onClickPin)
         if (!source.isLocal()) GroupedRow(stringResource(MR.strings.action_disable), onClick = onClickDisable)
         onClickSetCategories?.let { GroupedRow(stringResource(MR.strings.categories), onClick = it) }
@@ -237,7 +234,7 @@ fun SourceCategoriesDialog(
     onDismissRequest: () -> Unit,
 ) {
     val selected = remember(source) { mutableStateListOf<String>().also { it.addAll(source.categories) } }
-    DetentSheet(true, source.visualName, onDismissRequest) {
+    DetentSheet(true, source.visualName, onDismissRequest, kind = SheetKind.Picker) {
         categories.forEach { category ->
             GroupedRow(category, checked = category in selected, onCheckedChange = {
                 if (it) selected.add(category) else selected.remove(category)

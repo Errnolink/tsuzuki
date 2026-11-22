@@ -17,7 +17,14 @@ object RestoredMangaMerge {
                     incoming.lastModifiedAt == local.lastModifiedAt &&
                     isSync
                 )
-        val dateAdded = local.dateAdded.takeIf { it != 0L } ?: incoming.dateAdded
+        val dateAdded = if (isSync) {
+            local.dateAdded.takeIf { it != 0L } ?: incoming.dateAdded
+        } else {
+            listOfNotNull(
+                local.dateAdded.takeIf { it != 0L },
+                incoming.dateAdded.takeIf { it != 0L },
+            ).minOrNull() ?: incoming.dateAdded
+        }
         return if (backupWins) {
             Result(
                 local.copyFrom(incoming).copy(

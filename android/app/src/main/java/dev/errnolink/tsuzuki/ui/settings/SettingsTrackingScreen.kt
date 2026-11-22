@@ -3,21 +3,19 @@ import eu.kanade.presentation.more.settings.screen.SearchableSettings
 
 import android.content.Context
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.outlined.HelpOutline
-import androidx.compose.material.icons.filled.Visibility
-import androidx.compose.material.icons.filled.VisibilityOff
-import androidx.compose.material.icons.outlined.Close
-
-import androidx.compose.material3.Icon
-
 import androidx.compose.runtime.Composable
+import dev.errnolink.tsuzuki.designsystem.PillButton
+import dev.errnolink.tsuzuki.designsystem.Eye
+import dev.errnolink.tsuzuki.designsystem.EyeOff
+import dev.errnolink.tsuzuki.designsystem.Info
+import dev.errnolink.tsuzuki.designsystem.TsuzukiIcon
+import dev.errnolink.tsuzuki.designsystem.TsuzukiIcons
+import dev.errnolink.tsuzuki.designsystem.X
 import androidx.compose.runtime.ReadOnlyComposable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -29,7 +27,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.autofill.ContentType
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.semantics.contentType
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.input.ImeAction
@@ -41,7 +38,9 @@ import dev.icerock.moko.resources.StringResource
 import dev.errnolink.tsuzuki.designsystem.TsuzukiSpacing
 import dev.errnolink.tsuzuki.designsystem.TsuzukiText
 import dev.errnolink.tsuzuki.designsystem.TsuzukiTheme
+import dev.errnolink.tsuzuki.mangadex.AutoTrackBackfillJob
 import dev.errnolink.tsuzuki.mangadex.TrackingSyncJob
+import dev.errnolink.tsuzuki.mangadex.AutoTrackState as AutoTrackJobState
 import eu.kanade.domain.track.model.AutoTrackState
 import eu.kanade.domain.track.service.TrackPreferences
 import eu.kanade.presentation.more.settings.Preference
@@ -50,6 +49,7 @@ import eu.kanade.tachiyomi.data.track.Tracker
 import eu.kanade.tachiyomi.data.track.TrackerManager
 import eu.kanade.tachiyomi.data.track.anilist.AnilistApi
 import eu.kanade.tachiyomi.data.track.bangumi.BangumiApi
+import eu.kanade.tachiyomi.data.track.comick.ComickApi
 import eu.kanade.tachiyomi.data.track.myanimelist.MyAnimeListApi
 import eu.kanade.tachiyomi.data.track.shikimori.ShikimoriApi
 import eu.kanade.tachiyomi.util.system.openInBrowser
@@ -93,16 +93,6 @@ val prefKeys: Set<String> = setOf(
     )
 
     @Composable
-    override fun RowScope.AppBarAction() {
-        val uriHandler = LocalUriHandler.current
-        SettingsIconControl(onClick = { uriHandler.openUri("https://mihon.app/docs/guides/tracking") }) { Icon(
-            imageVector = Icons.AutoMirrored.Outlined.HelpOutline,
-            contentDescription = stringResource(MR.strings.tracking_guide),
-            tint = TsuzukiTheme.colors.text,
-        ) }
-    }
-
-    @Composable
     override fun getPreferences(): List<Preference> {
         val context = LocalContext.current
         val trackPreferences = remember { Injekt.get<TrackPreferences>() }
@@ -110,6 +100,14 @@ val prefKeys: Set<String> = setOf(
         val sourceManager = remember { Injekt.get<SourceManager>() }
         val trackingWork by remember(context) { TrackingSyncJob.observe(context) }.collectAsState(initial = null)
         val trackingActive = trackingWork?.state?.isFinished == false
+        val autoTrackWork by remember(context) { AutoTrackBackfillJob.observe(context) }.collectAsState(initial = null)
+        val autoTrackActive = autoTrackWork?.state?.isFinished == false
+        val autoTrackSummary = AutoTrackJobState().summary()
+        val autoTrackSubtitle = when {
+            autoTrackActive -> AutoTrackBackfillJob.progressText(autoTrackWork) ?: autoTrackSummary
+            autoTrackSummary.isNotBlank() -> autoTrackSummary
+            else -> "Bind library titles to your trackers using the links MangaDex publishes"
+        }
 
         var dialog by remember { mutableStateOf<Any?>(null) }
         dialog?.run {
@@ -178,6 +176,11 @@ val prefKeys: Set<String> = setOf(
                     login = { context.openInBrowser(BangumiApi.authUrl(), forceDefaultBrowser = true) },
                     logout = { dialog = LogoutDialog(trackerManager.bangumi) },
                 ),
+                Preference.PreferenceItem.TrackerPreference(
+                    tracker = trackerManager.comick,
+                    login = { context.openInBrowser(ComickApi.authUrl(), forceDefaultBrowser = true) },
+                    logout = { dialog = LogoutDialog(trackerManager.comick) },
+                ),
                 Preference.PreferenceItem.InfoPreference(stringResource(MR.strings.tracking_info)),
             ),
         )
@@ -235,6 +238,17 @@ val prefKeys: Set<String> = setOf(
                         if (trackingActive) TrackingSyncJob.cancel(context) else TrackingSyncJob.start(context)
                     },
                 ),
+                Preference.PreferenceItem.TextPreference(
+                    title = if (autoTrackActive) "Stop linking trackers" else "Link MangaDex titles automatically",
+                    subtitle = autoTrackSubtitle,
+                    onClick = {
+                        if (autoTrackActive) {
+                            AutoTrackBackfillJob.cancel(context)
+                        } else if (!AutoTrackBackfillJob.tryStart(context)) {
+                            context.toast("Sign in to a tracker first")
+                        }
+                    },
+                ),
             ),
         )
 
@@ -262,8 +276,8 @@ val prefKeys: Set<String> = setOf(
                     text = stringResource(MR.strings.login_title, tracker.name),
                     modifier = Modifier.weight(1f),
                 )
-                SettingsIconControl(onClick = onDismissRequest) { Icon(
-                    imageVector = Icons.Outlined.Close,
+                SettingsIconControl(onClick = onDismissRequest) { TsuzukiIcon(
+                    TsuzukiIcons.X,
                     contentDescription = stringResource(MR.strings.action_close),
                     tint = TsuzukiTheme.colors.text,
                 ) }
@@ -289,11 +303,11 @@ val prefKeys: Set<String> = setOf(
                 onValueChange = { password = it },
                 label = { TsuzukiText(text = stringResource(MR.strings.password)) },
                 trailingIcon = {
-                    SettingsIconControl(onClick = { hidePassword = !hidePassword }) { Icon(
-                        imageVector = if (hidePassword) {
-                            Icons.Filled.Visibility
+                    SettingsIconControl(onClick = { hidePassword = !hidePassword }) { TsuzukiIcon(
+                        if (hidePassword) {
+                            TsuzukiIcons.Eye
                         } else {
-                            Icons.Filled.VisibilityOff
+                            TsuzukiIcons.EyeOff
                         },
                         contentDescription = null,
                         tint = TsuzukiTheme.colors.secondary,
@@ -313,26 +327,28 @@ val prefKeys: Set<String> = setOf(
             }
         },
         confirmButton = {
-            SettingsActionButton(prominent = true, modifier = Modifier.fillMaxWidth(),
-            enabled = !processing && username.text.isNotBlank() && password.text.isNotBlank(),
-            onClick = {
-                scope.launch {
-                    processing = true
-                    try {
-                        val result = checkLogin(
-                            context = context,
-                            tracker = tracker,
-                            username = username.text,
-                            password = password.text,
-                        )
-                        inputError = !result
-                        if (result) onDismissRequest()
-                    } finally {
-                        processing = false
+            PillButton(
+                label = stringResource(if (processing) MR.strings.logging_in else MR.strings.login),
+                onClick = {
+                    scope.launch {
+                        processing = true
+                        try {
+                            val result = checkLogin(
+                                context = context,
+                                tracker = tracker,
+                                username = username.text,
+                                password = password.text,
+                            )
+                            inputError = !result
+                            if (result) onDismissRequest()
+                        } finally {
+                            processing = false
+                        }
                     }
-                }
-            },) { val id = if (processing) MR.strings.logging_in else MR.strings.login
-            TsuzukiText(text = stringResource(id)) }
+                },
+                modifier = Modifier.fillMaxWidth(),
+                enabled = !processing && username.text.isNotBlank() && password.text.isNotBlank(),
+            )
         },)
     }
 
@@ -365,25 +381,18 @@ val prefKeys: Set<String> = setOf(
         onDismissRequest: () -> Unit,
     ) {
         val context = LocalContext.current
-        SettingsAlert(onDismissRequest = onDismissRequest,
-        title = {
-            Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
-                TsuzukiText(text = stringResource(MR.strings.logout_title, tracker.name))
-            }
-        },
-        confirmButton = {
-            Row(horizontalArrangement = Arrangement.spacedBy(TsuzukiSpacing.tiny)) {
-                SettingsActionButton(modifier = Modifier.weight(1f),
-                onClick = onDismissRequest,) { TsuzukiText(text = stringResource(MR.strings.action_cancel)) }
-                SettingsActionButton(prominent = true, modifier = Modifier.weight(1f),
-                onClick = {
-                    tracker.logout()
-                    onDismissRequest()
-                    context.toast(MR.strings.logout_success)
-                },
-                destructive = true,) { TsuzukiText(text = stringResource(MR.strings.logout)) }
-            }
-        },)
+        ConfirmSheet(
+            visible = true,
+            title = stringResource(MR.strings.logout_title, tracker.name),
+            confirmLabel = stringResource(MR.strings.logout),
+            destructive = true,
+            onConfirm = {
+                tracker.logout()
+                onDismissRequest()
+                context.toast(MR.strings.logout_success)
+            },
+            onDismissRequest = onDismissRequest,
+        )
     }
 }
 

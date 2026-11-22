@@ -13,13 +13,17 @@ import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
+import kotlin.math.PI
 import kotlin.math.abs
 import kotlin.math.exp
-import kotlin.math.sign
+import kotlin.math.sin
 import kotlin.math.sqrt
 import kotlin.math.roundToInt
 
 internal val PillLiftGrowth = 9.dp
+
+/** The live glass lens grows from the 46 dp pill to 64 dp: past the 54 dp bar, as in iOS 26. */
+internal val LensLiftGrowth = 18.dp
 
 internal object PillTuning {
     const val TravelStiffness = 360f
@@ -33,20 +37,34 @@ internal object PillTuning {
     const val VelocitySnap = 0.03f
     const val LiftSnap = 0.001f
     const val LiftVelocitySnap = 0.02f
-    const val DeviationSnap = 5e-4f
     const val SubstepSeconds = 1f / 200f
-    const val SquashWindowSeconds = 0.32f
-    const val SquashScale = 5e-3f
-    const val SquashClamp = 0.10f
-    const val SquashEaseSeconds = 0.2f
-    const val SignEaseSeconds = 0.24f
     const val DragFollowSeconds = 0.03f
-    const val HistoryCapacity = 96
+}
+
+/**
+ * Kasane lens.js: the pill stretches along the move (at most 1.15×), peaking mid-flight and
+ * settling round at the end. Pure; behaviour-tested.
+ */
+internal const val PillStretchCap = 0.15f
+internal const val PillStretchRefPx = 600f
+
+/**
+ * NAV-05: the pill's stretch axis (lift × travel stretch) never exceeds this — a wider lens reads
+ * as a bounce, not a stretch. Pure; behaviour-tested.
+ */
+internal const val PillStretchScaleCap = 1.08f
+
+internal fun pillStretchScale(liftScale: Float, stretchFraction: Float): Float =
+    (liftScale * (1f + stretchFraction)).coerceAtMost(PillStretchScaleCap)
+
+internal fun pillTravelStretch(travelProgress: Float, travelDistancePx: Float): Float {
+    val amplitude = minOf(PillStretchCap, abs(travelDistancePx) / PillStretchRefPx)
+    if (amplitude == 0f) return 0f
+    return amplitude * sin(PI.toFloat() * travelProgress.coerceIn(0f, 1f))
 }
 
 internal class PillPhysics(initialIndex: Int) {
     var reduceMotion = false
-    var squashEnabled = true
 
     var index = initialIndex
         private set
@@ -62,8 +80,6 @@ internal class PillPhysics(initialIndex: Int) {
         private set
     var liftHeightVelocity = 0f
         private set
-    var deviation = 0f
-        private set
     var liftEngaged = false
         private set
     var dragging = false
@@ -75,13 +91,6 @@ internal class PillPhysics(initialIndex: Int) {
     private var handoverDone = true
     private var liftTarget = 0f
     private var dragTarget = initialIndex.toFloat()
-    private var clock = 0f
-    private var signKey = 0f
-    private var rawDeviation = 0f
-    private val historyTimes = FloatArray(PillTuning.HistoryCapacity)
-    private val historyPositions = FloatArray(PillTuning.HistoryCapacity)
-    private var historyCount = 0
-    private var historyHead = 0
 
     fun travelProgress(): Float {
         if (!travelActive) return 1f
@@ -90,11 +99,13 @@ internal class PillPhysics(initialIndex: Int) {
         return ((position - travelStart) / span).coerceIn(0f, 1f)
     }
 
+    /** Distance the current travel covers, in steps (0 when resting or dragging). */
+    fun travelSpanSteps(): Float = if (travelActive) abs(travelTarget - travelStart) else 0f
+
     val isFlat: Boolean
         get() = !travelActive && !dragging && !liftEngaged &&
             abs(liftWidth) < PillTuning.LiftSnap && abs(liftWidthVelocity) < PillTuning.LiftVelocitySnap &&
             abs(liftHeight) < PillTuning.LiftSnap && abs(liftHeightVelocity) < PillTuning.LiftVelocitySnap &&
-            abs(deviation) < PillTuning.DeviationSnap &&
             abs(position - travelTarget) < PillTuning.PositionSnap &&
             abs(velocity) < PillTuning.VelocitySnap
 
@@ -102,7 +113,6 @@ internal class PillPhysics(initialIndex: Int) {
         get() = travelActive || dragging || liftEngaged ||
             abs(liftWidth) >= PillTuning.LiftSnap || abs(liftWidthVelocity) >= PillTuning.LiftVelocitySnap ||
             abs(liftHeight) >= PillTuning.LiftSnap || abs(liftHeightVelocity) >= PillTuning.LiftVelocitySnap ||
-            abs(deviation) >= PillTuning.DeviationSnap ||
             abs(position - travelTarget) >= PillTuning.PositionSnap || abs(velocity) >= PillTuning.VelocitySnap
 
     fun animateTo(target: Int) {
@@ -118,7 +128,6 @@ internal class PillPhysics(initialIndex: Int) {
             handoverDone = true
             liftEngaged = false
             liftTarget = 0f
-            clearHistory()
             return
         }
         travelStart = position
@@ -128,7 +137,6 @@ internal class PillPhysics(initialIndex: Int) {
             handoverDone = false
             liftEngaged = true
             liftTarget = 1f
-            clearHistory()
         }
     }
 
@@ -143,8 +151,6 @@ internal class PillPhysics(initialIndex: Int) {
         liftEngaged = false
         liftTarget = 0f
         dragging = false
-        deviation = 0f
-        clearHistory()
     }
 
     fun startDrag() {
@@ -152,8 +158,6 @@ internal class PillPhysics(initialIndex: Int) {
         travelActive = false
         velocity = 0f
         dragTarget = position
-        signKey = 0f
-        clearHistory()
         if (!reduceMotion) {
             liftEngaged = true
             liftTarget = 1f
@@ -178,8 +182,6 @@ internal class PillPhysics(initialIndex: Int) {
             handoverDone = true
             liftEngaged = false
             liftTarget = 0f
-            deviation = 0f
-            clearHistory()
             return
         }
         travelActive = abs(travelTarget - position) > 0f
@@ -188,7 +190,6 @@ internal class PillPhysics(initialIndex: Int) {
             handoverDone = false
             liftEngaged = true
             liftTarget = 1f
-            signKey = sign(travelTarget - position)
         } else {
             velocity = 0f
             handoverDone = true
@@ -204,8 +205,6 @@ internal class PillPhysics(initialIndex: Int) {
                 remaining -= dt
                 step(dt)
             }
-            clock += dtSeconds
-            sampleHistory()
         }
         snapSettled()
         return active
@@ -236,7 +235,6 @@ internal class PillPhysics(initialIndex: Int) {
             liftTarget = 0f
         }
         stepLift(dt)
-        stepSquash(dt)
     }
 
     private fun stepLift(dt: Float) {
@@ -260,28 +258,6 @@ internal class PillPhysics(initialIndex: Int) {
         if (liftTarget == 0f && liftWidth == 0f && liftHeight == 0f) liftEngaged = false
     }
 
-    private fun stepSquash(dt: Float) {
-        if (!squashEnabled) {
-            deviation = 0f
-            return
-        }
-        val motion = travelActive || dragging
-        val raw = if (motion) {
-            (averageAcceleration() * PillTuning.SquashScale).coerceIn(-PillTuning.SquashClamp, PillTuning.SquashClamp)
-        } else {
-            0f
-        }
-        rawDeviation = raw
-        val targetKey = when {
-            raw > 0f -> 1f
-            raw < 0f -> -1f
-            else -> signKey
-        }
-        signKey += (targetKey - signKey) * (1f - exp(-dt / PillTuning.SignEaseSeconds))
-        deviation += (abs(raw) * signKey - deviation) * (1f - exp(-dt / PillTuning.SquashEaseSeconds))
-        if (abs(deviation) < PillTuning.DeviationSnap && abs(raw) < PillTuning.DeviationSnap) deviation = 0f
-    }
-
     private fun snapSettled() {
         if (!travelActive && !dragging && abs(position - travelTarget) < PillTuning.PositionSnap &&
             abs(velocity) < PillTuning.VelocitySnap
@@ -289,43 +265,6 @@ internal class PillPhysics(initialIndex: Int) {
             position = travelTarget
             velocity = 0f
         }
-        if (abs(deviation) < PillTuning.DeviationSnap && abs(rawDeviation) < PillTuning.DeviationSnap) deviation = 0f
-    }
-
-    private fun sampleHistory() {
-        historyTimes[historyHead] = clock
-        historyPositions[historyHead] = position
-        historyHead = (historyHead + 1) % PillTuning.HistoryCapacity
-        historyCount = minOf(historyCount + 1, PillTuning.HistoryCapacity)
-        val cutoff = clock - PillTuning.SquashWindowSeconds
-        while (historyCount > 0) {
-            val oldest = (historyHead - historyCount + PillTuning.HistoryCapacity) % PillTuning.HistoryCapacity
-            if (historyTimes[oldest] >= cutoff) break
-            historyCount--
-        }
-    }
-
-    private fun averageAcceleration(): Float {
-        if (historyCount < 4) return 0f
-        val n = historyCount
-        val capacity = PillTuning.HistoryCapacity
-        fun slot(i: Int): Int = (historyHead - n + i + capacity) % capacity
-        val first = slot(0)
-        val second = slot(1)
-        val penultimate = slot(n - 2)
-        val last = slot(n - 1)
-        val firstSpan = historyTimes[second] - historyTimes[first]
-        val lastSpan = historyTimes[last] - historyTimes[penultimate]
-        val span = historyTimes[last] - historyTimes[first]
-        if (firstSpan <= 0f || lastSpan <= 0f || span <= 0f) return 0f
-        val firstVelocity = (historyPositions[second] - historyPositions[first]) / firstSpan
-        val lastVelocity = (historyPositions[last] - historyPositions[penultimate]) / lastSpan
-        return (lastVelocity - firstVelocity) / span
-    }
-
-    private fun clearHistory() {
-        historyCount = 0
-        historyHead = 0
     }
 }
 
@@ -341,15 +280,10 @@ class TsuzukiPillMotion(scope: CoroutineScope?, initialIndex: Int) {
         }
 
     var stepDp: Float = 0f
-        set(value) {
-            field = value
-            physics.squashEnabled = value > 0f
-        }
 
     private val positionState = mutableFloatStateOf(physics.position)
     private val liftXState = mutableFloatStateOf(0f)
     private val liftYState = mutableFloatStateOf(0f)
-    private val deviationState = mutableFloatStateOf(0f)
     private val flatState = mutableStateOf(true)
     private val liftedState = mutableStateOf(false)
 
@@ -364,9 +298,6 @@ class TsuzukiPillMotion(scope: CoroutineScope?, initialIndex: Int) {
 
     val liftY: Float
         get() = liftYState.floatValue
-
-    val deviation: Float
-        get() = deviationState.floatValue
 
     val isFlat: Boolean
         get() = flatState.value
@@ -408,14 +339,24 @@ class TsuzukiPillMotion(scope: CoroutineScope?, initialIndex: Int) {
 
     fun travelProgress(): Float = physics.travelProgress()
 
+    fun travelSpanSteps(): Float = physics.travelSpanSteps()
+
     fun liveSize(rest: Size, lifted: Size): Size {
         val lift = (liftX + liftY) / 2f
-        val width = rest.width + (lifted.width - rest.width) * lift
-        val height = rest.height + (lifted.height - rest.height) * lift
-        return Size(width * (1f + deviation), height * (1f - deviation))
+        return Size(
+            rest.width + (lifted.width - rest.width) * lift,
+            rest.height + (lifted.height - rest.height) * lift,
+        )
     }
 
-    fun placement(restSize: Size, liftedSize: Size, centerPx: () -> Offset): Modifier = Modifier.layout { measurable, constraints ->
+    fun placement(
+        /** Read at measure and inside the layer (WP6.3): the caller's width can animate. */
+        rest: () -> Size,
+        lifted: () -> Size,
+        centerPx: () -> Offset,
+        stretch: () -> Float = { 0f },
+    ): Modifier = Modifier.layout { measurable, constraints ->
+        val restSize = rest()
         val width = restSize.width.roundToInt().coerceAtLeast(1)
         val height = restSize.height.roundToInt().coerceAtLeast(1)
         val placeable = measurable.measure(Constraints.fixed(width, height))
@@ -425,8 +366,9 @@ class TsuzukiPillMotion(scope: CoroutineScope?, initialIndex: Int) {
                 translationX = center.x - width / 2f
                 translationY = center.y - height / 2f
                 transformOrigin = TransformOrigin(0.5f, 0.5f)
-                scaleX = liveSize(restSize, liftedSize).width / width
-                scaleY = liveSize(restSize, liftedSize).height / height
+                val live = liveSize(restSize, lifted())
+                scaleX = pillStretchScale(live.width / width, stretch())
+                scaleY = live.height / height
             }
         }
     }
@@ -441,7 +383,6 @@ class TsuzukiPillMotion(scope: CoroutineScope?, initialIndex: Int) {
         positionState.floatValue = physics.position
         liftXState.floatValue = physics.liftWidth
         liftYState.floatValue = physics.liftHeight
-        deviationState.floatValue = physics.deviation
         flatState.value = physics.isFlat
         liftedState.value = physics.liftEngaged
     }

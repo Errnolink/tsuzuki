@@ -18,13 +18,18 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -40,7 +45,11 @@ import androidx.compose.ui.graphics.drawscope.Fill
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.withTransform
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 
 class DesignGalleryActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -73,17 +82,46 @@ private fun Gallery(
 ) {
     val glass = rememberGlassContext()
     val arrivals = rememberCoverArrivalState()
+    val toasts = remember { ToastHostState() }
+    val galleryScope = rememberCoroutineScope()
     var segment by rememberSaveable { mutableIntStateOf(0) }
     var query by rememberSaveable { mutableStateOf("") }
     var sheet by rememberSaveable { mutableStateOf(false) }
     var downloaded by rememberSaveable { mutableStateOf(false) }
     var notice by rememberSaveable { mutableStateOf<String?>("Reading position saved") }
+    var switchOn by rememberSaveable { mutableStateOf(true) }
+    var switchOff by rememberSaveable { mutableStateOf(false) }
+    var pairSegment by rememberSaveable { mutableIntStateOf(0) }
+    var fourSegment by rememberSaveable { mutableIntStateOf(0) }
+    var sliderValue by rememberSaveable { mutableIntStateOf(40) }
+    var steppedValue by rememberSaveable { mutableIntStateOf(25) }
+    var filledQuery by rememberSaveable { mutableStateOf("Papers, please") }
+    var inlineQuery by rememberSaveable { mutableStateOf("") }
     val keyboard = LocalSoftwareKeyboardController.current
-    LargeTitleScaffold(
-        title = "Design gallery",
-        glassContext = glass,
-        bottomBar = null,
-    ) {
+    var filterChip by rememberSaveable { mutableIntStateOf(0) }
+    var multiChips by rememberSaveable { mutableStateOf(listOf(true, false, false)) }
+    var tagChips by rememberSaveable { mutableStateOf(listOf("Mina", "Slice of life")) }
+    var triState by rememberSaveable { mutableStateOf(ChipTriState.Include) }
+    var checkOn by rememberSaveable { mutableStateOf(true) }
+    var checkOff by rememberSaveable { mutableStateOf(false) }
+    var checkTri by rememberSaveable { mutableStateOf(false) }
+    var radioPick by rememberSaveable { mutableIntStateOf(0) }
+    var stepValue by rememberSaveable { mutableIntStateOf(24) }
+    var singleGroup by rememberSaveable { mutableIntStateOf(0) }
+    var multiGroup by rememberSaveable { mutableStateOf(listOf(true, false, true)) }
+    var roundToggle by rememberSaveable { mutableStateOf(false) }
+    var squareToggle by rememberSaveable { mutableStateOf(true) }
+    var downloadBusy by rememberSaveable { mutableStateOf(false) }
+    var downloadResult by rememberSaveable { mutableStateOf(LoadingButtonResult.None) }
+    var syncBusy by rememberSaveable { mutableStateOf(false) }
+    var syncResult by rememberSaveable { mutableStateOf(LoadingButtonResult.None) }
+    val demoScope = rememberCoroutineScope()
+    Box(Modifier.fillMaxSize()) {
+        LargeTitleScaffold(
+            title = "Design gallery",
+            glassContext = glass,
+            bottomBar = null,
+        ) {
         item {
             GallerySection("Made for the story") {
                 TsuzukiText("Original Apple-inspired controls. Inter typography, quiet content and one floating functional layer.", color = TsuzukiTheme.colors.secondary)
@@ -107,6 +145,32 @@ private fun Gallery(
             }
         }
         item {
+            GallerySection("Controls from Kasane") {
+                InsetGroupedList(title = "Switch", footer = "Held, the thumb stretches into a glass lens; drag it to toggle.") {
+                    GroupedRow("With check icon", checked = switchOn, onCheckedChange = { switchOn = it }, thumbIcon = true, divider = false)
+                    GroupedRow("Off", checked = switchOff, onCheckedChange = { switchOff = it }, divider = false)
+                    GroupedRow("Disabled", checked = true, onCheckedChange = {}, enabled = false, divider = false)
+                }
+                SliderRow("Continuous slider", sliderValue, sliderValue.toString(), 0..100, true, { sliderValue = it }, Modifier.fillMaxWidth(), startLabel = "0", endLabel = "100")
+                SliderRow("Stepped slider", steppedValue, "$steppedValue%", 0..100 step 25, true, { steppedValue = it }, Modifier.fillMaxWidth(), startLabel = "0%", endLabel = "100%")
+                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    TsuzukiText("Segmented", style = TsuzukiTheme.typography.title3)
+                    SegmentedControl(listOf("On", "Off"), pairSegment, { pairSegment = it }, Modifier.fillMaxWidth())
+                    SegmentedControl(listOf("All", "Reading", "Finished"), segment, { segment = it }, Modifier.fillMaxWidth())
+                    SegmentedControl(listOf("Chapters", "Similar", "Comments", "More"), fourSegment, { fourSegment = it }, Modifier.fillMaxWidth())
+                }
+                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    TsuzukiText("Search", style = TsuzukiTheme.typography.title3)
+                    SearchField(query, { query = it }, { keyboard?.hide() }, Modifier.fillMaxWidth(), placeholder = "Empty field")
+                    SearchField(filledQuery, { filledQuery = it }, { keyboard?.hide() }, Modifier.fillMaxWidth(), placeholder = "Filled field")
+                    SearchField(
+                        inlineQuery, { inlineQuery = it }, { keyboard?.hide() }, Modifier.fillMaxWidth(),
+                        placeholder = "Inline search", inline = true, onCancel = { notice = "Inline search cancelled" },
+                    )
+                }
+            }
+        }
+        item {
             GallerySection("Actions") {
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     PillButton("Continue reading", { notice = "Continue selected" })
@@ -115,6 +179,228 @@ private fun Gallery(
                     IconButton("Open reading settings", { sheet = true }) { GalleryIcon(3, false) }
                 }
                 GlassExample { notice = "Glass action selected" }
+            }
+        }
+        item {
+            GallerySection("Kasane buttons") {
+                TsuzukiText("Size ladder, XS to XL", style = TsuzukiTheme.typography.title3)
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    TsuzukiButton("Extra small", { notice = "XS pressed" }, size = TsuzukiButtonSize.Xs, icon = { GalleryIcon(4, false) })
+                    TsuzukiButton("Small", { notice = "S pressed" }, size = TsuzukiButtonSize.Sm, icon = { GalleryIcon(4, false) })
+                    TsuzukiButton("Medium", { notice = "M pressed" }, size = TsuzukiButtonSize.Md, icon = { GalleryIcon(4, false) })
+                    TsuzukiButton("Large", { notice = "L pressed" }, size = TsuzukiButtonSize.Lg, icon = { GalleryIcon(4, false) })
+                    TsuzukiButton("Hero", { notice = "XL pressed" }, size = TsuzukiButtonSize.Xl, icon = { GalleryIcon(4, false) })
+                }
+                TsuzukiText("Variants", style = TsuzukiTheme.typography.title3)
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    TsuzukiButton("Filled", { notice = "Filled" }, variant = TsuzukiButtonVariant.Filled)
+                    TsuzukiButton("Tonal", { notice = "Tonal" }, variant = TsuzukiButtonVariant.Tonal)
+                    TsuzukiButton("Soft", { notice = "Soft" }, variant = TsuzukiButtonVariant.Soft)
+                    TsuzukiButton("Container", { notice = "Container" }, variant = TsuzukiButtonVariant.Container)
+                    TsuzukiButton("Outline", { notice = "Outline" }, variant = TsuzukiButtonVariant.Outline)
+                    TsuzukiButton("Text", { notice = "Text" }, variant = TsuzukiButtonVariant.Text)
+                    TsuzukiButton("Delete", { notice = "Danger" }, variant = TsuzukiButtonVariant.Danger)
+                    TsuzukiButton("Disabled", {}, enabled = false)
+                }
+                TsuzukiText("Toggles — round goes square, square goes round", style = TsuzukiTheme.typography.title3)
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    TsuzukiButton(
+                        "Bookmark", { roundToggle = !roundToggle },
+                        icon = { GalleryIcon(3, roundToggle) }, selected = roundToggle,
+                    )
+                    TsuzukiButton(
+                        "Saved", { roundToggle = !roundToggle },
+                        icon = { GalleryIcon(2, false) }, selected = !roundToggle,
+                    )
+                    TsuzukiButton(
+                        "Like", { squareToggle = !squareToggle },
+                        square = true, selected = squareToggle, icon = { GalleryIcon(1, squareToggle) },
+                    )
+                    TsuzukiButton(
+                        "Muted", { squareToggle = !squareToggle },
+                        square = true, selected = !squareToggle, icon = { GalleryIcon(0, false) },
+                    )
+                }
+                TsuzukiText("Loading — label, spinner, check", style = TsuzukiTheme.typography.title3)
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    TsuzukiButton(
+                        "Download volume", {
+                            demoScope.launch {
+                                downloadBusy = true
+                                downloadResult = LoadingButtonResult.None
+                                delay(1200)
+                                downloadBusy = false
+                                downloadResult = LoadingButtonResult.Success
+                                delay(1800)
+                                downloadResult = LoadingButtonResult.None
+                            }
+                        },
+                        busy = downloadBusy, result = downloadResult,
+                        icon = { GalleryIcon(4, false) },
+                    )
+                    TsuzukiButton(
+                        "Sync (fails)", {
+                            demoScope.launch {
+                                syncBusy = true
+                                syncResult = LoadingButtonResult.None
+                                delay(1000)
+                                syncBusy = false
+                                syncResult = LoadingButtonResult.Failure
+                                delay(900)
+                                syncResult = LoadingButtonResult.None
+                            }
+                        },
+                        busy = syncBusy, result = syncResult,
+                        variant = TsuzukiButtonVariant.Tonal,
+                    )
+                    TsuzukiButton("Busy, untappable", {}, busy = true, enabled = false)
+                }
+            }
+        }
+        item {
+            GallerySection("Button groups") {
+                TsuzukiText("Standard — press one, it grows", style = TsuzukiTheme.typography.title3)
+                ButtonGroup {
+                    item(onClick = { notice = "Save" }) {
+                        GalleryIcon(3, false)
+                        TsuzukiText("Save")
+                    }
+                    item(onClick = { notice = "Download" }) {
+                        GalleryIcon(4, false)
+                        TsuzukiText("Download")
+                    }
+                    item(onClick = { notice = "More" }) {
+                        GalleryIcon(5, false)
+                    }
+                }
+                TsuzukiText("Connected, single select", style = TsuzukiTheme.typography.title3)
+                val modes = listOf("Paged", "Scroll", "Webtoon", "Spread")
+                ButtonGroup(connected = true, height = 40.dp) {
+                    modes.forEachIndexed { index, mode ->
+                        item(onClick = { singleGroup = index }, selected = singleGroup == index) {
+                            Row(Modifier.padding(horizontal = 14.dp)) {
+                                TsuzukiText(mode, style = TsuzukiTheme.typography.subhead.copy(fontWeight = FontWeight.SemiBold))
+                            }
+                        }
+                    }
+                }
+                TsuzukiText("Connected, multi select", style = TsuzukiTheme.typography.title3)
+                val filters = listOf("Unread", "Downloaded", "Finished")
+                ButtonGroup(connected = true, height = 40.dp) {
+                    filters.forEachIndexed { index, filter ->
+                        item(
+                            onClick = { multiGroup = multiGroup.toMutableList().also { it[index] = !it[index] } },
+                            selected = multiGroup[index],
+                        ) {
+                            Row(Modifier.padding(horizontal = 14.dp)) {
+                                TsuzukiText(filter, style = TsuzukiTheme.typography.subhead.copy(fontWeight = FontWeight.SemiBold))
+                            }
+                        }
+                    }
+                }
+                TsuzukiText("Connected, fill the row", style = TsuzukiTheme.typography.title3)
+                val fonts = listOf("Literata", "Source", "Legible")
+                ButtonGroup(connected = true, fill = true, height = 40.dp) {
+                    fonts.forEachIndexed { index, font ->
+                        item(onClick = { singleGroup = index }, selected = singleGroup == index) {
+                            TsuzukiText(font, style = TsuzukiTheme.typography.subhead.copy(fontWeight = FontWeight.SemiBold))
+                        }
+                    }
+                }
+            }
+        }
+        item {
+            GallerySection("Chips") {
+                TsuzukiText("Filter, single select", style = TsuzukiTheme.typography.title3)
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    listOf("All", "Manga", "Novels").forEachIndexed { index, label ->
+                        Chip(label, filterChip == index, { filterChip = index }, enabled = true)
+                    }
+                    Chip("Unavailable", false, {}, enabled = false)
+                }
+                TsuzukiText("Filter, multi select", style = TsuzukiTheme.typography.title3)
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    listOf("Unread", "Downloaded", "Finished").forEachIndexed { index, label ->
+                        Chip(
+                            label, multiChips[index],
+                            { multiChips = multiChips.toMutableList().also { it[index] = !it[index] } },
+                            role = Role.Checkbox,
+                        )
+                    }
+                }
+                TsuzukiText("Assist and suggestion", style = TsuzukiTheme.typography.title3)
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Chip("Recently read", false, { notice = "Assist chip" }, tone = ChipTone.Neutral, leading = {
+                        GalleryIcon(2, false)
+                    })
+                    Chip("Try “ramen”", false, { notice = "Suggestion chip" }, tone = ChipTone.Neutral)
+                }
+                TsuzukiText("Input — remove collapses the chip", style = TsuzukiTheme.typography.title3)
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    tagChips.forEach { tag ->
+                        Chip(
+                            tag, false, {},
+                            role = Role.Button,
+                            avatar = {
+                                Box(
+                                    Modifier.size(24.dp).clip(CircleShape).background(TsuzukiTheme.colors.accent.copy(alpha = 0.24f)),
+                                    contentAlignment = Alignment.Center,
+                                ) {
+                                    TsuzukiText(tag.take(1), style = TsuzukiTheme.typography.caption1.copy(fontWeight = FontWeight.Bold), color = TsuzukiTheme.colors.accent)
+                                }
+                            },
+                            onRemove = {
+                                notice = "Removed $tag"
+                                tagChips = tagChips - tag
+                            },
+                        )
+                    }
+                    if (tagChips.isEmpty()) {
+                        Chip("Restore tags", false, { tagChips = listOf("Mina", "Slice of life") }, tone = ChipTone.Neutral)
+                    }
+                }
+                TsuzukiText("Tri-state", style = TsuzukiTheme.typography.title3)
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    TriStateChip("Library", triState, {
+                        triState = when (triState) {
+                            ChipTriState.Off -> ChipTriState.Include
+                            ChipTriState.Include -> ChipTriState.Exclude
+                            ChipTriState.Exclude -> ChipTriState.Off
+                        }
+                    })
+                }
+            }
+        }
+        item {
+            GallerySection("Checkbox & radio") {
+                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    CheckboxRow("Mark earlier chapters as read", checkOn, { checkOn = it })
+                    CheckboxRow("Skip duplicate chapters", checkOff, { checkOff = it })
+                    CheckboxRow("Some volumes selected", checkTri, { checkTri = it }, indeterminate = true)
+                    CheckboxRow("Disabled", true, {}, enabled = false)
+                }
+                Column(Modifier.selectableGroup(), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    listOf("Right to left", "Left to right", "Vertical").forEachIndexed { index, label ->
+                        RadioRow(label, radioPick == index, { radioPick = index })
+                    }
+                    RadioRow("Disabled", false, {}, enabled = false)
+                }
+            }
+        }
+        item {
+            GallerySection("Stepper") {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                    Stepper(
+                        stepValue, { stepValue = it }, 0..64,
+                        step = 4,
+                        format = { "$it pt" },
+                    )
+                    TsuzukiText("Margins", style = TsuzukiTheme.typography.footnote, color = TsuzukiTheme.colors.secondary)
+                }
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                    Stepper(1, {}, 1..1, enabled = false)
+                    TsuzukiText("Disabled at the bounds", style = TsuzukiTheme.typography.footnote, color = TsuzukiTheme.colors.secondary)
+                }
             }
         }
         item {
@@ -148,13 +434,144 @@ private fun Gallery(
                 }
                 Banner("A connection could not be made. Your saved chapters are still available.", tone = NoticeTone.Error,
                     actionLabel = "Retry", onAction = { notice = "Retry selected" })
-                notice?.let { Toast(it, onDismiss = { notice = null }) }
+                LaunchedEffect(notice) {
+                    notice?.let {
+                        toasts.show(it)
+                        notice = null
+                    }
+                }
+            }
+        }
+        item {
+            GallerySection("Feedback & progress") {
+                Row(horizontalArrangement = Arrangement.spacedBy(16.dp), verticalAlignment = Alignment.CenterVertically) {
+                    LoadingMark(Modifier.size(24.dp), size = 24.dp)
+                    LoadingMark(Modifier.size(48.dp), size = 48.dp)
+                    ContainedLoadingMark(Modifier.size(64.dp), size = 64.dp)
+                }
+                TsuzukiText(
+                    "Wavy progress: flat at the ends, travelling while active; reduced motion flattens the wave.",
+                    style = TsuzukiTheme.typography.footnote,
+                    color = TsuzukiTheme.colors.secondary,
+                )
+                WavyProgress(0.38f, Modifier.fillMaxWidth())
+                WavyProgress(null, Modifier.fillMaxWidth())
+                Row(horizontalArrangement = Arrangement.spacedBy(16.dp), verticalAlignment = Alignment.CenterVertically) {
+                    WavyRing(0.64f, Modifier.size(48.dp))
+                    WavyRing(null, Modifier.size(48.dp))
+                    WavyRing(1f, Modifier.size(48.dp))
+                }
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    PillButton("Toast: saved", { toasts.show("Reading position saved") })
+                    PillButton("Toast: success", {
+                        toasts.show("Chapter 116 downloaded", ToastKind.Success, description = "4.1 MB, available offline")
+                    })
+                    PillButton("Toast: failure", { toasts.show("Couldn't reach the source", ToastKind.Error) })
+                    PillButton("Toast: promise", {
+                        val handle = toasts.show("Syncing library…", ToastKind.Loading)
+                        galleryScope.launch {
+                            delay(1600)
+                            handle.update("Library synced", ToastKind.Success)
+                        }
+                    })
+                    PillButton("Toast: action", {
+                        toasts.show(
+                            "Moved to Archive",
+                            action = ToastAction("Undo") { toasts.show("Restored", ToastKind.Success) },
+                        )
+                    })
+                    PillButton("Toast: stack", { repeat(3) { toasts.show("Chapter ${116 - it} downloaded") } })
+                }
+                SkeletonClock {
+                    Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                        SkeletonCover(Modifier.width(96.dp))
+                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            SkeletonTitle(Modifier.width(190.dp))
+                            SkeletonText(Modifier.width(220.dp))
+                            SkeletonText(Modifier.width(150.dp))
+                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                                SkeletonCircle(size = 24.dp)
+                                SkeletonCard(Modifier.width(120.dp))
+                            }
+                        }
+                    }
+                }
             }
         }
         item {
             EmptyState("Your next story awaits", "Add a title to keep your reading in one place.",
                 icon = { GalleryIcon(0, false, Modifier.size(40.dp)) },
                 action = { PillButton("Browse titles", { notice = "Browse titles clicked" }) })
+        }
+        item {
+            GallerySection("Swipe rows") {
+                var swipedRead by rememberSaveable { mutableStateOf(false) }
+                SwipeRow(
+                    listOf(
+                        SwipeActionSpec(
+                            TsuzukiIcons.Check,
+                            "Mark read",
+                            TsuzukiTheme.colors.accent,
+                            onClick = { swipedRead = !swipedRead },
+                            full = true,
+                        ),
+                    ),
+                    Modifier.fillMaxWidth().clip(RoundedCornerShape(TsuzukiCorners.group)),
+                ) {
+                    Row(
+                        Modifier.fillMaxWidth().background(TsuzukiTheme.colors.grouped).padding(16.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    ) {
+                        Column {
+                            TsuzukiText("Kitsune Courier · Ch. 204", style = TsuzukiTheme.typography.headline)
+                            TsuzukiText(
+                                if (swipedRead) "Read — the row came home" else "Swipe left to mark read",
+                                style = TsuzukiTheme.typography.footnote,
+                                color = TsuzukiTheme.colors.secondary,
+                            )
+                        }
+                    }
+                }
+                var pinnedRemoved by rememberSaveable { mutableStateOf(false) }
+                SwipeRow(
+                    listOf(
+                        SwipeActionSpec(
+                            TsuzukiIcons.Bookmark,
+                            "Pin",
+                            TsuzukiTheme.colors.accent,
+                            onClick = { pinnedRemoved = true },
+                        ),
+                        SwipeActionSpec(
+                            TsuzukiIcons.Trash2,
+                            "Remove",
+                            TsuzukiTheme.colors.destructive,
+                            onClick = {
+                                pinnedRemoved = false
+                                toasts.show("Row removed (demo restores it)", ToastKind.Success)
+                            },
+                            full = true,
+                            keep = false,
+                        ),
+                    ),
+                    Modifier.fillMaxWidth().clip(RoundedCornerShape(TsuzukiCorners.group)),
+                ) {
+                    Row(
+                        Modifier.fillMaxWidth().background(TsuzukiTheme.colors.grouped).padding(16.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    ) {
+                        Column {
+                            TsuzukiText("Moonlit Ramen Club · Ch. 118", style = TsuzukiTheme.typography.headline)
+                            TsuzukiText(
+                                if (pinnedRemoved) "Pinned" else "Two actions: pin, or a full swipe removes",
+                                style = TsuzukiTheme.typography.footnote,
+                                color = TsuzukiTheme.colors.secondary,
+                            )
+                        }
+                    }
+                }
+            }
         }
         item {
             GallerySection("Type ramp") {
@@ -169,6 +586,13 @@ private fun Gallery(
                 ).forEach { (name, style) -> TsuzukiText(name, style = style) }
             }
         }
+        }
+        ToastHost(
+            toasts,
+            Modifier
+                .align(Alignment.BottomCenter)
+                .padding(horizontal = TsuzukiTheme.spacing.gutter, vertical = 24.dp),
+        )
     }
     DetentSheet(sheet, "Reading settings", { sheet = false }) {
         TsuzukiText("Drag or tap the grabber to resize. Close is on the leading edge.", color = TsuzukiTheme.colors.secondary)

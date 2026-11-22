@@ -32,11 +32,12 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import dev.errnolink.tsuzuki.designsystem.M3Motion
-import dev.errnolink.tsuzuki.designsystem.TsuzukiCorners
 import dev.errnolink.tsuzuki.designsystem.TsuzukiTheme
+import dev.errnolink.tsuzuki.designsystem.coverShape
 import dev.errnolink.tsuzuki.designsystem.insetDivider
-import dev.errnolink.tsuzuki.ui.details.ShimmerBox
-import dev.errnolink.tsuzuki.ui.details.SkeletonPulseClock
+import dev.errnolink.tsuzuki.designsystem.Skeleton
+import dev.errnolink.tsuzuki.designsystem.SkeletonClock
+import dev.errnolink.tsuzuki.designsystem.TsuzukiCorners
 import tachiyomi.domain.library.model.LibraryDisplayMode
 
 private val skeletonLineFractions = floatArrayOf(0.85f, 0.62f, 0.74f, 0.5f)
@@ -77,7 +78,7 @@ fun SkeletonCrossfade(
 
     Box(modifier) {
         if (showSkeleton) {
-            SkeletonPulseClock {
+            SkeletonClock {
                 Box(Modifier.fillMaxSize()) { skeleton() }
             }
         }
@@ -95,7 +96,7 @@ fun SkeletonCrossfade(
 
 @Composable
 internal fun SkeletonLine(widthFraction: Float, lineHeight: Dp, modifier: Modifier = Modifier) {
-    ShimmerBox(
+    Skeleton(
         modifier.fillMaxWidth(widthFraction).height(lineHeight),
         shape = RoundedCornerShape(4.dp),
     )
@@ -103,9 +104,9 @@ internal fun SkeletonLine(widthFraction: Float, lineHeight: Dp, modifier: Modifi
 
 @Composable
 private fun SkeletonCover(width: Dp, modifier: Modifier = Modifier) {
-    ShimmerBox(
+    Skeleton(
         modifier.width(width).aspectRatio(2f / 3f),
-        shape = RoundedCornerShape(TsuzukiCorners.cover),
+        shape = coverShape(),
     )
 }
 
@@ -143,7 +144,7 @@ fun SourceRowSkeleton(
 ) {
     SkeletonGroupRow(shape, 56.dp, divider, 8.dp, modifier) {
         Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
-            ShimmerBox(Modifier.size(32.dp), shape = RoundedCornerShape(8.dp))
+            Skeleton(Modifier.size(32.dp), shape = RoundedCornerShape(8.dp))
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 SkeletonLine(skeletonLineFraction(index), 14.dp)
                 SkeletonLine(0.4f, 11.dp)
@@ -165,9 +166,9 @@ fun HistoryRowSkeleton(
                 SkeletonLine(0.82f, 15.dp)
                 SkeletonLine(0.45f, 11.dp)
             }
-            ShimmerBox(
+            Skeleton(
                 Modifier.width(64.dp).height(28.dp),
-                shape = RoundedCornerShape(50),
+                shape = RoundedCornerShape(TsuzukiCorners.capsulePercent),
             )
         }
     }
@@ -187,7 +188,7 @@ fun UpdateRowSkeleton(
                 SkeletonLine(0.55f, 15.dp)
                 SkeletonLine(skeletonLineFraction(index), 12.dp)
             }
-            ShimmerBox(Modifier.size(24.dp), shape = CircleShape)
+            Skeleton(Modifier.size(24.dp), shape = CircleShape)
         }
     }
 }
@@ -203,7 +204,7 @@ fun DownloadRowSkeleton(
             horizontalArrangement = Arrangement.spacedBy(TsuzukiTheme.spacing.medium),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            ShimmerBox(Modifier.size(24.dp), shape = RoundedCornerShape(6.dp))
+            Skeleton(Modifier.size(24.dp), shape = RoundedCornerShape(6.dp))
             SkeletonCover(40.dp)
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 SkeletonLine(0.78f, 13.dp)
@@ -224,7 +225,7 @@ fun MangaCellSkeleton(
         LibraryDisplayMode.List -> Row(
             modifier
                 .fillMaxWidth()
-                .clip(RoundedCornerShape(14.dp))
+                .clip(RoundedCornerShape(TsuzukiCorners.field))
                 .background(TsuzukiTheme.colors.grouped)
                 .padding(12.dp),
             horizontalArrangement = Arrangement.spacedBy(12.dp),
@@ -236,14 +237,14 @@ fun MangaCellSkeleton(
                 SkeletonLine(0.5f, 11.dp)
             }
         }
-        LibraryDisplayMode.CoverOnlyGrid -> ShimmerBox(
+        LibraryDisplayMode.CoverOnlyGrid -> Skeleton(
             modifier.fillMaxWidth().aspectRatio(2f / 3f),
-            shape = RoundedCornerShape(TsuzukiCorners.cover),
+            shape = coverShape(),
         )
         else -> Column(modifier, verticalArrangement = Arrangement.spacedBy(7.dp)) {
-            ShimmerBox(
+            Skeleton(
                 Modifier.fillMaxWidth().aspectRatio(2f / 3f),
-                shape = RoundedCornerShape(TsuzukiCorners.cover),
+                shape = coverShape(),
             )
             Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 SkeletonLine(skeletonLineFraction(index), 12.dp)
@@ -265,7 +266,7 @@ fun FeedSectionSkeleton(modifier: Modifier = Modifier) {
                 SkeletonLine(0.6f, 17.dp)
                 SkeletonLine(0.4f, 11.dp)
             }
-            ShimmerBox(Modifier.size(22.dp), shape = CircleShape)
+            Skeleton(Modifier.size(22.dp), shape = CircleShape)
         }
         CoverRowSkeleton()
     }
@@ -279,9 +280,9 @@ fun CoverRowSkeleton(modifier: Modifier = Modifier) {
     ) {
         repeat(3) { card ->
             Column(Modifier.width(120.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                ShimmerBox(
+                Skeleton(
                     Modifier.fillMaxWidth().aspectRatio(2f / 3f),
-                    shape = RoundedCornerShape(TsuzukiCorners.cover),
+                    shape = coverShape(),
                 )
                 SkeletonLine(if (card == 0) 0.9f else 0.65f, 12.dp)
             }
@@ -299,9 +300,9 @@ fun SkeletonCaption(start: Dp, widthFraction: Float, modifier: Modifier = Modifi
 @Composable
 fun SourceAppendSkeleton(modifier: Modifier = Modifier) {
     Box(modifier.fillMaxWidth().padding(vertical = 16.dp), contentAlignment = Alignment.Center) {
-        ShimmerBox(
+        Skeleton(
             Modifier.width(160.dp).height(24.dp),
-            shape = RoundedCornerShape(50),
+            shape = RoundedCornerShape(TsuzukiCorners.capsulePercent),
         )
     }
 }

@@ -8,13 +8,13 @@ import dev.errnolink.tsuzuki.designsystem.Bell
 import dev.errnolink.tsuzuki.designsystem.ChartLine
 import dev.errnolink.tsuzuki.designsystem.Download
 import dev.errnolink.tsuzuki.designsystem.Folder
-import dev.errnolink.tsuzuki.designsystem.HistoryLucide
 import dev.errnolink.tsuzuki.designsystem.Info
-import dev.errnolink.tsuzuki.designsystem.SettingsLucide
+import dev.errnolink.tsuzuki.designsystem.Gear
 import dev.errnolink.tsuzuki.designsystem.TsuzukiIcons
 import dev.errnolink.tsuzuki.designsystem.TriangleAlert
 import dev.errnolink.tsuzuki.ui.settings.GroupDivider
-import dev.errnolink.tsuzuki.ui.settings.SettingsSectionBadge
+import dev.errnolink.tsuzuki.ui.settings.PreferenceLeadingIconWidth
+import dev.errnolink.tsuzuki.ui.settings.SettingsSectionBadgeCurrent
 import dev.errnolink.tsuzuki.ui.settings.SettingsScaffold
 import dev.errnolink.tsuzuki.ui.settings.SwitchPreferenceWidget
 import eu.kanade.tachiyomi.ui.more.DownloadQueueState
@@ -25,7 +25,6 @@ import tachiyomi.presentation.core.i18n.stringResource
 import uy.kohesive.injekt.Injekt
 import uy.kohesive.injekt.api.get
 import androidx.compose.runtime.Composable
-import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.animation.graphics.res.animatedVectorResource
 import androidx.compose.animation.graphics.res.rememberAnimatedVectorPainter
 import androidx.compose.animation.graphics.vector.AnimatedImageVector
@@ -54,7 +53,6 @@ fun MoreScreen(
     onClickLibraryUpdateErrors: () -> Unit,
     // KMK <--
 ) {
-    val uriHandler = LocalUriHandler.current
 
     SettingsScaffold(
         title = stringResource(MR.strings.label_more),
@@ -70,7 +68,7 @@ fun MoreScreen(
                     onCheckedChanged = onDownloadedOnlyChange,
                     divider = false,
                 )
-                GroupDivider()
+                GroupDivider(PreferenceLeadingIconWidth)
                 SwitchPreferenceWidget(
                     title = stringResource(MR.strings.pref_incognito_mode),
                     subtitle = stringResource(MR.strings.pref_incognito_mode_summary),
@@ -97,7 +95,7 @@ fun MoreScreen(
                 if (!showNavHistory) {
                     MoreRow(
                         title = stringResource(MR.strings.label_recent_manga),
-                        icon = TsuzukiIcons.HistoryLucide,
+                        icon = TsuzukiIcons.History,
                         divider = true,
                         onClick = onClickHistory,
                     )
@@ -146,7 +144,7 @@ fun MoreScreen(
                 MoreRow(
                     title = stringResource(KMR.strings.option_label_library_update_errors),
                     icon = TsuzukiIcons.TriangleAlert,
-                    divider = true,
+                    divider = false,
                     onClick = onClickLibraryUpdateErrors,
                 )
                 // KMK <--
@@ -166,21 +164,15 @@ fun MoreScreen(
             InsetGroupedList {
                 MoreRow(
                     title = stringResource(MR.strings.label_settings),
-                    icon = TsuzukiIcons.SettingsLucide,
+                    icon = TsuzukiIcons.Gear,
                     divider = true,
                     onClick = onClickSettings,
                 )
                 MoreRow(
                     title = stringResource(MR.strings.pref_category_about),
                     icon = TsuzukiIcons.Info,
-                    divider = true,
-                    onClick = onClickAbout,
-                )
-                MoreRow(
-                    title = stringResource(MR.strings.label_help),
-                    icon = TsuzukiIcons.Globe,
                     divider = false,
-                    onClick = { uriHandler.openUri(tachiyomi.core.common.Constants.URL_HELP) },
+                    onClick = onClickAbout,
                 )
             }
         }
@@ -200,7 +192,7 @@ private fun MoreRow(
         value = value,
         chevron = true,
         divider = divider,
-        leading = { SettingsSectionBadge(icon) },
+        leading = { SettingsSectionBadgeCurrent(icon) },
         onClick = onClick,
     )
 }

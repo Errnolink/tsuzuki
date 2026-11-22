@@ -23,6 +23,8 @@ import eu.kanade.tachiyomi.data.backup.create.BackupOptions
 import eu.kanade.tachiyomi.data.sync.SyncDataJob
 import kotlinx.collections.immutable.ImmutableList
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.DelicateCoroutinesApi
+import tachiyomi.core.common.util.lang.launchIO
 import tachiyomi.i18n.MR
 import tachiyomi.i18n.sy.SYMR
 import tachiyomi.presentation.core.components.material.Scaffold
@@ -44,6 +46,7 @@ class TsuzukiSyncSettingsSelector : Screen() {
                 PillButton(
                     stringResource(MR.strings.action_save),
                     {
+                        model.save()
                         navigator.pop()
                     },
                     Modifier.fillMaxWidth(),
@@ -92,14 +95,17 @@ private class SyncSettingsSelectorModel(
 ) {
     fun toggle(setter: (BackupOptions, Boolean) -> BackupOptions, enabled: Boolean) {
         mutableState.update {
-            val updatedOptions = setter(it.options, enabled)
-            syncPreferences.setSyncSettings(backupOptionsToSyncOptions(updatedOptions))
-            it.copy(options = updatedOptions)
+            it.copy(options = setter(it.options, enabled))
         }
     }
 
+    fun save() {
+        syncPreferences.setSyncSettings(backupOptionsToSyncOptions(state.value.options))
+    }
+
+    @OptIn(DelicateCoroutinesApi::class)
     fun syncNow(context: Context) {
-        SyncDataJob.startNow(context)
+        launchIO { SyncDataJob.startNow(context) }
     }
 
     @Immutable

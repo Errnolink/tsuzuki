@@ -212,12 +212,11 @@ class UpdatesScreenModel(
             }
     }
 
-    fun updateLibrary(): Boolean {
-        val started = LibraryUpdateJob.startNow(Injekt.get<Application>())
-        screenModelScope.launch {
+    fun updateLibrary() {
+        screenModelScope.launchNonCancellable {
+            val started = LibraryUpdateJob.startNow(Injekt.get<Application>())
             _events.send(Event.LibraryUpdateTriggered(started))
         }
-        return started
     }
 
     /**

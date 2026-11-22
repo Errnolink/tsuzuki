@@ -1,0 +1,149 @@
+// Adapted from Neko (nekomangaorg/Neko, Apache-2.0): eu/kanade/tachiyomi/ui/reader/domain/BuildWebtoonItemsUseCase.kt
+package dev.errnolink.tsuzuki.reader.engine.domain
+
+import dev.errnolink.tsuzuki.reader.engine.model.ChapterTransition
+import dev.errnolink.tsuzuki.reader.engine.model.ReaderChapter
+import dev.errnolink.tsuzuki.reader.engine.model.ReaderPage
+import dev.errnolink.tsuzuki.reader.engine.model.ReaderUiItem
+import dev.errnolink.tsuzuki.reader.engine.model.ViewerChapters
+import dev.errnolink.tsuzuki.reader.engine.viewer.hasMissingChapters
+import eu.kanade.tachiyomi.source.model.Page
+
+/**
+ * Pure Kotlin interactor mapping [ViewerChapters] into an ordered sequential list of [ReaderUiItem]
+ * instances for the continuous Webtoon viewer. Handles chapter seam padding pages (last 2),
+ * transitions, and split reuse to maintain key and layout continuity.
+ */
+class BuildWebtoonItemsUseCase(
+    private val checkTallPage: CheckTallPageUseCase = CheckTallPageUseCase()
+) {
+
+    data class Result(
+        val items: List<ReaderUiItem>,
+        val prevTransition: ChapterTransition.Prev?,
+        val nextTransition: ChapterTransition.Next?,
+        val hadTransitionForNext: Boolean,
+        val tallSplitPages: Set<ReaderPage>,
+    )
+
+    operator fun invoke(
+        chapters: ViewerChapters,
+        forceTransition: Boolean = false,
+        screenHeight: Int = 0,
+        existingItems: List<ReaderUiItem> = emptyList(),
+        hadTransitionForNext: Boolean = false,
+    ): Result {
+        val tallSplitPages = mutableSetOf<ReaderPage>()
+        val newItems = mutableListOf<ReaderUiItem>()
+
+        val prevHasMissingChapters = hasMissingChapters(chapters.currChapter, chapters.prevChapter)
+        val nextHasMissingChapters = hasMissingChapters(chapters.nextChapter, chapters.currChapter)
+
+        // Add previous chapter padding pages (last 2 pages) to maintain key continuity across
+        // chapter boundaries
+        if (chapters.prevChapter != null) {
+            val prevPages = chapters.prevChapter.pages
+            if (prevPages != null && prevPages.isNotEmpty()) {
+                newItems.addAll(
+                    mapPagesToItems(
+                        pages = prevPages.takeLast(2),
+                        existingItems = existingItems,
+                        tallSplitPages = tallSplitPages,
+                        screenHeight = screenHeight,
+                    )
+                )
+            }
+        }
+
+        val prevTrans = ChapterTransition.Prev(chapters.currChapter, chapters.prevChapter)
+        newItems.add(ReaderUiItem.Transition(prevTrans))
+
+        // Add current chapter pages
+        val currPages = chapters.currChapter.pages
+        if (currPages != null) {
+            newItems.addAll(
+                mapPagesToItems(
+                    pages = currPages,
+                    existingItems = existingItems,
+                    tallSplitPages = tallSplitPages,
+                    screenHeight = screenHeight,
+                )
+            )
+        }
+
+        // Add next chapter transition and pages
+        val nextTrans = ChapterTransition.Next(chapters.currChapter, chapters.nextChapter)
+        val shouldAddNextTransition =
+            chapters.nextChapter == null ||
+                nextHasMissingChapters ||
+                forceTransition ||
+                hadTransitionForNext ||
+                chapters.nextChapter.state !is ReaderChapter.State.Loaded
+
+        var newHadTransitionForNext = hadTransitionForNext
+        if (shouldAddNextTransition) {
+            newItems.add(ReaderUiItem.Transition(nextTrans))
+            if (chapters.nextChapter != null) {
+                newHadTransitionForNext = true
+            }
+        }
+
+        if (chapters.nextChapter != null) {
+            val nextPages = chapters.nextChapter.pages
+            if (nextPages != null) {
+                newItems.addAll(
+                    mapPagesToItems(
+                        pages = nextPages,
+                        existingItems = existingItems,
+                        tallSplitPages = tallSplitPages,
+                        screenHeight = screenHeight,
+                    )
+                )
+            }
+        }
+
+        return Result(
+            items = newItems,
+            prevTransition = prevTrans,
+            nextTransition = nextTrans,
+            hadTransitionForNext = newHadTransitionForNext,
+            tallSplitPages = tallSplitPages,
+        )
+    }
+
+    private fun mapPagesToItems(
+        pages: List<ReaderPage>,
+        existingItems: List<ReaderUiItem>,
+        tallSplitPages: MutableSet<ReaderPage>,
+        screenHeight: Int,
+    ): List<ReaderUiItem> {
+        return pages.flatMap { page ->
+            val existingSplits =
+                existingItems.filterIsInstance<ReaderUiItem.SplitPage>().filter {
+                    it.page.isFromSamePage(page)
+                }
+            if (existingSplits.isNotEmpty()) {
+                tallSplitPages.add(page)
+                return@flatMap existingSplits
+            }
+            val precomputed = page.precomputedSplits
+            if (precomputed != null) {
+                if (precomputed.isNotEmpty()) {
+                    tallSplitPages.add(page)
+                    return@flatMap precomputed.map { ReaderUiItem.SplitPage(it) }
+                } else {
+                    return@flatMap listOf(ReaderUiItem.Page(page))
+                }
+            }
+            if (screenHeight > 0 && page.status == Page.State.Ready && page.stream != null) {
+                val splits = checkTallPage(page, screenHeight)
+                page.precomputedSplits = splits ?: emptyList()
+                if (splits != null && splits.isNotEmpty()) {
+                    tallSplitPages.add(page)
+                    return@flatMap splits.map { ReaderUiItem.SplitPage(it) }
+                }
+            }
+            listOf(ReaderUiItem.Page(page))
+        }
+    }
+}

@@ -143,6 +143,8 @@ class Kavita(id: Long) : BaseTracker(id, "Kavita"), EnhancedTracker {
     }
 
     // KMK -->
+    override suspend fun updateUserConfig() = Unit
+
     override fun hasNotStartedReading(status: Long): Boolean = status == UNREAD
     // KMK <--
 }

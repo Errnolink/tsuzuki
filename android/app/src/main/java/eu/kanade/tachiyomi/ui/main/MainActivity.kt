@@ -46,7 +46,7 @@ import eu.kanade.domain.sync.SyncPreferences
 import eu.kanade.presentation.more.settings.screen.browse.ExtensionStoresScreen
 import eu.kanade.presentation.more.settings.screen.data.RestoreBackupScreen
 import eu.kanade.presentation.util.AssistContentScreen
-import dev.errnolink.tsuzuki.ui.shell.TsuzukiScreenTransition
+import dev.errnolink.tsuzuki.ui.motion.TsuzukiScreenTransition
 import eu.kanade.tachiyomi.BuildConfig
 import eu.kanade.tachiyomi.data.BackupRestoreStatus
 import eu.kanade.tachiyomi.data.LibraryUpdateStatus
@@ -161,6 +161,9 @@ class MainActivity : BaseActivity() {
 
         dev.errnolink.tsuzuki.perf.PerfTimelineTracer.markStage("MainActivity.setContent start")
         setComposeContent {
+            androidx.compose.runtime.CompositionLocalProvider(
+                dev.errnolink.tsuzuki.designsystem.LocalWindowWidthClass provides dev.errnolink.tsuzuki.designsystem.rememberWindowWidthClass(),
+            ) {
             val context = LocalContext.current
 
             var incognito by remember { mutableStateOf(getIncognitoState.await(null)) }
@@ -282,6 +285,7 @@ class MainActivity : BaseActivity() {
             dev.errnolink.tsuzuki.sync.PairPromptHost()
             // KMK <--
 
+            }
         }
         dev.errnolink.tsuzuki.perf.PerfTimelineTracer.markStage("MainActivity.setContent end")
 

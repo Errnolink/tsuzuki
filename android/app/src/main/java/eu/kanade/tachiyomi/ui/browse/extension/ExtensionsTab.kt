@@ -15,6 +15,7 @@ import androidx.compose.ui.platform.LocalContext
 import cafe.adriel.voyager.navigator.LocalNavigator
 import cafe.adriel.voyager.navigator.currentOrThrow
 import dev.errnolink.tsuzuki.designsystem.DetentSheet
+import dev.errnolink.tsuzuki.designsystem.SheetKind
 import dev.errnolink.tsuzuki.designsystem.PillButton
 import dev.errnolink.tsuzuki.designsystem.TsuzukiText
 import dev.errnolink.tsuzuki.ui.browse.ExtensionScreen
@@ -128,7 +129,7 @@ private fun ExtensionUninstallConfirmation(
     onClickConfirm: () -> Unit,
     onDismissRequest: () -> Unit,
 ) {
-    DetentSheet(true, stringResource(MR.strings.ext_confirm_remove), onDismissRequest) {
+    DetentSheet(true, stringResource(MR.strings.ext_confirm_remove), onDismissRequest, kind = SheetKind.Confirm) {
         TsuzukiText(stringResource(MR.strings.remove_private_extension_message, extensionName))
         PillButton(
             label = stringResource(MR.strings.ext_remove),

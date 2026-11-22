@@ -94,6 +94,23 @@ class ShikimoriApi(
         }
     }
 
+    suspend fun getMangaDetails(id: Int): TrackSearch? {
+        return withIOContext {
+            val url = "$API_URL/mangas".toUri().buildUpon()
+                .appendQueryParameter("ids", id.toString())
+                .appendQueryParameter("limit", "1")
+                .appendQueryParameter("kind", "!light_novel,!novel")
+                .build()
+            with(json) {
+                authClient.newCall(GET(url.toString()))
+                    .awaitSuccess()
+                    .parseAs<List<SMManga>>()
+                    .firstOrNull()
+                    ?.toTrack(trackId)
+            }
+        }
+    }
+
     suspend fun findLibManga(track: Track, userId: String): Track? {
         return withIOContext {
             val urlMangas = "$API_URL/mangas".toUri().buildUpon()
@@ -126,12 +143,11 @@ class ShikimoriApi(
         }
     }
 
-    suspend fun getCurrentUser(): Int {
+    suspend fun getCurrentUser(): SMUser {
         return with(json) {
             authClient.newCall(GET("$API_URL/users/whoami"))
                 .awaitSuccess()
                 .parseAs<SMUser>()
-                .id
         }
     }
 

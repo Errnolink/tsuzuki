@@ -28,7 +28,6 @@ class TsuzukiTabBarTest {
         assertEquals(0f, motion.position)
         assertEquals(0f, motion.liftX)
         assertEquals(0f, motion.liftY)
-        assertEquals(0f, motion.deviation)
         assertTrue(motion.isFlat)
         assertFalse(motion.isLifted)
     }
@@ -140,7 +139,6 @@ class TsuzukiTabBarTest {
         assertFalse(motion.isLifted)
         assertEquals(0f, motion.liftX)
         assertEquals(0f, motion.liftY)
-        assertEquals(0f, motion.deviation)
     }
 
     @Test
@@ -253,7 +251,6 @@ class TsuzukiTabBarTest {
         runUntilIdle(motion)
         assertTrue(motion.isFlat)
         assertEquals(1f, motion.position, 0.01f)
-        assertEquals(0f, motion.deviation, 0.01f)
     }
 
     @Test
@@ -306,52 +303,37 @@ class TsuzukiTabBarTest {
     }
 
     @Test
-    fun `squash follows travel direction and stays clamped`() {
-        val motion = TsuzukiPillMotion(scope = null, initialIndex = 0)
-        motion.stepDp = 60f
-        motion.animateTo(1)
-
-        var time = 0.0
-        val dt = 1f / 240f
-        var peak = 0f
-        var trough = 0f
-        var frames = 0
-        while (frames < 600) {
-            time += dt
-            frames++
-            val active = motion.tick(dt, time)
-            peak = maxOf(peak, motion.deviation)
-            trough = minOf(trough, motion.deviation)
-            assertTrue(abs(motion.deviation) <= 0.10f + 1e-3f, "deviation ${motion.deviation}")
-            if (!active) break
-        }
-        assertTrue(peak > 0.002f, "launch squash $peak")
-        assertTrue(trough < -0.001f, "brake squash $trough")
+    fun `travel stretch peaks mid flight at the documented cap`() {
+        assertEquals(0f, pillTravelStretch(0f, 600f), 1e-6f)
+        assertEquals(0f, pillTravelStretch(1f, 600f), 1e-6f)
+        assertEquals(0f, pillTravelStretch(0.5f, 0f), 1e-6f)
+        val cap = pillTravelStretch(0.5f, 1200f)
+        assertEquals(0.15f, cap, 1e-3f)
+        val short = pillTravelStretch(0.5f, 150f)
+        assertTrue(short in 0.01f..0.15f, "short hop stretch $short")
+        assertEquals(short, pillTravelStretch(0.5f, -150f), 1e-5f)
+        assertTrue(pillTravelStretch(0.25f, 600f) < pillTravelStretch(0.5f, 600f))
     }
 
     @Test
-    fun `squash stays quiet at constant drag speed and is disabled without step size`() {
-        val silent = TsuzukiPillMotion(scope = null, initialIndex = 0)
-        silent.startDrag()
-        var time = 0.0
-        val dt = 1f / 60f
-        var position = 0f
-        repeat(40) {
-            time += dt
-            position += 0.01f
-            silent.dragTo(position)
-            silent.tick(dt, time)
-        }
-        assertTrue(abs(silent.deviation) < 0.01f, "constant speed deviation ${silent.deviation}")
+    fun `stretch axis never compounds past the combined cap`() {
+        // Lift alone cannot exceed the cap.
+        assertEquals(PillStretchScaleCap, pillStretchScale(1.19f, 0f))
+        // Lift x stretch compounds, but clamps at the cap instead of reading as a bounce.
+        assertEquals(PillStretchScaleCap, pillStretchScale(1.1f, 0.15f))
+        // Under the cap the lift passes through with its stretch.
+        assertEquals(1.04f, pillStretchScale(1f, 0.04f), 1e-5f)
+    }
 
-        val disabled = TsuzukiPillMotion(scope = null, initialIndex = 0)
-        disabled.stepDp = 0f
-        disabled.animateTo(1)
-        repeat(30) {
-            time += dt
-            disabled.tick(dt, time)
-        }
-        assertEquals(0f, disabled.deviation)
+    @Test
+    fun `dragging the lens covers no travel so it never stretches`() {
+        val motion = TsuzukiPillMotion(scope = null, initialIndex = 1)
+        motion.stepDp = 60f
+        motion.startDrag()
+        motion.dragTo(2.2f)
+        motion.tick(1f / 60f, 1.0 / 60.0)
+        assertEquals(0f, motion.travelSpanSteps())
+        assertEquals(0f, pillTravelStretch(motion.travelProgress(), motion.travelSpanSteps() * motion.stepDp))
     }
 
     @Test
@@ -369,7 +351,7 @@ class TsuzukiTabBarTest {
         motion.tick(1f / 120f, 1.0 / 120.0)
         val live = motion.liveSize(rest, lifted)
         val lift = (motion.liftX + motion.liftY) / 2f
-        assertEquals(60f + 15f * lift, live.width / (1f + motion.deviation), 0.05f)
+        assertEquals(60f + 15f * lift, live.width, 0.05f)
         assertTrue(live.height >= 40f)
     }
 
@@ -392,16 +374,6 @@ class TsuzukiTabBarTest {
             rowWidthPx = 300f,
         )
         assertEquals(215f, rtlCenter, 0.001f)
-    }
-
-    @Test
-    fun `accessory visibility rules enforce inline state and no occlusion`() {
-        assertFalse(isTabBarAccessoryVisible(isInline = false, hasAccessory = true))
-        assertTrue(isTabBarAccessoryVisible(isInline = true, hasAccessory = true))
-        assertFalse(isTabBarAccessoryVisible(isInline = true, hasAccessory = false))
-        assertFalse(isTabBarAccessoryVisible(isInline = true, hasAccessory = true, imeVisible = true))
-        assertFalse(isTabBarAccessoryVisible(isInline = true, hasAccessory = true, searchActive = true))
-        assertFalse(isTabBarAccessoryVisible(isInline = false, hasAccessory = true, imeVisible = true))
     }
 
     @Test
@@ -527,5 +499,52 @@ class TsuzukiTabBarTest {
         assertEquals(0f, dot(0f))
         assertEquals(0f, dot(0.3f))
         assertEquals(1f, dot(1f))
+    }
+
+    @Test
+    fun `per tab alpha helper matches the morph geometry list`() {
+        val expandedWidth = 900f
+        val collapsedWidth = 144f
+        val innerWidth = (expandedWidth - 4f - 4f).coerceAtLeast(0f)
+        val tabStep = innerWidth / 3f
+        for (isRtl in booleanArrayOf(false, true)) {
+            for (selectedIndex in 0 until 3) {
+                var progress = 0f
+                while (progress <= 1f) {
+                    val geometry = tabBarMorphGeometry(
+                        progress = progress,
+                        expandedWidthPx = expandedWidth,
+                        collapsedWidthPx = collapsedWidth,
+                        contentPaddingLeftPx = 4f,
+                        contentPaddingRightPx = 4f,
+                        tabCount = 3,
+                        selectedIndex = selectedIndex,
+                        isRtl = isRtl,
+                        collapsedIconCenterXPx = 72f,
+                        iconLiftYPx = 10f,
+                    )
+                    for (tab in 0 until 3) {
+                        assertEquals(
+                            geometry.tabAlphas[tab],
+                            tabAlpha(
+                                index = tab,
+                                progress = progress,
+                                expandedWidthPx = expandedWidth,
+                                collapsedWidthPx = collapsedWidth,
+                                contentPaddingLeftPx = 4f,
+                                innerWidthPx = innerWidth,
+                                tabStepPx = tabStep,
+                                isRtl = isRtl,
+                                collapsedIconCenterXPx = 72f,
+                                selectedIndex = selectedIndex,
+                            ),
+                            1e-4f,
+                            "tab $tab at $progress rtl=$isRtl selected=$selectedIndex",
+                        )
+                    }
+                    progress += 0.05f
+                }
+            }
+        }
     }
 }
