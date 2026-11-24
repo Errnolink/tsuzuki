@@ -81,7 +81,14 @@ internal class MangaDexSimilarPagingSource(
             try {
                 val similarPageDef = async {
                     // KMK -->
-                    similarHandler.getSimilar(manga.toSManga())
+                    try {
+                        similarHandler.getSimilar(manga.toSManga())
+                    } catch (_: NoResultsException) {
+                        MetadataMangasPage(emptyList(), false, emptyList())
+                    } catch (e: HttpException) {
+                        if (e.code != 404) throw e
+                        MetadataMangasPage(emptyList(), false, emptyList())
+                    }
                     // KMK <--
                 }
                 val relatedPageDef = async {

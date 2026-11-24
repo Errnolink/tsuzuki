@@ -205,4 +205,13 @@ class ReaderBarLogicTest {
         org.junit.jupiter.api.Assertions.assertEquals(null, readerPageCount(-1, 30))
         org.junit.jupiter.api.Assertions.assertEquals(null, readerPageCount(1, 0))
     }
+
+    @Test
+    fun `a jump counts as landed on its page or on the spread showing it`() {
+        assertTrue(reportsLanding(23, "23", 23))
+        assertTrue(reportsLanding(22, "22-23", 23))
+        assertTrue(reportsLanding(23, "23-22", 23))
+        assertFalse(reportsLanding(12, "12", 23))
+        assertFalse(reportsLanding(22, "22-23", 2))
+    }
 }

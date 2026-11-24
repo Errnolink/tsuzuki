@@ -5,8 +5,11 @@ import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.os.Build
+import androidx.core.app.NotificationChannelCompat
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.ProcessLifecycleOwner
 import androidx.work.ForegroundInfo
 import eu.kanade.tachiyomi.R
 import eu.kanade.tachiyomi.data.notification.Notifications
@@ -45,31 +48,30 @@ class UpdateNotifier(private val context: Context) {
     }
 
     fun promptInstallUserAction(confirmIntent: Intent?, fileUri: Uri?) {
-        cancelProgress()
         val intent = confirmIntent ?: fileUri?.let { createSystemInstallIntent(it) } ?: return
         intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-        val flags = PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-        val pendingIntent = PendingIntent.getActivity(context, 0, intent, flags)
-
-        val builder = context.notificationBuilder(Notifications.CHANNEL_COMMON) {
-            setSmallIcon(android.R.drawable.stat_sys_download_done)
-            setContentTitle(context.stringResource(MR.strings.app_name))
-            setContentText(context.stringResource(MR.strings.update_check_notification_download_complete))
-            setContentIntent(pendingIntent)
-            setAutoCancel(true)
-            setOngoing(false)
-        }
-        notificationManager.notify(ID_UPDATER_PROMPT, builder.build())
+        promptInstall(intent)
     }
 
     fun promptInstallFallback(fileUri: Uri?) {
-        cancelProgress()
-        val uri = fileUri ?: return
-        val installIntent = createSystemInstallIntent(uri)
-        val flags = PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-        val pendingIntent = PendingIntent.getActivity(context, 0, installIntent, flags)
+        promptInstall(createSystemInstallIntent(fileUri ?: return))
+    }
 
-        val builder = context.notificationBuilder(Notifications.CHANNEL_COMMON) {
+    private fun promptInstall(intent: Intent) {
+        cancelProgress()
+        val inForeground = ProcessLifecycleOwner.get().lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED)
+        if (inForeground && runCatching { context.startActivity(intent) }.isSuccess) {
+            notificationManager.cancel(ID_UPDATER_PROMPT)
+            return
+        }
+        notificationManager.createNotificationChannel(
+            NotificationChannelCompat.Builder(CHANNEL_APP_UPDATE, NotificationManagerCompat.IMPORTANCE_HIGH)
+                .setName(context.stringResource(MR.strings.channel_app_updates))
+                .build(),
+        )
+        val flags = PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        val pendingIntent = PendingIntent.getActivity(context, 0, intent, flags)
+        val builder = context.notificationBuilder(CHANNEL_APP_UPDATE) {
             setSmallIcon(android.R.drawable.stat_sys_download_done)
             setContentTitle(context.stringResource(MR.strings.app_name))
             setContentText(context.stringResource(MR.strings.update_check_notification_download_complete))
@@ -114,5 +116,6 @@ class UpdateNotifier(private val context: Context) {
         const val ID_UPDATER_PROGRESS = -601
         const val ID_UPDATER_PROMPT = -602
         const val APK_MIME = "application/vnd.android.package-archive"
+        private const val CHANNEL_APP_UPDATE = "app_update_channel"
     }
 }

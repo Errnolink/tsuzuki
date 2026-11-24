@@ -147,6 +147,10 @@ fun readerPageCount(currentPage: Int, totalPages: Int): String? {
 /** The scrubber's resting page. `currentPage` is already 1-based (`ReaderViewModel` stores index + 1). */
 fun scrubberRestPage(currentPage: Int, totalPages: Int): Int = currentPage.coerceIn(1, totalPages.coerceAtLeast(1))
 
+/** Whether the viewer's report confirms a jump to [landing]; a double-page spread reports both of its pages. */
+fun reportsLanding(page: Int, pageText: String, landing: Int): Boolean =
+    page == landing || pageText.split('-').any { it.toIntOrNull() == landing }
+
 /** How far through the chapter the reader is, for the status pill. */
 fun readerProgressFraction(currentPage: Int, totalPages: Int): Float =
     if (totalPages > 0) (currentPage.toFloat() / totalPages).coerceIn(0.04f, 1f) else 0.04f

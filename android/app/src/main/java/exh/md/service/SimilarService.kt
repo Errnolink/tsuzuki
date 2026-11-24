@@ -25,7 +25,7 @@ class SimilarService(
         if (mangaId.length < 3) throw NoResultsException()
         val prefix2 = mangaId.substring(0, 2)
         val prefix3 = mangaId.substring(0, 3)
-        val url = "https://cdn.jsdelivr.net/gh/nekomangaorg/similar-data@main/similar/$prefix2/$prefix3.html"
+        val url = "https://raw.githubusercontent.com/nekomangaorg/similar-data/main/similar/$prefix2/$prefix3.html"
 
         val responseText = timeoutClient.newCall(GET(url)).awaitSuccess().body.string()
         val matchedDto = parseSimilarDataLine(responseText, mangaId) ?: throw NoResultsException()

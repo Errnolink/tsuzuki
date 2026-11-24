@@ -42,6 +42,7 @@ import androidx.compose.ui.unit.dp
 import dev.errnolink.tsuzuki.designsystem.GlassContext
 import dev.errnolink.tsuzuki.designsystem.GlassMaterial
 import dev.errnolink.tsuzuki.designsystem.GlassSurface
+import dev.errnolink.tsuzuki.designsystem.MorphingSearchButton
 import dev.errnolink.tsuzuki.designsystem.MorphingSearchOverlay
 import dev.errnolink.tsuzuki.designsystem.SearchCloseAction
 import dev.errnolink.tsuzuki.designsystem.TopBarSearch
@@ -158,6 +159,14 @@ internal fun ShellBottomSearchDock(
                     Modifier.size(ShellBottomBarChrome.RowHeight),
                     contentAlignment = Alignment.Center,
                 ) {
+                    if (!isTabRoot) {
+                        MorphingSearchButton(
+                            state = search.state,
+                            glass = glass,
+                            modifier = Modifier.size(ShellBottomBarChrome.CircleSize),
+                            contentDescription = search.placeholder,
+                        )
+                    }
                     // Stays composed through the close flight so the × scales out with the field
                     // content instead of popping out the moment search collapses.
                     if (circleVisible) {

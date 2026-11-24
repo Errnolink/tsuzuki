@@ -136,8 +136,9 @@ class MangaDexParityTest {
     fun `stats forum aggregate recommendation author group and user builders target correct endpoints`() {
         assertEquals("/statistics/manga/m", Requests.statistics("m").url.encodedPath)
         assertEquals("/statistics/chapter/c", Requests.statistics("c", true).url.encodedPath)
-        assertEquals("/manga/m/recommendation", Requests.recommendations("m", 100).url.encodedPath)
-        assertEquals("100", Requests.recommendations("m", 100).url.queryParameter("offset"))
+        val recommendation = Requests.recommendations("m").url
+        assertEquals("/manga/m/recommendation", recommendation.encodedPath)
+        assertEquals(null, recommendation.query)
         val aggregate = Requests.aggregate("m", listOf("en", "ja")).url
         assertEquals("/manga/m/aggregate", aggregate.encodedPath)
         assertEquals(listOf("en", "ja"), aggregate.queryParameterValues("translatedLanguage[]"))

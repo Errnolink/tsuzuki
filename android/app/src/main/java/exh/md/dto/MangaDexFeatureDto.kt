@@ -47,8 +47,6 @@ data class ForumThreadIdDto(val id: Long)
 @Serializable
 data class RecommendationListDto(
     val data: List<RecommendationDto>,
-    val offset: Int,
-    val total: Int,
 )
 
 @Serializable

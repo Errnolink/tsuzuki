@@ -268,6 +268,25 @@ internal object MangaDexDetailsStore {
                 }
                 if (similarItems.isNotEmpty()) state.value = state.value.copy(recommendations = similarItems)
 
+                val recommendedItems = runCatching { MangaDexFeatures(resolved.source).recommendations(id) }
+                    .getOrDefault(emptyList())
+                    .filter { seenDexIds.add(it.id) }
+                    .onEach { lookedUp.put(it.id, it) }
+                    .map { dto ->
+                        val title = MdUtil.getTitleFromManga(dto.attributes, lang, true)
+                        MergedRecommendationItem(
+                            title = title,
+                            subtitle = "Recommended",
+                            badge = "MangaDex",
+                            coverUrl = coverOf(dto),
+                            dexId = dto.id,
+                            searchQuery = title,
+                        )
+                    }
+                if (recommendedItems.isNotEmpty()) {
+                    state.value = state.value.copy(recommendations = similarItems + recommendedItems)
+                }
+
                 val thirdParty = thirdPartyDef.await().filter { rec -> rec.mangadexId.let { it == null || seenDexIds.add(it) } }
                 val thirdPartyDtos = lookup(thirdParty.mapNotNull { it.mangadexId })
                 val thirdPartyItems = thirdParty.map { rec ->
@@ -282,7 +301,7 @@ internal object MangaDexDetailsStore {
                         openUrl = rec.originalUrl,
                     )
                 }
-                state.value = state.value.copy(recommendations = similarItems + thirdPartyItems, recsLoading = false)
+                state.value = state.value.copy(recommendations = similarItems + recommendedItems + thirdPartyItems, recsLoading = false)
             }
         } catch (e: CancellationException) {
             throw e

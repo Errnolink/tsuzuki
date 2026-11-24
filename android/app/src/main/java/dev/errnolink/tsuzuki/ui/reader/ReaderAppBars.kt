@@ -1,6 +1,5 @@
 package dev.errnolink.tsuzuki.ui.reader
 
-import android.graphics.Bitmap
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
@@ -88,7 +87,6 @@ fun ReaderAppBars(
     onScrubWebtoonFraction: ((Float) -> Unit)? = null,
     onSaveCapturedPng: (ReaderPage, ByteArray) -> Unit = { _, _ -> },
     onShareCapturedPng: (ReaderPage, ByteArray) -> Unit = { _, _ -> },
-    onCaptureViewport: (((Bitmap?) -> Unit) -> Unit)? = null,
 ) {
     var suppressStatusLine by remember { mutableStateOf(false) }
     Box(Modifier.fillMaxSize()) {
@@ -151,7 +149,6 @@ fun ReaderAppBars(
                 onScrubWebtoonFraction = onScrubWebtoonFraction,
                 onSaveCapturedPng = onSaveCapturedPng,
                 onShareCapturedPng = onShareCapturedPng,
-                onCaptureViewport = onCaptureViewport,
                 onSuppressStatusLineChange = { suppressStatusLine = it },
             )
             // the status line takes the chrome's place while it is away (Kasane reader shell)

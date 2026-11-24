@@ -1,6 +1,7 @@
 package dev.errnolink.tsuzuki.update
 
 import android.content.Context
+import androidx.core.content.pm.PackageInfoCompat
 import androidx.work.CoroutineWorker
 import androidx.work.Data
 import androidx.work.ExistingWorkPolicy
@@ -8,6 +9,7 @@ import androidx.work.ForegroundInfo
 import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.OutOfQuotaPolicy
 import androidx.work.WorkerParameters
+import eu.kanade.tachiyomi.BuildConfig
 import eu.kanade.tachiyomi.network.NetworkHelper
 import eu.kanade.tachiyomi.network.ProgressListener
 import eu.kanade.tachiyomi.network.awaitSuccess
@@ -77,6 +79,11 @@ class AppDownloadWorker(
             }
 
             notifier.cancelProgress()
+            val downloadedCode = context.packageManager.getPackageArchiveInfo(apkFile.path, 0)?.let { PackageInfoCompat.getLongVersionCode(it) }
+            if (downloadedCode == null || downloadedCode <= BuildConfig.VERSION_CODE.toLong()) {
+                apkFile.delete()
+                return@withContext Result.success()
+            }
             AppInstaller.install(context, apkFile)
             Result.success()
         } catch (e: CancellationException) {
@@ -106,7 +113,7 @@ class AppDownloadWorker(
 
             context.workManager.enqueueUniqueWork(
                 TAG,
-                ExistingWorkPolicy.REPLACE,
+                ExistingWorkPolicy.KEEP,
                 request,
             )
         }

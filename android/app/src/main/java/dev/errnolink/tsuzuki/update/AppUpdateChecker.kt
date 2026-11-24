@@ -8,6 +8,7 @@ import eu.kanade.tachiyomi.network.awaitSuccess
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import okhttp3.CacheControl
 import okhttp3.Headers
 import okhttp3.OkHttpClient
 import uy.kohesive.injekt.Injekt
@@ -29,7 +30,7 @@ class AppUpdateChecker(
             val headers = Headers.Builder()
                 .set("User-Agent", USER_AGENT)
                 .build()
-            val request = GET(LATEST_RELEASE_URL, headers)
+            val request = GET(LATEST_RELEASE_URL, headers, CacheControl.FORCE_NETWORK)
             val response = client.newCall(request).awaitSuccess()
             val release = response.body.string().let { UpdateLogic.parseReleases(it) }
                 .let(UpdateLogic::latestAndroidRelease)

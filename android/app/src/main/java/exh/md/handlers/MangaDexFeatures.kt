@@ -111,14 +111,8 @@ class MangaDexFeatures(private val source: MangaDex, private val preferences: Ma
     }
 
     suspend fun recommendations(mangaId: String): List<MangaDataDto> {
-        val ids = mutableListOf<String>()
-        var offset = 0
-        do {
-            val page = request<RecommendationListDto>(MangaDexFeatureRequests.recommendations(mangaId, offset))
-            ids += MangaDexFeatureMapper.recommendationIds(mangaId, page)
-            offset = page.offset + page.data.size
-        } while (page.data.isNotEmpty() && offset < page.total)
-        return manga(ids)
+        val page = request<RecommendationListDto>(MangaDexFeatureRequests.recommendations(mangaId))
+        return manga(MangaDexFeatureMapper.recommendationIds(mangaId, page))
     }
 
     private fun requireLogin() {

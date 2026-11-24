@@ -1,15 +1,8 @@
 package dev.errnolink.tsuzuki.ui.reader
 
-import android.graphics.Bitmap
-import io.mockk.every
-import io.mockk.mockk
-import io.mockk.mockkStatic
-import io.mockk.unmockkStatic
-import io.mockk.verify
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNotNull
 import org.junit.jupiter.api.Assertions.assertNull
-import org.junit.jupiter.api.Assertions.assertSame
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 
@@ -63,23 +56,8 @@ class ReaderUiV3LogicTest {
     }
 
     @Test
-    fun `dragCropRect preserves dimensions when moved past edges, prevents inversion, and maps exact pixels`() {
-        val box = NormalizedCropRect(left = 0.6f, top = 0.6f, right = 0.9f, bottom = 0.9f)
-        // Moving further bottom-right should slide without squishing width/height
-        val moved = dragCropRect(box, CropDragHandle.Move, dxFraction = 0.5f, dyFraction = 0.5f)
-        assertEquals(0.3f, moved.width, 0.0001f)
-        assertEquals(0.3f, moved.height, 0.0001f)
-        assertEquals(1.0f, moved.right, 0.0001f)
-        assertEquals(1.0f, moved.bottom, 0.0001f)
-
-        // Resizing left handle past right edge stops at minSpan
-        val resizedLeft = dragCropRect(box, CropDragHandle.Left, dxFraction = 0.9f, dyFraction = 0f, minSpan = 0.12f)
-        assertEquals(0.12f, resizedLeft.width, 0.0001f)
-        assertTrue(resizedLeft.left < resizedLeft.right)
-
-        // Pixel mapping against asymmetrical manga scan dimensions
-        val px = mapCropRectToPixels(NormalizedCropRect(0.1f, 0.25f, 0.6f, 0.75f), bitmapWidth = 1000, bitmapHeight = 1600)
-        assertEquals(PixelCropBounds(x = 100, y = 400, width = 500, height = 800), px)
+    fun `a capture of half the width is half the source width`() {
+        assertEquals(500 to 1500, captureOutputSize(CaptureSelection(top = 0f, bottom = 1.5f, left = 0.25f, right = 0.75f), preferredWidthPx = 500))
     }
 
     @Test
@@ -100,57 +78,49 @@ class ReaderUiV3LogicTest {
     }
 
     @Test
-    fun `cropBitmapSafely copies HARDWARE bitmaps to ARGB_8888, crops pixels, and recycles temporary copy`() {
-        val softCopy = mockk<Bitmap>(relaxed = true) {
-            every { isRecycled } returns false
-            every { width } returns 1000
-            every { height } returns 1500
-            every { config } returns Bitmap.Config.ARGB_8888
-        }
-        val hwBitmap = mockk<Bitmap> {
-            every { isRecycled } returns false
-            every { width } returns 1000
-            every { height } returns 1500
-            every { config } returns Bitmap.Config.HARDWARE
-            every { copy(Bitmap.Config.ARGB_8888, false) } returns softCopy
-        }
-        val croppedResult = mockk<Bitmap>(relaxed = true)
-        mockkStatic(Bitmap::class)
-        try {
-            every { Bitmap.createBitmap(softCopy, 100, 300, 800, 900) } returns croppedResult
-            val result = cropBitmapSafely(
-                hwBitmap,
-                NormalizedCropRect(left = 0.1f, top = 0.2f, right = 0.9f, bottom = 0.8f),
-            )
-            assertSame(croppedResult, result)
-            verify(exactly = 1) { softCopy.recycle() }
-        } finally {
-            unmockkStatic(Bitmap::class)
-        }
+    fun `a selection across a seam splits into the two page slices it covers`() {
+        val tops = captureDocumentTops(listOf(2f, 3f, 1.5f))
+        assertEquals(listOf(0f, 2f, 5f, 6.5f), tops)
+
+        val slices = captureSlices(CaptureSelection(top = 1.5f, bottom = 3.5f), tops)
+        assertEquals(2, slices.size)
+        assertEquals(0, slices[0].pageIndex)
+        assertEquals(0.75f, slices[0].fromFraction, 0.0001f)
+        assertEquals(1f, slices[0].toFraction, 0.0001f)
+        assertEquals(1, slices[1].pageIndex)
+        assertEquals(0f, slices[1].fromFraction, 0.0001f)
+        assertEquals(0.5f, slices[1].toFraction, 0.0001f)
+        assertEquals(2f, slices.sumOf { it.docHeight.toDouble() }.toFloat(), 0.0001f)
     }
 
     @Test
-    fun `hitTestCropHandle prioritizes corners over edges, detects all edges, interior move, and outside null`() {
-        val rect = NormalizedCropRect(left = 0.2f, top = 0.2f, right = 0.8f, bottom = 0.8f)
-        val w = 1000f
-        val h = 1000f
+    fun `capture edges stay inside the document and never cross`() {
+        val sel = CaptureSelection(top = 1f, bottom = 2f, left = 0.2f, right = 0.8f)
+        assertEquals(0f, moveCaptureEdge(sel, CaptureEdge.Top, docY = -3f, fraction = 0f, documentHeight = 6f, minHeight = 0.1f).top, 0.0001f)
+        assertEquals(1.9f, moveCaptureEdge(sel, CaptureEdge.Top, docY = 5f, fraction = 0f, documentHeight = 6f, minHeight = 0.1f).top, 0.0001f)
+        assertEquals(6f, moveCaptureEdge(sel, CaptureEdge.Bottom, docY = 9f, fraction = 0f, documentHeight = 6f, minHeight = 0.1f).bottom, 0.0001f)
+        assertEquals(1.1f, moveCaptureEdge(sel, CaptureEdge.Bottom, docY = 0f, fraction = 0f, documentHeight = 6f, minHeight = 0.1f).bottom, 0.0001f)
+        assertEquals(0.65f, moveCaptureEdge(sel, CaptureEdge.Left, docY = 0f, fraction = 0.95f, documentHeight = 6f, minHeight = 0.1f).left, 0.0001f)
+        assertEquals(1f, moveCaptureEdge(sel, CaptureEdge.Right, docY = 0f, fraction = 1.4f, documentHeight = 6f, minHeight = 0.1f).right, 0.0001f)
+    }
+
+    @Test
+    fun `edge hit test finds the nearest edge and ignores the interior`() {
         val r = 40f
+        assertEquals(CaptureEdge.Top, hitTestCaptureEdge(500f, 210f, 100f, 200f, 900f, 800f, r))
+        assertEquals(CaptureEdge.Bottom, hitTestCaptureEdge(500f, 790f, 100f, 200f, 900f, 800f, r))
+        assertEquals(CaptureEdge.Left, hitTestCaptureEdge(110f, 500f, 100f, 200f, 900f, 800f, r))
+        assertEquals(CaptureEdge.Right, hitTestCaptureEdge(890f, 500f, 100f, 200f, 900f, 800f, r))
+        assertEquals(CaptureEdge.Top, hitTestCaptureEdge(110f, 205f, 100f, 200f, 900f, 800f, r))
+        assertNull(hitTestCaptureEdge(500f, 500f, 100f, 200f, 900f, 800f, r))
+    }
 
-        // Corners win even near edge overlap
-        assertEquals(CropDragHandle.TopLeft, hitTestCropHandle(210f, 205f, rect, w, h, r))
-        assertEquals(CropDragHandle.TopRight, hitTestCropHandle(795f, 205f, rect, w, h, r))
-        assertEquals(CropDragHandle.BottomLeft, hitTestCropHandle(205f, 795f, rect, w, h, r))
-        assertEquals(CropDragHandle.BottomRight, hitTestCropHandle(805f, 805f, rect, w, h, r))
-
-        // Edges along midpoints
-        assertEquals(CropDragHandle.Top, hitTestCropHandle(500f, 210f, rect, w, h, r))
-        assertEquals(CropDragHandle.Bottom, hitTestCropHandle(500f, 790f, rect, w, h, r))
-        assertEquals(CropDragHandle.Left, hitTestCropHandle(210f, 500f, rect, w, h, r))
-        assertEquals(CropDragHandle.Right, hitTestCropHandle(790f, 500f, rect, w, h, r))
-
-        // Interior triggers Move, outside returns null
-        assertEquals(CropDragHandle.Move, hitTestCropHandle(500f, 500f, rect, w, h, r))
-        assertNull(hitTestCropHandle(100f, 100f, rect, w, h, r))
+    @Test
+    fun `a long capture keeps the source width until it would pass the height cap`() {
+        assertEquals(800 to 2400, captureOutputSize(CaptureSelection(top = 0f, bottom = 3f), preferredWidthPx = 800))
+        val (w, h) = captureOutputSize(CaptureSelection(top = 0f, bottom = 40f), preferredWidthPx = 800, maxHeightPx = 16_384)
+        assertEquals(16_384, h)
+        assertEquals(410, w)
     }
 
     @Test

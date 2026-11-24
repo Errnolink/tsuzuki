@@ -342,10 +342,29 @@ class ComposeReaderHost(
 
     // region Programmatic navigation
 
-    /** Moves to the Komikku page at [index] of the current chapter (scrubber, go-to page, chapter changes). */
+    /** Moves to the Komikku page at [index] of the current chapter as an animated transition (chapter changes). */
     fun moveToPageIndex(index: Int) {
         val page = activity.viewModel.state.value.currentChapter?.pages?.getOrNull(index) ?: return
         moveToPage(page)
+    }
+
+    /**
+     * Jumps to the Komikku page at [index] of the current chapter (scrubber, go-to page, overview).
+     * A Webtoon jump lands at once: animating it scrolls through every page between.
+     */
+    fun jumpToPageIndex(index: Int) {
+        if (!isWebtoon) {
+            moveToPageIndex(index)
+            return
+        }
+        val page = activity.viewModel.state.value.currentChapter?.pages?.getOrNull(index) ?: return
+        val enginePage = bridge.enginePageOf(page) ?: return
+        sendNavCommand(
+            ReaderNavCommand.SnapToPage(
+                pageIndex = enginePage.index,
+                chapterId = enginePage.chapter.chapter.id,
+            ),
+        )
     }
 
     /** Jumps Webtoon scroll position immediately using a normalized storyboard/minimap fraction (`0f..1f`). */

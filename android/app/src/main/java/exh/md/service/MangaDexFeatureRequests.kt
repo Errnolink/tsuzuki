@@ -102,8 +102,8 @@ object MangaDexFeatureRequests {
     fun createThread(chapterId: String): Request = Request.Builder().url(api("forums/thread").build())
         .headers(headers).post(MdUtil.encodeToBody(ForumThreadDto(chapterId, "chapter"))).build()
 
-    fun recommendations(mangaId: String, offset: Int): Request = get(
-        api("manga").addPathSegment(mangaId).addPathSegment("recommendation").page(offset).build(),
+    fun recommendations(mangaId: String): Request = get(
+        api("manga").addPathSegment(mangaId).addPathSegment("recommendation").build(),
     )
 
     fun aggregate(mangaId: String, languages: List<String>): Request = get(

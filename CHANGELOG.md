@@ -1,6 +1,30 @@
 # Changelog
 
-From 0.2.0 on, one release covers both apps, tagged `v<version>`. 0.1.0 is tagged `v0.1.0`. 0.3.0 ships Android only; the next Windows update comes later.
+From 0.2.0 on, one release covers both apps, tagged `v<version>`. 0.1.0 is tagged `v0.1.0`. 0.3.0 and 0.3.1 ship Android only; the next Windows update comes later.
+
+## 0.3.1 (Android)
+
+### Reader
+
+- **Drag the minimap lens.** In Webtoon mode, drop the blue frame on any page of the side minimap and the reader jumps there when you let go; hold it at an edge and the strip keeps scrolling. The strip stays where you left it and recentres when the controls hide.
+- **Page controls jump once, on release.** The slider, scrubbers and page strips show where you will land while you drag and move the page only when you let go.
+- **Webtoon page jumps land at once** instead of scrolling through every page in between, and the page counter no longer flips back to the page you left (#3).
+- **Capture is a long screenshot.** It opens on what you were reading, scrolls through the pages around it, and its edges drag past the screen so one capture can span several pages. All four edges crop freely, including on a full page; images are stitched from the original pages at full resolution.
+- **Snappier controls:** the reader bars appear faster and slide away without bouncing.
+
+### Search
+
+- **The search field opens on every tab**, not only the first one you used.
+- **Global search** no longer draws a dark pill over the status bar, and closing its field leaves a search button to bring it back.
+
+### Title page and Browse
+
+- **Similar works again** and adds MangaDex's own recommendations, so newer titles get suggestions too; MangaUpdates recommendations load for titles with the new MangaUpdates ids.
+- **MangaDex Recommended loads again** in Browse recommendations.
+
+### App updates
+
+- **One tap is enough:** Check for updates asks GitHub fresh, shows the download, and opens the install dialog itself while the app is open; a second tap no longer restarts the download, and the background notice uses its own App updates channel.
 
 ## 0.3.0 (Android)
 

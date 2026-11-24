@@ -148,10 +148,8 @@ object TsuzukiAboutScreen : Screen() {
                                 try {
                                     when (val result = AppUpdateChecker().checkForUpdate(isUserPrompt = true)) {
                                         is CheckResult.NewUpdate -> {
-                                            updateStatus = result.candidate.versionName
-                                            if (!AppUpdatePermission.canInstallPackages(context)) {
-                                                AppUpdatePermission.openInstallPermissionSettings(context)
-                                            }
+                                            updateStatus = "${result.candidate.versionName} · " +
+                                                context.stringResource(MR.strings.update_check_notification_download_in_progress)
                                             AppDownloadWorker.start(context, result.candidate.downloadUrl)
                                         }
                                         is CheckResult.NoNewUpdate -> {

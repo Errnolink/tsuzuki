@@ -1,6 +1,5 @@
 package dev.errnolink.tsuzuki.ui.reader
 
-import android.graphics.Bitmap
 import android.os.Build
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.AnimatedVisibilityScope
@@ -37,7 +36,6 @@ import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.BlurEffect
@@ -56,17 +54,24 @@ import eu.kanade.tachiyomi.ui.reader.model.ReaderPage
 import eu.kanade.tachiyomi.ui.reader.setting.ReaderOrientation
 import eu.kanade.tachiyomi.ui.reader.setting.ReadingMode
 import kotlinx.collections.immutable.ImmutableSet
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.StateFlow
 
 /** Kasane chrome tokens (reader.css/reader-craft.css): spatial slide, effects fade, bottom stagger. */
-private const val KasaneChromeMillis = 500
+private const val KasaneChromeMillis = 380
+private const val KasaneChromeExitMillis = 250
 private const val KasaneChromeEffectsMillis = 200
+private const val KasaneChromeExitEffectsMillis = 150
 private const val KasaneBottomStaggerMillis = 30
 private val KasaneTopSlideDp = 28.dp
 private val KasaneBottomSlideDp = 44.dp
 private val KasaneChromeSpatial = CubicBezierEasing(0.3f, 1.25f, 0.45f, 1f)
 private val KasaneChromeEffects = CubicBezierEasing(0.2f, 0f, 0f, 1f)
+private val KasaneChromeExit = CubicBezierEasing(0.4f, 0f, 1f, 1f)
 internal val ReaderClearGlassAlpha = 0.72f
+
+/** How long the chrome shows the page a jump asked for when the viewer never confirms it. */
+internal const val PageLandingHoldMillis = 600L
 
 @Composable
 private fun chromeDissolve(
@@ -75,11 +80,23 @@ private fun chromeDissolve(
     reduced: Boolean,
 ): Modifier {
     val move by scope.transition.animateFloat(
-        transitionSpec = { tween(KasaneChromeMillis, easing = KasaneChromeSpatial) },
+        transitionSpec = {
+            if (targetState == EnterExitState.Visible) {
+                tween(KasaneChromeMillis, easing = KasaneChromeSpatial)
+            } else {
+                tween(KasaneChromeExitMillis, easing = KasaneChromeExit)
+            }
+        },
         label = "Chrome move",
     ) { state -> if (state == EnterExitState.Visible) 1f else 0f }
     val dissolve by scope.transition.animateFloat(
-        transitionSpec = { tween(KasaneChromeEffectsMillis, easing = KasaneChromeEffects) },
+        transitionSpec = {
+            if (targetState == EnterExitState.Visible) {
+                tween(KasaneChromeEffectsMillis, easing = KasaneChromeEffects)
+            } else {
+                tween(KasaneChromeExitEffectsMillis, easing = KasaneChromeExit)
+            }
+        },
         label = "Chrome dissolve",
     ) { state -> if (state == EnterExitState.Visible) 1f else 0f }
     return Modifier.graphicsLayer {
@@ -158,7 +175,6 @@ fun ReaderAppBarsCurrent(
     onScrubWebtoonFraction: ((Float) -> Unit)? = null,
     onSaveCapturedPng: (ReaderPage, ByteArray) -> Unit = { _, _ -> },
     onShareCapturedPng: (ReaderPage, ByteArray) -> Unit = { _, _ -> },
-    onCaptureViewport: (((Bitmap?) -> Unit) -> Unit)? = null,
     onSuppressStatusLineChange: (Boolean) -> Unit = {},
 ) {
     val isRtl = currentReadingMode == ReadingMode.RIGHT_TO_LEFT
@@ -170,46 +186,30 @@ fun ReaderAppBarsCurrent(
     var lightingOpen by remember { mutableStateOf(false) }
     var overviewOpen by remember { mutableStateOf(false) }
     var captureOpen by remember { mutableStateOf(false) }
-    var pendingCapture by remember { mutableStateOf(false) }
-    var capturedViewportBitmap by remember { mutableStateOf<Bitmap?>(null) }
+    /**
+     * The page the last jump asked for. The viewer reports a jump some frames later, and until it
+     * does every page readout would fall back to the page the reader just left.
+     */
+    var landingPage by remember(chapterTitle) { mutableStateOf<Int?>(null) }
 
-    DisposableEffect(Unit) {
-        onDispose {
-            val bmp = capturedViewportBitmap
-            capturedViewportBitmap = null
-            if (bmp != null && !bmp.isRecycled) bmp.recycle()
-        }
-    }
+    val shownPage = landingPage ?: currentPage
+    val shownPageText = if (landingPage == null) currentPageText else landingPage.toString()
 
     LaunchedEffect(visible) {
         if (!visible) lightingOpen = false
     }
-    LaunchedEffect(pendingCapture, captureOpen, overviewOpen) {
-        onSuppressStatusLineChange(pendingCapture || captureOpen || overviewOpen)
+    LaunchedEffect(captureOpen, overviewOpen) {
+        onSuppressStatusLineChange(captureOpen || overviewOpen)
     }
-    LaunchedEffect(pendingCapture) {
-        if (!pendingCapture) return@LaunchedEffect
-        withFrameNanos { }
-        withFrameNanos { }
-        val capture = onCaptureViewport
-        if (capture == null) {
-            capturedViewportBitmap = null
-            pendingCapture = false
-            captureOpen = true
-        } else {
-            capture { bmp ->
-                val prev = capturedViewportBitmap
-                capturedViewportBitmap = bmp
-                if (prev != null && prev !== bmp && !prev.isRecycled) prev.recycle()
-                pendingCapture = false
-                captureOpen = true
-            }
-        }
-    }
-    LaunchedEffect(currentPage) {
-        if (returnOriginPage != null && currentPage == returnOriginPage) {
+    LaunchedEffect(shownPage) {
+        if (returnOriginPage != null && shownPage == returnOriginPage) {
             returnOriginPage = null
         }
+    }
+    LaunchedEffect(landingPage, currentPage, currentPageText) {
+        val landing = landingPage ?: return@LaunchedEffect
+        if (!reportsLanding(currentPage, currentPageText, landing)) delay(PageLandingHoldMillis)
+        landingPage = null
     }
 
     fun jumpToPageIndex(index: Int) {
@@ -218,6 +218,7 @@ fun ReaderAppBarsCurrent(
             fromPage = currentPage,
             toPage = index + 1,
         )
+        landingPage = index + 1
         onPageIndexChange(index)
     }
 
@@ -228,6 +229,7 @@ fun ReaderAppBarsCurrent(
             fromPage = currentPage,
             toPage = targetIndex + 1,
         )
+        landingPage = targetIndex + 1
         if (onScrubWebtoonFraction != null) {
             onScrubWebtoonFraction(fraction)
         } else {
@@ -235,7 +237,7 @@ fun ReaderAppBarsCurrent(
         }
     }
 
-    val hudBarsVisible = visible && !overviewOpen && !captureOpen && !pendingCapture
+    val hudBarsVisible = visible && !overviewOpen && !captureOpen
 
     val topSlide = -with(LocalDensity.current) { KasaneTopSlideDp.roundToPx() }
     val bottomSlide = with(LocalDensity.current) { KasaneBottomSlideDp.roundToPx() }
@@ -247,13 +249,13 @@ fun ReaderAppBarsCurrent(
         if (reduced) {
             M3Motion.reducedFade()
         } else {
-            tween(KasaneChromeMillis, delayMillis = if (top) 0 else KasaneBottomStaggerMillis, easing = KasaneChromeSpatial)
+            tween(KasaneChromeExitMillis, delayMillis = if (top) 0 else KasaneBottomStaggerMillis, easing = KasaneChromeExit)
         }
     fun fadeExit(top: Boolean): FiniteAnimationSpec<Float> =
         if (reduced) {
             M3Motion.reducedFade()
         } else {
-            tween(KasaneChromeEffectsMillis, delayMillis = if (top) 0 else KasaneBottomStaggerMillis, easing = KasaneChromeEffects)
+            tween(KasaneChromeExitEffectsMillis, delayMillis = if (top) 0 else KasaneBottomStaggerMillis, easing = KasaneChromeExit)
         }
     val effectiveBarStyle = resolveEffectiveBarStyle(barStyle, navBarType)
     val readerMenuActions = rememberReaderMenuActions(
@@ -285,7 +287,7 @@ fun ReaderAppBarsCurrent(
             }
             Box(
                 Modifier.fillMaxSize()
-                    .graphicsLayer { alpha = if (pendingCapture || captureOpen) 0f else 1f }
+                    .graphicsLayer { alpha = if (captureOpen) 0f else 1f }
                     .windowInsetsPadding(WindowInsets.systemBarsIgnoringVisibility)
                     .padding(horizontal = 16.dp, vertical = 8.dp)
                     .then(if (hudBarsVisible) Modifier else Modifier.clearAndSetSemantics {}),
@@ -299,7 +301,7 @@ fun ReaderAppBarsCurrent(
                     ReaderTopBar(
                         enabled = hudBarsVisible,
                         chapterTitle = chapterTitle,
-                        pageCount = readerPageCount(currentPage, totalPages),
+                        pageCount = readerPageCount(shownPage, totalPages),
                         navigateUp = navigateUp,
                         onClickChapterList = onClickChapterList,
                         glass = glass,
@@ -339,11 +341,10 @@ fun ReaderAppBarsCurrent(
                                             VerticalWebtoonMinimapStripContainer(
                                                 expanded = filmstripExpanded,
                                                 handleOnLeft = isRight,
-                                                currentPage = currentPage,
+                                                currentPage = shownPage,
                                                 totalPages = totalPages,
                                                 pageProvider = pageProvider,
                                                 webtoonProgressFlow = webtoonProgressFlow,
-                                                onScrubWebtoonFraction = ::scrubWebtoonFraction,
                                                 onSelectPage = ::jumpToPageIndex,
                                             )
                                         }
@@ -352,7 +353,7 @@ fun ReaderAppBarsCurrent(
                                         key(chapterTitle, currentReadingMode) {
                                             ChapterNavigator(
                                                 onNextChapter, enabledNext, onPreviousChapter, enabledPrevious,
-                                                currentPage, currentPageText, totalPages, ::jumpToPageIndex,
+                                                shownPage, shownPageText, totalPages, ::jumpToPageIndex,
                                                 enabled = hudBarsVisible,
                                             )
                                         }
@@ -395,12 +396,13 @@ fun ReaderAppBarsCurrent(
                             verticalArrangement = Arrangement.spacedBy(8.dp),
                         ) {
                             ReturnToOriginChip(
-                                visible = hudBarsVisible && !lightingOpen && returnOriginPage != null && returnOriginPage != currentPage,
+                                visible = hudBarsVisible && !lightingOpen && returnOriginPage != null && returnOriginPage != shownPage,
                                 originPage = returnOriginPage,
                                 glass = glass,
                                 onReturn = {
                                     val target = returnOriginPage
                                     returnOriginPage = null
+                                    landingPage = target
                                     if (target != null) onPageIndexChange((target - 1).coerceAtLeast(0))
                                 },
                                 onDismiss = { returnOriginPage = null },
@@ -421,7 +423,7 @@ fun ReaderAppBarsCurrent(
                                                     enabledPrevious = enabledPrevious,
                                                     onNextChapter = onNextChapter,
                                                     enabledNext = enabledNext,
-                                                    currentPage = currentPage,
+                                                    currentPage = shownPage,
                                                     totalPages = totalPages,
                                                     originPage = returnOriginPage,
                                                     onJumpPageIndex = ::jumpToPageIndex,
@@ -430,7 +432,7 @@ fun ReaderAppBarsCurrent(
                                                     onClickChapterList = onClickChapterList,
                                                     onClickOverview = { overviewOpen = true },
                                                     onClickLighting = { lightingOpen = true },
-                                                    onClickCapture = { if (!pendingCapture) pendingCapture = true },
+                                                    onClickCapture = { captureOpen = true },
                                                     onClickSettings = onClickSettings,
                                                     overviewActive = overviewOpen,
                                                     lightingActive = lightingOpen,
@@ -444,7 +446,7 @@ fun ReaderAppBarsCurrent(
                                                 onClickChapterList = onClickChapterList,
                                                 onClickOverview = { overviewOpen = true },
                                                 onClickLighting = { lightingOpen = true },
-                                                onClickCapture = { if (!pendingCapture) pendingCapture = true },
+                                                onClickCapture = { captureOpen = true },
                                                 onClickSettings = onClickSettings,
                                                 overviewActive = overviewOpen,
                                                 lightingActive = lightingOpen,
@@ -460,7 +462,7 @@ fun ReaderAppBarsCurrent(
                                             enabledPrevious = enabledPrevious,
                                             onNextChapter = onNextChapter,
                                             enabledNext = enabledNext,
-                                            currentPage = currentPage,
+                                            currentPage = shownPage,
                                             totalPages = totalPages,
                                             onPageIndexChange = ::jumpToPageIndex,
                                             onClickChapterList = onClickChapterList,
@@ -481,7 +483,7 @@ fun ReaderAppBarsCurrent(
                                                 enabledPrevious = enabledPrevious,
                                                 onNextChapter = onNextChapter,
                                                 enabledNext = enabledNext,
-                                                currentPage = currentPage,
+                                                currentPage = shownPage,
                                                 totalPages = totalPages,
                                                 onPageIndexChange = ::jumpToPageIndex,
                                                 pageProvider = pageProvider,
@@ -492,7 +494,7 @@ fun ReaderAppBarsCurrent(
                                                 onClickChapterList = onClickChapterList,
                                                 onClickOverview = { overviewOpen = true },
                                                 onClickLighting = { lightingOpen = true },
-                                                onClickCapture = { if (!pendingCapture) pendingCapture = true },
+                                                onClickCapture = { captureOpen = true },
                                                 onClickSettings = onClickSettings,
                                                 overviewActive = overviewOpen,
                                                 lightingActive = lightingOpen,
@@ -515,7 +517,7 @@ fun ReaderAppBarsCurrent(
                 visible = overviewOpen,
                 glass = glass,
                 chapterTitle = chapterTitle,
-                currentPage = currentPage,
+                currentPage = shownPage,
                 totalPages = totalPages,
                 isRtl = isRtl,
                 prevChapterShortName = prevChapterShortName,
@@ -532,17 +534,14 @@ fun ReaderAppBarsCurrent(
             ReaderCaptureOverlay(
                 visible = captureOpen,
                 glass = glass,
-                currentPage = currentPage,
-                viewportBitmap = capturedViewportBitmap,
+                currentPage = shownPage,
+                totalPages = totalPages,
+                isWebtoon = isWebtoon,
+                webtoonProgressFlow = webtoonProgressFlow,
                 pageProvider = pageProvider,
                 onSavePng = onSaveCapturedPng,
                 onSharePng = onShareCapturedPng,
-                onDismiss = {
-                    val old = capturedViewportBitmap
-                    capturedViewportBitmap = null
-                    captureOpen = false
-                    if (old != null && !old.isRecycled) old.recycle()
-                },
+                onDismiss = { captureOpen = false },
             )
         }
     }

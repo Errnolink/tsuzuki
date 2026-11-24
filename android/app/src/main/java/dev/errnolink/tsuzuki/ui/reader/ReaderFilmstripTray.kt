@@ -11,7 +11,8 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
@@ -39,16 +40,22 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.pointer.PointerInputScope
+import androidx.compose.ui.input.pointer.changedToUpIgnoreConsumed
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
@@ -67,6 +74,7 @@ import dev.errnolink.tsuzuki.designsystem.TsuzukiText
 import dev.errnolink.tsuzuki.designsystem.TsuzukiTheme
 import eu.kanade.tachiyomi.ui.reader.model.ReaderPage
 import kotlin.math.roundToInt
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.StateFlow
 import tachiyomi.i18n.MR
 import tachiyomi.presentation.core.i18n.stringResource
@@ -310,7 +318,8 @@ private fun WebtoonStoryboardRibbon(
     val context = LocalContext.current
     val colors = TsuzukiTheme.colors
     val sampleIndices = remember(totalPages) { computeStoryboardSampleIndices(totalPages, maxSamples = 12) }
-    val window = computeStoryboardViewportWindow(progress.progress, progress.viewportFraction)
+    var dragFraction by remember { mutableStateOf<Float?>(null) }
+    val window = computeStoryboardViewportWindow(dragFraction ?: progress.progress, progress.viewportFraction)
     val shape = RoundedCornerShape(10.dp)
 
     BoxWithConstraints(
@@ -327,11 +336,14 @@ private fun WebtoonStoryboardRibbon(
                 }
             }
             .pointerInput(totalPages) {
-                detectDragGestures { change, _ ->
-                    change.consume()
-                    val frac = (change.position.x / size.width.toFloat().coerceAtLeast(1f)).coerceIn(0f, 1f)
-                    onJumpFraction(frac)
-                }
+                fun fracOf(position: Offset) = (position.x / size.width.toFloat().coerceAtLeast(1f)).coerceIn(0f, 1f)
+                detectJumpDrags(
+                    onDrag = { dragFraction = fracOf(it) },
+                    onRelease = { position ->
+                        dragFraction = null
+                        position?.let { onJumpFraction(fracOf(it)) }
+                    },
+                )
             },
     ) {
         val totalWidthPx = with(LocalDensity.current) { maxWidth.toPx() }
@@ -475,7 +487,6 @@ internal fun VerticalWebtoonMinimapStripContainer(
     totalPages: Int,
     pageProvider: (Int) -> ReaderPage?,
     webtoonProgressFlow: StateFlow<WebtoonProgressState>?,
-    onScrubWebtoonFraction: ((Float) -> Unit)?,
     onSelectPage: (Int) -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -511,13 +522,7 @@ internal fun VerticalWebtoonMinimapStripContainer(
                     progress = progress,
                     pageProvider = pageProvider,
                     thumbs = thumbs,
-                    onJumpFraction = { frac ->
-                        if (onScrubWebtoonFraction != null) {
-                            onScrubWebtoonFraction(frac)
-                        } else {
-                            onSelectPage(resolveWebtoonTargetPageFromFraction(frac, totalPages))
-                        }
-                    },
+                    onSelectPage = onSelectPage,
                     modifier = Modifier
                         .fillMaxHeight()
                         .padding(vertical = 8.dp)
@@ -547,6 +552,13 @@ internal fun VerticalWebtoonMinimapStripContainer(
     }
 }
 
+/**
+ * The side minimap: thumbnails around the current page with a lens over what the reader shows.
+ * The lens can be dragged onto any thumbnail (held at an edge, the strip scrolls a page at a
+ * time); the reader jumps once when it is let go. After a drag or tap the strip stays where it
+ * was left and the lens follows the reader inside it; it recentres the next time it is composed,
+ * which is the next time the chrome shows.
+ */
 @Composable
 private fun VerticalWebtoonViewportStrip(
     currentPage: Int,
@@ -554,7 +566,7 @@ private fun VerticalWebtoonViewportStrip(
     progress: WebtoonProgressState,
     pageProvider: (Int) -> ReaderPage?,
     thumbs: ScrubThumbCache,
-    onJumpFraction: (Float) -> Unit,
+    onSelectPage: (Int) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val context = LocalContext.current
@@ -563,12 +575,27 @@ private fun VerticalWebtoonViewportStrip(
     val pos = remember(currentPage, totalPages, progress.progress) {
         resolveWebtoonMinimapPosition(currentPage, totalPages, progress.progress)
     }
-    val currIdx = pos.centerPageIndex
-    val windowStart = (currIdx - 3).coerceIn(0, (totalPages - 7).coerceAtLeast(0))
-    val windowEnd = (windowStart + 6).coerceAtMost(totalPages - 1)
+    val currIdx = (currentPage - 1).coerceIn(0, (totalPages - 1).coerceAtLeast(0))
+    val inPageFraction = if (pos.centerPageIndex == currIdx) pos.inPageFraction else 0f
+    val maxStart = (totalPages - MinimapSlots).coerceAtLeast(0)
+    var pinnedStart by remember { mutableStateOf<Int?>(null) }
+    var pinnedOffsetPx by remember { mutableFloatStateOf(0f) }
+    var heldLensTopPx by remember { mutableStateOf<Float?>(null) }
+    var grabPx by remember { mutableFloatStateOf(0f) }
+    var edge by remember { mutableIntStateOf(0) }
+    val windowStart = pinnedStart ?: (currIdx - MinimapSlots / 2).coerceIn(0, maxStart)
+    val windowEnd = (windowStart + MinimapSlots - 1).coerceAtMost(totalPages - 1)
     val windowIndices = remember(windowStart, windowEnd) { (windowStart..windowEnd).toList() }
-    val currentSlotIndex = (currIdx - windowStart).coerceIn(0, windowIndices.lastIndex.coerceAtLeast(0))
     val shape = RoundedCornerShape(14.dp)
+
+    LaunchedEffect(edge) {
+        if (edge == 0) return@LaunchedEffect
+        while (true) {
+            delay(MinimapEdgeScrollMillis)
+            val start = pinnedStart ?: return@LaunchedEffect
+            pinnedStart = (start + edge).coerceIn(0, maxStart)
+        }
+    }
 
     @Composable
     fun rememberPageThumb(pageIdx: Int): ImageBitmap? {
@@ -592,21 +619,7 @@ private fun VerticalWebtoonViewportStrip(
             .width(62.dp)
             .fillMaxHeight()
             .clip(shape)
-            .border(1.dp, colors.separator.copy(alpha = 0.65f), shape)
-            .background(colors.background.copy(alpha = 0.55f))
-            .pointerInput(totalPages) {
-                detectTapGestures { offset ->
-                    val frac = (offset.y / size.height.toFloat().coerceAtLeast(1f)).coerceIn(0f, 1f)
-                    onJumpFraction(frac)
-                }
-            }
-            .pointerInput(totalPages) {
-                detectDragGestures { change, _ ->
-                    change.consume()
-                    val frac = (change.position.y / size.height.toFloat().coerceAtLeast(1f)).coerceIn(0f, 1f)
-                    onJumpFraction(frac)
-                }
-            },
+            .border(1.dp, colors.separator.copy(alpha = 0.65f), shape),
     ) {
         val stripWidthPx = with(density) { maxWidth.toPx() }
         val stripHeightDp = maxHeight
@@ -619,20 +632,85 @@ private fun VerticalWebtoonViewportStrip(
             }
 
         val slotHeightsPx = windowBmps.map { (_, bmp) -> estimateHeightPx(bmp) }
-        val layout = computeMultiPageVerticalRibbonLayout(
+        val slotTopsPx = slotHeightsPx.runningFold(0f) { acc, h -> acc + h }
+        val centred = computeMultiPageVerticalRibbonLayout(
             pageHeightsPx = slotHeightsPx,
-            currentSlotIndex = currentSlotIndex,
-            inPageFraction = pos.inPageFraction,
+            currentSlotIndex = (currIdx - windowStart).coerceIn(0, windowIndices.lastIndex.coerceAtLeast(0)),
+            inPageFraction = inPageFraction,
             stripHeightPx = stripHeightPx,
             lensHeightPx = stripHeightPx * 0.34f,
         )
+        val lensHeightPx = centred.lensHeightPx
+        val maxLensTopPx = (stripHeightPx - lensHeightPx).coerceAtLeast(0f)
+        val stackOffsetPx = if (pinnedStart != null) pinnedOffsetPx else centred.stackOffsetYPx
+        val currentSlot = currIdx - windowStart
+        val followedLensTopPx = if (pinnedStart != null && currentSlot in windowIndices.indices) {
+            (slotTopsPx[currentSlot] + inPageFraction * slotHeightsPx[currentSlot] + stackOffsetPx)
+                .coerceIn(0f, maxLensTopPx)
+        } else {
+            centred.lensTopPx
+        }
+        val lensTopPx = heldLensTopPx ?: followedLensTopPx
 
-        Box(Modifier.fillMaxSize().clipToBounds()) {
+        fun slotAt(stripY: Float): Int {
+            val y = stripY - stackOffsetPx
+            val slot = slotTopsPx.indexOfLast { it <= y }.coerceIn(0, windowIndices.lastIndex)
+            return windowIndices[slot]
+        }
+        fun pin() {
+            if (pinnedStart == null) {
+                pinnedStart = windowStart
+                pinnedOffsetPx = centred.stackOffsetYPx
+            }
+        }
+        fun moveLens(fingerY: Float) {
+            val top = (fingerY - grabPx).coerceIn(0f, maxLensTopPx)
+            heldLensTopPx = top
+            edge = when {
+                top <= 0f -> -1
+                top >= maxLensTopPx -> 1
+                else -> 0
+            }
+        }
+        val onTap by rememberUpdatedState { y: Float ->
+            pin()
+            onSelectPage(slotAt(y))
+        }
+        val onDragTo by rememberUpdatedState { y: Float ->
+            if (heldLensTopPx == null) {
+                pin()
+                val inLens = y - lensTopPx
+                grabPx = if (inLens in 0f..lensHeightPx) inLens else lensHeightPx / 2f
+            }
+            moveLens(y)
+        }
+        val onLetGo by rememberUpdatedState { released: Boolean ->
+            val top = heldLensTopPx
+            heldLensTopPx = null
+            edge = 0
+            if (released && top != null) onSelectPage(slotAt(top + lensHeightPx / 2f))
+        }
+
+        Box(
+            Modifier
+                .fillMaxSize()
+                .clipToBounds()
+                .background(colors.background.copy(alpha = 0.55f))
+                .pointerInput(Unit) {
+                    detectTapGestures { offset -> onTap(offset.y) }
+                }
+                .pointerInput(Unit) {
+                    detectJumpDrags(
+                        onDrag = { position -> onDragTo(position.y) },
+                        onRelease = { position -> onLetGo(position != null) },
+                    )
+                },
+        ) {
             Column(
                 Modifier
                     .fillMaxWidth()
                     .wrapContentHeight(unbounded = true, align = Alignment.Top)
-                    .graphicsLayer { translationY = layout.stackOffsetYPx },
+                    .graphicsLayer { translationY = stackOffsetPx },
             ) {
                 windowBmps.forEachIndexed { slot, (idx, bmp) ->
                     val slotHeightDp = with(density) { slotHeightsPx[slot].toDp() }
@@ -658,9 +736,8 @@ private fun VerticalWebtoonViewportStrip(
                 }
             }
 
-            // Subtle curtains outside the zoomed current-view lens
-            val lensTopDp = with(density) { layout.lensTopPx.toDp() }
-            val lensHeightDp = with(density) { layout.lensHeightPx.toDp() }
+            val lensTopDp = with(density) { lensTopPx.toDp() }
+            val lensHeightDp = with(density) { lensHeightPx.toDp() }
             if (lensTopDp > 0.dp) {
                 Box(Modifier.fillMaxWidth().height(lensTopDp).background(Color.Black.copy(alpha = 0.44f)))
             }
@@ -675,16 +752,61 @@ private fun VerticalWebtoonViewportStrip(
                 )
             }
 
-            // Highlighted current-view lens frame
+            val held = heldLensTopPx != null
             Box(
                 Modifier
-                    .offset { IntOffset(0, layout.lensTopPx.roundToInt()) }
+                    .offset { IntOffset(0, lensTopPx.roundToInt()) }
                     .fillMaxWidth()
                     .height(lensHeightDp)
+                    .graphicsLayer {
+                        val scale = if (held) 1.06f else 1f
+                        scaleX = scale
+                        scaleY = scale
+                    }
                     .clip(RoundedCornerShape(8.dp))
-                    .background(colors.accent.copy(alpha = 0.10f))
-                    .border(2.dp, colors.accent, RoundedCornerShape(8.dp)),
+                    .background(colors.accent.copy(alpha = if (held) 0.18f else 0.10f))
+                    .border(if (held) 3.dp else 2.dp, colors.accent, RoundedCornerShape(8.dp)),
             )
+        }
+    }
+}
+
+private const val MinimapSlots = 7
+private const val MinimapEdgeScrollMillis = 170L
+
+/**
+ * Drag-to-jump for the page strips: [onDrag] follows the finger so the strip can preview where it
+ * will land, and [onRelease] fires once at the release position (a fast flick lands where the
+ * finger stopped, not at its last move). [onRelease] gets null when the drag is cancelled.
+ */
+private suspend fun PointerInputScope.detectJumpDrags(
+    onDrag: (Offset) -> Unit,
+    onRelease: (Offset?) -> Unit,
+) {
+    awaitEachGesture {
+        val down = awaitFirstDown(requireUnconsumed = false)
+        val slop = viewConfiguration.touchSlop
+        var dragging = false
+        while (true) {
+            val event = awaitPointerEvent()
+            val change = event.changes.firstOrNull { it.id == down.id }
+            if (change == null || change.isConsumed && !change.changedToUpIgnoreConsumed()) {
+                if (dragging) onRelease(null)
+                break
+            }
+            if (change.changedToUpIgnoreConsumed()) {
+                if (dragging) {
+                    change.consume()
+                    onRelease(change.position)
+                }
+                break
+            }
+            if (!dragging) {
+                if ((change.position - down.position).getDistance() < slop) continue
+                dragging = true
+            }
+            change.consume()
+            onDrag(change.position)
         }
     }
 }

@@ -1417,8 +1417,8 @@
     <string name="tsuzuki_reader_lighting">Lighting</string>
     <string name="tsuzuki_reader_capture">Capture</string>
     <string name="tsuzuki_reader_settings_short">Settings</string>
-    <string name="tsuzuki_reader_crop">Crop</string>
-    <string name="tsuzuki_reader_full_page">Full page</string>
+    <string name="tsuzuki_reader_capture_visible">Visible</string>
+    <string name="tsuzuki_reader_capture_this_page">This page</string>
     <string name="tsuzuki_reader_warmth">Warmth</string>
     <string name="tsuzuki_reader_brightness">Brightness</string>
     <string name="tsuzuki_reader_system_brightness">System</string>

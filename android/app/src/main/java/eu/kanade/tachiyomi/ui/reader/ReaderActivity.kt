@@ -885,7 +885,7 @@ class ReaderActivity : BaseActivity() {
             enabledPrevious = state.viewerChapters?.prevChapter != null,
             currentPage = state.currentPage,
             totalPages = state.totalPages,
-            onPageIndexChange = ::moveToPageIndex,
+            onPageIndexChange = ::jumpToPageIndex,
 
             readingMode = ReadingMode.fromPreference(
                 viewModel.getMangaReadingMode(resolveDefault = false),
@@ -950,9 +950,6 @@ class ReaderActivity : BaseActivity() {
                 }
             },
             onShareCapturedPng = viewModel::shareCapturedBitmap,
-            onCaptureViewport = { onCaptured ->
-                dev.errnolink.tsuzuki.ui.reader.captureReaderViewport(this, composeReaderHost?.view, onCaptured)
-            },
         )
     }
 
@@ -1197,6 +1194,11 @@ class ReaderActivity : BaseActivity() {
      */
     private fun moveToPageIndex(index: Int) {
         composeReaderHost?.moveToPageIndex(index)
+    }
+
+    /** Jumps the viewer to the given page [index] (scrubber, go-to page, overview). */
+    private fun jumpToPageIndex(index: Int) {
+        composeReaderHost?.jumpToPageIndex(index)
     }
 
     /**

@@ -1,6 +1,5 @@
 package dev.errnolink.tsuzuki.ui.reader
 
-import android.graphics.Bitmap
 import kotlin.math.abs
 import kotlin.math.roundToInt
 
@@ -190,34 +189,6 @@ fun formatBrightnessLabel(value: Int, systemLabel: String): String = when {
     else -> "$value%"
 }
 
-/** Normalized crop bounds inside `[0f, 1f]` of the rendered page bitmap. */
-data class NormalizedCropRect(
-    val left: Float,
-    val top: Float,
-    val right: Float,
-    val bottom: Float,
-) {
-    val width: Float get() = right - left
-    val height: Float get() = bottom - top
-
-    companion object {
-        val Default = NormalizedCropRect(left = 0.08f, top = 0.22f, right = 0.92f, bottom = 0.72f)
-        val FullPage = NormalizedCropRect(left = 0f, top = 0f, right = 1f, bottom = 1f)
-    }
-}
-
-enum class CropDragHandle {
-    Move,
-    Top,
-    Bottom,
-    Left,
-    Right,
-    TopLeft,
-    TopRight,
-    BottomLeft,
-    BottomRight,
-}
-
 data class PixelCropBounds(
     val x: Int,
     val y: Int,
@@ -225,127 +196,93 @@ data class PixelCropBounds(
     val height: Int,
 )
 
-/** Clamps a normalized crop rectangle inside `[0f, 1f]` with at least [minSpan] along each axis. */
-fun clampNormalizedCropRect(
-    rect: NormalizedCropRect,
-    minSpan: Float = 0.12f,
-): NormalizedCropRect {
-    val span = minSpan.coerceIn(0.02f, 0.9f)
-    val left = rect.left.coerceIn(0f, 1f - span)
-    val top = rect.top.coerceIn(0f, 1f - span)
-    val right = rect.right.coerceIn(left + span, 1f)
-    val bottom = rect.bottom.coerceIn(top + span, 1f)
-    return NormalizedCropRect(left, top, right, bottom)
+/**
+ * A long-capture selection over the capture document: pages stacked top to bottom at a width of
+ * 1, so a page is `nativeHeight / nativeWidth` tall. [top] and [bottom] are document units,
+ * [left] and [right] fractions of the width.
+ */
+data class CaptureSelection(
+    val top: Float,
+    val bottom: Float,
+    val left: Float = 0f,
+    val right: Float = 1f,
+) {
+    val height: Float get() = bottom - top
+    val width: Float get() = right - left
 }
 
-/** Applies a normalized delta `(dxFraction, dyFraction)` to [handle] while keeping the box valid. */
-fun dragCropRect(
-    rect: NormalizedCropRect,
-    handle: CropDragHandle,
-    dxFraction: Float,
-    dyFraction: Float,
-    minSpan: Float = 0.12f,
-): NormalizedCropRect {
-    val clamped = clampNormalizedCropRect(rect, minSpan)
-    val span = minSpan.coerceIn(0.02f, 0.9f)
-    return when (handle) {
-        CropDragHandle.Move -> {
-            val w = clamped.width
-            val h = clamped.height
-            val newLeft = (clamped.left + dxFraction).coerceIn(0f, (1f - w).coerceAtLeast(0f))
-            val newTop = (clamped.top + dyFraction).coerceIn(0f, (1f - h).coerceAtLeast(0f))
-            NormalizedCropRect(newLeft, newTop, newLeft + w, newTop + h)
-        }
-        CropDragHandle.Top -> clamped.copy(top = (clamped.top + dyFraction).coerceIn(0f, clamped.bottom - span))
-        CropDragHandle.Bottom -> clamped.copy(bottom = (clamped.bottom + dyFraction).coerceIn(clamped.top + span, 1f))
-        CropDragHandle.Left -> clamped.copy(left = (clamped.left + dxFraction).coerceIn(0f, clamped.right - span))
-        CropDragHandle.Right -> clamped.copy(right = (clamped.right + dxFraction).coerceIn(clamped.left + span, 1f))
-        CropDragHandle.TopLeft -> clamped.copy(
-            left = (clamped.left + dxFraction).coerceIn(0f, clamped.right - span),
-            top = (clamped.top + dyFraction).coerceIn(0f, clamped.bottom - span),
-        )
-        CropDragHandle.TopRight -> clamped.copy(
-            right = (clamped.right + dxFraction).coerceIn(clamped.left + span, 1f),
-            top = (clamped.top + dyFraction).coerceIn(0f, clamped.bottom - span),
-        )
-        CropDragHandle.BottomLeft -> clamped.copy(
-            left = (clamped.left + dxFraction).coerceIn(0f, clamped.right - span),
-            bottom = (clamped.bottom + dyFraction).coerceIn(clamped.top + span, 1f),
-        )
-        CropDragHandle.BottomRight -> clamped.copy(
-            right = (clamped.right + dxFraction).coerceIn(clamped.left + span, 1f),
-            bottom = (clamped.bottom + dyFraction).coerceIn(clamped.top + span, 1f),
-        )
+enum class CaptureEdge { Top, Bottom, Left, Right }
+
+/** The document top of each page plus the document height as the last entry. */
+fun captureDocumentTops(pageAspects: List<Float>): List<Float> =
+    pageAspects.runningFold(0f) { acc, aspect -> acc + aspect.coerceAtLeast(0f) }
+
+/**
+ * Hit-tests a touch at ([x], [y]) in stage pixels against the selection edges drawn at
+ * ([leftPx], [topPx], [rightPx], [bottomPx]). Horizontal edges win where they overlap the sides.
+ */
+fun hitTestCaptureEdge(
+    x: Float,
+    y: Float,
+    leftPx: Float,
+    topPx: Float,
+    rightPx: Float,
+    bottomPx: Float,
+    radiusPx: Float,
+): CaptureEdge? {
+    val withinX = x in (leftPx - radiusPx)..(rightPx + radiusPx)
+    val withinY = y in (topPx - radiusPx)..(bottomPx + radiusPx)
+    val candidates = buildList {
+        if (withinX && abs(y - topPx) <= radiusPx) add(CaptureEdge.Top to abs(y - topPx))
+        if (withinX && abs(y - bottomPx) <= radiusPx) add(CaptureEdge.Bottom to abs(y - bottomPx))
+        if (withinY && abs(x - leftPx) <= radiusPx) add(CaptureEdge.Left to abs(x - leftPx) + radiusPx / 2f)
+        if (withinY && abs(x - rightPx) <= radiusPx) add(CaptureEdge.Right to abs(x - rightPx) + radiusPx / 2f)
     }
+    return candidates.minByOrNull { it.second }?.first
 }
 
 /**
- * Hit-tests a pointer touch in stationary container pixel coordinates against the crop box
- * corners, edges, or interior so handles never self-oscillate when the box resizes.
+ * Moves [edge] of [selection] to [docY] (Top/Bottom, document units) or [fraction] (Left/Right),
+ * keeping it inside `[0, documentHeight]` × `[0, 1]` and at least [minHeight] × [minWidth].
  */
-fun hitTestCropHandle(
-    touchX: Float,
-    touchY: Float,
-    rect: NormalizedCropRect,
-    containerWidth: Float,
-    containerHeight: Float,
-    hitRadiusPx: Float,
-): CropDragHandle? {
-    if (containerWidth <= 0f || containerHeight <= 0f) return null
-    val left = rect.left * containerWidth
-    val top = rect.top * containerHeight
-    val right = rect.right * containerWidth
-    val bottom = rect.bottom * containerHeight
-    val radius = hitRadiusPx.coerceAtLeast(1f)
-    val radiusSq = radius * radius
-
-    val corners = listOf(
-        CropDragHandle.TopLeft to ((touchX - left) * (touchX - left) + (touchY - top) * (touchY - top)),
-        CropDragHandle.TopRight to ((touchX - right) * (touchX - right) + (touchY - top) * (touchY - top)),
-        CropDragHandle.BottomLeft to ((touchX - left) * (touchX - left) + (touchY - bottom) * (touchY - bottom)),
-        CropDragHandle.BottomRight to ((touchX - right) * (touchX - right) + (touchY - bottom) * (touchY - bottom)),
-    )
-    val nearestCorner = corners.filter { it.second <= radiusSq }.minByOrNull { it.second }
-    if (nearestCorner != null) return nearestCorner.first
-
-    val edges = buildList {
-        if (touchX in (left - radius)..(right + radius)) {
-            val topDist = abs(touchY - top)
-            if (topDist <= radius) add(CropDragHandle.Top to topDist)
-            val bottomDist = abs(touchY - bottom)
-            if (bottomDist <= radius) add(CropDragHandle.Bottom to bottomDist)
-        }
-        if (touchY in (top - radius)..(bottom + radius)) {
-            val leftDist = abs(touchX - left)
-            if (leftDist <= radius) add(CropDragHandle.Left to leftDist)
-            val rightDist = abs(touchX - right)
-            if (rightDist <= radius) add(CropDragHandle.Right to rightDist)
-        }
-    }
-    val nearestEdge = edges.minByOrNull { it.second }
-    if (nearestEdge != null) return nearestEdge.first
-
-    return if (touchX in left..right && touchY in top..bottom) CropDragHandle.Move else null
+fun moveCaptureEdge(
+    selection: CaptureSelection,
+    edge: CaptureEdge,
+    docY: Float,
+    fraction: Float,
+    documentHeight: Float,
+    minHeight: Float,
+    minWidth: Float = 0.15f,
+): CaptureSelection = when (edge) {
+    CaptureEdge.Top -> selection.copy(top = docY.coerceIn(0f, (selection.bottom - minHeight).coerceAtLeast(0f)))
+    CaptureEdge.Bottom -> selection.copy(bottom = docY.coerceIn((selection.top + minHeight).coerceAtMost(documentHeight), documentHeight))
+    CaptureEdge.Left -> selection.copy(left = fraction.coerceIn(0f, (selection.right - minWidth).coerceAtLeast(0f)))
+    CaptureEdge.Right -> selection.copy(right = fraction.coerceIn((selection.left + minWidth).coerceAtMost(1f), 1f))
 }
 
-/** Maps [rect] into concrete `[x, y, width, height]` pixel bounds inside a bitmap of `(bitmapWidth, bitmapHeight)`. */
-fun mapCropRectToPixels(
-    rect: NormalizedCropRect,
-    bitmapWidth: Int,
-    bitmapHeight: Int,
-): PixelCropBounds {
-    if (bitmapWidth <= 0 || bitmapHeight <= 0) return PixelCropBounds(0, 0, 0, 0)
-    val clamped = clampNormalizedCropRect(rect, minSpan = 0.01f)
-    val x = (clamped.left * bitmapWidth).roundToInt().coerceIn(0, bitmapWidth - 1)
-    val y = (clamped.top * bitmapHeight).roundToInt().coerceIn(0, bitmapHeight - 1)
-    val right = (clamped.right * bitmapWidth).roundToInt().coerceIn(x + 1, bitmapWidth)
-    val bottom = (clamped.bottom * bitmapHeight).roundToInt().coerceIn(y + 1, bitmapHeight)
-    return PixelCropBounds(
-        x = x,
-        y = y,
-        width = right - x,
-        height = bottom - y,
-    )
+/** One page's part of a selection: [fromFraction]..[toFraction] of that page's height. */
+data class CaptureSlice(val pageIndex: Int, val fromFraction: Float, val toFraction: Float, val docHeight: Float)
+
+/** Splits [selection] into the per-page vertical slices it covers, top to bottom. */
+fun captureSlices(selection: CaptureSelection, tops: List<Float>): List<CaptureSlice> =
+    (0 until tops.size - 1).mapNotNull { i ->
+        val pageTop = tops[i]
+        val pageBottom = tops[i + 1]
+        val from = maxOf(selection.top, pageTop)
+        val to = minOf(selection.bottom, pageBottom)
+        val h = pageBottom - pageTop
+        if (to <= from || h <= 0f) null else CaptureSlice(i, (from - pageTop) / h, (to - pageTop) / h, to - from)
+    }
+
+/**
+ * Output size of a capture: [preferredWidthPx] wide (the source width under the selection),
+ * scaled down so the image is never taller than [maxHeightPx].
+ */
+fun captureOutputSize(selection: CaptureSelection, preferredWidthPx: Int, maxHeightPx: Int = 16_384): Pair<Int, Int> {
+    if (selection.width <= 0f || selection.height <= 0f || preferredWidthPx <= 0) return 0 to 0
+    val ratio = selection.height / selection.width
+    val width = minOf(preferredWidthPx.toFloat(), maxHeightPx / ratio).coerceAtLeast(1f)
+    return width.roundToInt() to (width * ratio).roundToInt().coerceAtLeast(1)
 }
 
 /**
@@ -387,30 +324,4 @@ fun computeThumbSampleSize(
         1
     }
     return maxOf(1, maxOf(byTarget, byHeightCap))
-}
-
-/**
- * Extracts a cropped software `ARGB_8888` bitmap safely, copying `Bitmap.Config.HARDWARE` sources
- * to software before cropping and recycling any temporary copy in `finally`.
- */
-fun cropBitmapSafely(
-    source: Bitmap,
-    rect: NormalizedCropRect,
-): Bitmap? {
-    if (source.isRecycled || source.width <= 0 || source.height <= 0) return null
-    val bounds = mapCropRectToPixels(rect, source.width, source.height)
-    if (bounds.width <= 0 || bounds.height <= 0) return null
-    val needsSoftwareCopy = source.config == Bitmap.Config.HARDWARE
-    val working = if (needsSoftwareCopy) {
-        source.copy(Bitmap.Config.ARGB_8888, false) ?: return null
-    } else {
-        source
-    }
-    return try {
-        Bitmap.createBitmap(working, bounds.x, bounds.y, bounds.width, bounds.height)
-    } finally {
-        if (needsSoftwareCopy && working !== source && !working.isRecycled) {
-            working.recycle()
-        }
-    }
 }

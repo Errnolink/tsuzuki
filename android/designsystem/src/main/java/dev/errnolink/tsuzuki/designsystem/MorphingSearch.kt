@@ -178,11 +178,17 @@ fun MorphingSearchButton(
     val resolvedDescription = contentDescription ?: LocalTsuzukiComponentLabels.current.search
     val focusRequester = remember { FocusRequester() }
     val pressState = rememberPressShapeState(interaction, restRadius = CapsuleRestRadius)
+    // The circle's last laid-out bounds. The tab bar hands this button another tab's search state
+    // on every tab switch without moving, so a state can arrive after the layout callbacks that
+    // would give it bounds; the tap supplies them.
+    var restBounds by remember { mutableStateOf<Rect?>(null) }
     Box(
         modifier
             .onGloballyPositioned {
+                val bounds = it.boundsInWindow()
+                restBounds = bounds
                 if (!state.source.covered && state.progress.value <= 0.001f) {
-                    state.sourceBounds = it.boundsInWindow()
+                    if (!bounds.isEmpty) state.sourceBounds = bounds
                 }
             }
             .menuMorphSource(state.source)
@@ -209,7 +215,10 @@ fun MorphingSearchButton(
                         indication = null,
                         role = Role.Button,
                         onClickLabel = resolvedDescription,
-                        onClick = state::expand,
+                        onClick = {
+                            restBounds?.takeIf { !it.isEmpty }?.let { state.sourceBounds = it }
+                            state.expand()
+                        },
                     )
                     .semantics { this.contentDescription = resolvedDescription },
                 contentAlignment = Alignment.Center,
@@ -257,7 +266,9 @@ fun MorphingSearchOverlay(
     }
 
     val opening = state.expanded
-    val composing by remember { derivedStateOf { state.progress.value > 0.001f || state.source.covered } }
+    // Keyed on the state: the bottom dock keeps this overlay composed across a tab switch and hands
+    // it the next tab's search, which has to gate its own flight.
+    val composing by remember(state) { derivedStateOf { state.progress.value > 0.001f || state.source.covered } }
 
     // The flight: both ways on Kasane's critically damped navigation curve; reverses from wherever it is.
     // The circle is hidden while the capsule holds its place and comes back the moment it lands home.
@@ -320,14 +331,18 @@ fun MorphingSearchOverlay(
         close()
     }
 
-    val from = state.sourceBounds?.let { bounds ->
+    val captured = state.sourceBounds
+    val degraded = captured == null || captured.isEmpty
+    val from = if (degraded) {
+        targetRect
+    } else {
         Rect(
-            bounds.left - hostOrigin.x,
-            bounds.top - hostOrigin.y,
-            bounds.right - hostOrigin.x,
-            bounds.bottom - hostOrigin.y,
+            captured.left - hostOrigin.x,
+            captured.top - hostOrigin.y,
+            captured.right - hostOrigin.x,
+            captured.bottom - hostOrigin.y,
         )
-    } ?: return
+    }
     // WP6.3: composition only gates on the flight threshold; the frame itself is computed in the
     // layout/draw phases from the progress read there, so the flight never recomposes per frame.
     // The capsule stays until the trigger is revealed: dropping it at the threshold while the
@@ -352,7 +367,14 @@ fun MorphingSearchOverlay(
                 layout(w, h) {
                     placeable.place(frame.rect.left.roundToInt(), frame.rect.top.roundToInt())
                 }
-            },
+            }
+            .then(
+                if (degraded) {
+                    Modifier.background(TsuzukiTheme.colors.elevated, SearchFlightShape)
+                } else {
+                    Modifier
+                },
+            ),
     ) {
         // The magnifier rides the leading edge the whole way; the field's own icon takes over as the
         // text arrives.

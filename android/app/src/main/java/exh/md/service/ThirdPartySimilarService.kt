@@ -111,7 +111,10 @@ class ThirdPartySimilarService(
     }
 
     private suspend fun fetchMangaUpdates(dexId: String, directId: String?): List<ThirdPartySimilarRec> {
-        val muId = directId ?: mappings.getExternalID(dexId, "mu_new") ?: return emptyList()
+        val linkId = directId?.let { id ->
+            if (id.all(Char::isDigit) && id.toLong() <= LAST_LEGACY_MU_ID) null else id.toLongOrNull(36)?.toString()
+        }
+        val muId = linkId ?: mappings.getExternalID(dexId, "mu_new") ?: return emptyList()
         return runCatching {
             val dto: MUMangaDto = with(MdUtil.jsonParser) {
                 http.newCall(GET("https://api.mangaupdates.com/v1/series/$muId"))
@@ -153,5 +156,6 @@ class ThirdPartySimilarService(
     companion object {
         private val memoryCache = LruCache<String, List<ThirdPartySimilarRec>>(128)
         private val jikanRateLimiter = Mutex()
+        private const val LAST_LEGACY_MU_ID = 200591L
     }
 }
